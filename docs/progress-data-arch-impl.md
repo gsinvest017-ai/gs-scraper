@@ -19,4 +19,15 @@
 
 ## 進度日誌
 
-<!-- 每個 milestone 完成後追加一段 -->
+### M1 — 專案骨架 + git init + 進度檔
+
+- Commit: `6416db8`
+- 做了：
+  - `git init -b main`，commit user 設為本地 `kevin / gsinvest017`
+  - `.gitignore` 排除全部既有 825 GB 原始資料、archive、影像、`bronze/silver/gold/...` 下的資料檔（保留 `.gitkeep` 與 `reference/seeds/`）
+  - 建好 17 個目錄 skeleton（`bronze/{taifex,tej,twse,yahoo,histdata}`、`silver/{bars,options,flows,fundamentals,macro}`、`gold/{features,continuous,universe}`、`meta/{audit,schema,lineage}`、`reference/seeds`、`src/qd_ingest/{common/validators,sources}`、`tests`、`docs`、`scripts`、`_staging`、`_quarantine`）
+  - `pyproject.toml`：`qd_ingest` package、`qd-ingest` CLI entry、依賴含 duckdb/polars/pyarrow/pandas/pandera/click/rich，optional groups `ingest/zipline/dev`
+  - `src/qd_ingest/`：`cli.py`（click group + 3 subcommand stubs）、`common/paths.py`（單一 source of truth 的目錄常數 + helper）、`common/audit.py`（`IngestRecord` dataclass + `write_audit()` JSONL appender + `sha256_file()`）
+  - `README.md` 簡介、`docs/progress-data-arch-impl.md` 此檔
+- 後續可接：M2 寫 reference 表 + pandera schema + D1/D2 dedup
+
