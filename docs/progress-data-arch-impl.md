@@ -31,3 +31,19 @@
   - `README.md` 簡介、`docs/progress-data-arch-impl.md` 此檔
 - 後續可接：M2 寫 reference 表 + pandera schema + D1/D2 dedup
 
+### M2 — Reference 表 + pandera schema + dedup
+
+- Commit: M2 (`reference tables + pandera schemas + W1 dedup`)
+- 做了：
+  - **Reference seeds**：`reference/seeds/contract_specs.yaml`（12 個合約：TXF/MXF/TXO + ES/NQ/YM/RTY + GC/CL/NG/HG/SI）、`reference/seeds/symbol_map.yaml`（30 個 canonical symbol，含台期 / 台股 ETF / US futures / US index / US ETF / FX / Asia index）
+  - `scripts/build_reference.py` 編譯成 parquet：`contract_specs.parquet`、`symbol_map.parquet`、`calendar_xtai.parquet`（由 TEJ EWPRCD 衍生 3924 個交易日 2010-01-04 ~ 2025-12-31）
+  - **9 個 pandera schemas** 在 `src/qd_ingest/common/validators/`：bars_1d / bars_intraday / options_chain_1d / tw_inst_futures_daily / tw_inst_stock_daily / tw_margin_daily / tw_inst_market_daily / fundamentals_q / macro_daily（全部 `strict="filter" + coerce=True + unique=PK`）
+  - **D1/D2 dedup**：`scripts/dedup_w1.py` SHA256-verify 比對通過後 `mv` 到 `_quarantine/`（不 rm，可逆）
+    - `MXF_1m_clean_all/`（16 個檔 SHA256 全 match）
+    - `GC_1min_2010-2024/`（15 個檔 SHA256 全 match）
+    - 共 126 MB 騰出
+    - manifest 寫在 `_quarantine/manifest_2026-05-13.jsonl`
+  - **Asset inventory baseline**：`scripts/build_inventory.py` 寫出 `meta/audit/asset_inventory.csv`（2526 files、2.9 GB），按 size desc 排序
+  - 修正 `DATA_ARCHITECTURE.md` 中誤把 ls 1K-blocks 解讀為 GB 的尺寸數字（825 GB → 2.9 GB）
+- Fallback：若要 rollback，`git revert M2` 後手動把 `_quarantine/{MXF_1m_clean_all,GC_1min_2010-2024}` mv 回 root；reference/seeds/*.yaml 即使刪掉 parquet 也可用 `python scripts/build_reference.py` 一鍵重建
+
