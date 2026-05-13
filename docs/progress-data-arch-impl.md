@@ -84,3 +84,24 @@
     3. `tw_inst_futures_daily` MXF 三 identity 全展開 ✓
 - 後續可接：M5 SUPPLEMENT/* 整理進 silver/macro + DuckDB catalog + 最終 smoke
 
+### M5 — Macro silver + DuckDB catalog + smoke test
+
+- Commit: M5 (`macro silver + DuckDB catalog + end-to-end smoke`)
+- 做了：
+  - **Macro ingester** (`sources/macro.py`)：掃 `SUPPLEMENT/{US_INDEX,US_FUTURES,US_SECTOR_ETF,COMMODITY,FX,TW_INDEX,ASIA,CREDIT}/*.parquet`、normalize 成 long、寫單檔 `silver/macro/macro_daily.parquet`（45 個 canonical symbols × 91,048 列、2.6 MB、0.3s）
+    - filename → canonical：GSPC→SPX、ES_F→ES、TWII→TAIEX、DX-Y_NYB→DXY、`<X>_TW`→`<X>`、JPY_X→USDJPY、000001_SS→SSEC 等
+    - USDTWD 特殊處理 prefixed cols
+  - **DuckDB catalog** (`common/catalog.py`)：`catalog/quant.duckdb`（268 KB）含 10 views + 2 巨集，全部讀 parquet（不複製資料）
+    - views: bars_1d / tw_inst_futures_daily / tw_inst_stock_daily / tw_margin_daily / tw_inst_market_daily / fundamentals_q / macro_daily / symbol_map / contract_specs / calendar_xtai
+    - macros: `tw_stock_with_inst(stock_id, start, end)`、`tw_stock_asof_fundamentals(...)`
+  - **`scripts/smoke_query.py`** 7 段 demo 全通：
+    1. catalog views 列表
+    2. symbol_map sample（多 asset_class）
+    3. **2330 bars × inst × margin** 2024-01-02~10 全 7 日對齊
+    4. **bars ASOF fundamentals_q**：2024-05-15 收盤後讀到 2024Q1 EPS（publish 同日）→ point-in-time zero leakage 證明
+    5. TAIFEX MXF fii net_oi_z60 趨勢
+    6. macro_daily 抽樣（VIX/SPX/TAIEX/USDTWD）
+    7. 全 silver row counts：bars 6.36M + inst_stock 6.35M + margin 3.5M + fund 200K + macro 91K + taifex 6.5K = 16.5M total
+  - **silver 總計**：bars 63 MB + flows 214 MB + fundamentals 21 MB + macro 2.6 MB ≈ 300 MB（原 TEJ 1.46 GB CSV 縮 5×）
+- Fallback：catalog 重建 `python -m qd_ingest.common.catalog`；silver 重建 `python -m qd_ingest.sources.<module>`
+
