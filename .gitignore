@@ -1,0 +1,92 @@
+# === 大型原始資料：永遠不入庫 ===
+# 所有舊有 data dump（W1 重組前的原貌）
+DATA_BY_SYMBOL/
+SUPPLEMENT/
+TEJ資料/
+三大法人買賣超/
+外資投信買賣超資料/
+台指期一分鐘/
+日k\ 期貨tquant\ lab/
+股票期貨/
+TAIFEX_BACKFILL_INBOX/
+ES/
+GC/
+NQ/
+GC_1min_2010-2024/
+MXF_1d_clean_all.parquet/
+MXF_1m_clean_all/
+TXO_1min_merged_*.parquet/
+選擇權日盤逐筆原始資料_TXO.parquet/
+
+# 散落 root 的 csv/parquet (W1 整理前)
+*.csv
+*.parquet
+
+# Archives
+*.zip
+*.rar
+*.7z
+
+# Images
+*.png
+*.jpg
+*.jpeg
+
+# === Medallion layers：data 不入庫，只追 .gitkeep + 目錄結構 ===
+bronze/**
+silver/**
+gold/**
+reference/**
+catalog/**
+meta/**
+_staging/**
+_quarantine/**
+
+# .gitkeep 例外
+!bronze/.gitkeep
+!silver/.gitkeep
+!gold/.gitkeep
+!reference/.gitkeep
+!catalog/.gitkeep
+!meta/.gitkeep
+!_staging/.gitkeep
+!**/.gitkeep
+
+# Reference 內小型 seed (yaml/json) 例外
+!reference/*.yaml
+!reference/*.yml
+!reference/*.json
+!reference/seeds/**
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# === IDE / editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# === Notebook output ===
+.ipynb_checkpoints/
+
+# === DuckDB lock / temp ===
+*.duckdb.wal
+*.duckdb.tmp
