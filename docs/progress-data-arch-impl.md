@@ -65,3 +65,22 @@
   - `tests/test_tej_stock.py`：5/5 通過
 - 後續可接：M4 寫 TAIFEX 三大法人、TWSE bfi82u、TEJ 個股法人/財報/融資券
 
+### M4 — TAIFEX + TWSE + TEJ inst/fund/margin ingesters
+
+- Commit: M4 (`TAIFEX + TWSE + TEJ inst/fund/margin ingesters`)
+- 做了：
+  - **TEJ extension** (`sources/tej.py`)
+    - `ingest_inst_stock_daily`：TWN_EWTINST1 → silver/flows/tw_inst_stock_daily（6,352,126 列，60 MB，~13s）
+    - `ingest_margin_daily`：TWN_EWGIN → silver/flows/tw_margin_daily（3,498,545 列，87 MB，~5s）
+    - `ingest_fundamentals_q`：TWN_EWIFINQ 單季 + 累季 → silver/fundamentals/fin_q（period_type 'Q' + 'YTD'，101281 + 101287 列，21 MB）
+    - 規範：千股 == 1 lot（無 scale 變動）、買賣超(千股) 直接視為 `*_net_lot`、`財務資料日 YYYYMM` 解析成 `'2024Q1'` fiscal_period、`publish_date` 保留為 point-in-time anchor
+  - **TAIFEX**（新檔 `sources/taifex.py`）：melt `SUPPLEMENT/TAIFEX/foreign_oi_daily.parquet`（wide：dealer/inv/fii × long/short/net 列）成 canonical long format（per `product + identity + trading_date`）。`inv → sitc` 正規化；`net_oi_z60` 帶過。寫 silver/flows/tw_inst_futures_daily（產品 MXF/TXF/TXO，2023-05~2026-05）
+  - **TWSE**（新檔 `sources/twse.py`）：bfi82u combined long CSV → tw_inst_market_daily。修掉 csv 同時帶 `identity`（中）+ `identity_en`（英）造成 rename 後重複欄位的 bug。目前只有 1 日（18 列）覆蓋——後續需擴更多日
+  - **🐞 重要 bug 修復**：chunked write 用 `existing_data_behavior='delete_matching'` 會在後續 chunk 寫 year=2010 時把上一 chunk 已寫的 year=2010 砍掉（pyarrow 把 partition value 視為刪除條件，但只 delete 出現在新 table 裡的值——不夠細，仍會清掉同 chunk 的不同列）。改成：在 ingest 開頭把整個 dest 目錄一次性 rm，之後 chunks 都用 `overwrite_or_ignore` 純追加。
+    - **驗證**：2330 2024 從 160 個交易日 → 242 個交易日（完整一年），全表 tw_stock 從原本部分 → 6,356,541 列完整
+  - **三條 join smoke** 全通：
+    1. `bars × inst × margin` on `(trading_date, stock_id)` ✓
+    2. `bars ASOF fundamentals_q` on `trading_date >= publish_date` ✓（point-in-time safe）
+    3. `tw_inst_futures_daily` MXF 三 identity 全展開 ✓
+- 後續可接：M5 SUPPLEMENT/* 整理進 silver/macro + DuckDB catalog + 最終 smoke
+
