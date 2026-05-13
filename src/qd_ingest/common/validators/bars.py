@@ -10,7 +10,7 @@ ASSET_CLASSES = {
     "us_futures", "us_etf", "us_index", "asia_index", "fx", "commodity", "tw_option",
 }
 SESSIONS = {"day", "ah", "eth", "rth"}
-QUALITY = {"ok", "gap", "holiday", "suspect", "imputed", "settlement"}
+QUALITY = {"ok", "gap", "holiday", "suspect", "imputed", "settlement", "cfd_proxy"}
 
 bars_1d_schema = DataFrameSchema(
     {

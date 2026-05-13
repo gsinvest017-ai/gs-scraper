@@ -16,6 +16,10 @@
 | M3 | 第一個完整 ingester：TEJ stock daily | `src/qd_ingest/sources/tej.py` + CLI、`silver/bars/bars_1d/asset_class=tw_stock/year=*/...parquet`、`tests/test_tej.py` | `M3:` |
 | M4 | 其餘台灣 ingester | TAIFEX 三大法人、TWSE bfi82u、TEJ 個股法人 / 財報 / 融資券 全部寫進 silver | `M4:` |
 | M5 | Macro silver + DuckDB catalog + smoke | SUPPLEMENT/* 整理進 silver/macro、`catalog/quant.duckdb` 含 views、`scripts/smoke_query.py` 跑出 2330 join | `M5:` |
+| M6 | histdata US futures 1m | NQ/ES/GC × 15 年 yearly parquet → `silver/bars/bars_1m/asset_class=us_futures/symbol=*/year=*` | `M6:` |
+| M7 | TW 期貨 + 股票期貨 silver | MXF 1m/1d、TX/MXF 連續月 → silver + gold/continuous；股票期貨 daily/intraday → silver/bars | `M7:` |
+| M8 | Gold features + derived | TXO daily features、cross-market features → gold；momentum/value factor stub | `M8:` |
+| M9 | Zipline adapter + backup + 最終 catalog | silver→zipline tquant bundle adapter、`scripts/backup_snapshot.sh`、catalog refresh、最終 smoke | `M9:` |
 
 ## 進度日誌
 
