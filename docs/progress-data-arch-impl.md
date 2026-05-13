@@ -47,3 +47,21 @@
   - 修正 `DATA_ARCHITECTURE.md` 中誤把 ls 1K-blocks 解讀為 GB 的尺寸數字（825 GB → 2.9 GB）
 - Fallback：若要 rollback，`git revert M2` 後手動把 `_quarantine/{MXF_1m_clean_all,GC_1min_2010-2024}` mv 回 root；reference/seeds/*.yaml 即使刪掉 parquet 也可用 `python scripts/build_reference.py` 一鍵重建
 
+### M3 — TEJ stock daily ingester（端到端）
+
+- Commit: M3 (`TEJ stock_daily end-to-end ingester`)
+- 做了：
+  - `src/qd_ingest/sources/tej.py::ingest_stock_daily()`：完整 transform→validate→upsert
+    - 從 `TEJ資料/TWN_EWPRCD_股價.csv` chunked 讀
+    - `證券碼` 拆 `1101 台泥` → `stock_id="1101"`
+    - 千股 → shares（`volume = kshare × 1000`，nullable Int64）
+    - 日期 anchor 在 TWSE 收盤 13:30 Asia/Taipei → 轉 UTC `ts_utc`
+    - `adj_factor = adj_close / close` 算出
+    - PyArrow schema enforced on write、pandera validate 每 chunk 前 100 row
+    - **重要 bug 發現並修**：chunked `read_csv` 給每 chunk non-zero RangeIndex（chunk 2 = 200000..399999），導致 DataFrame ctor 對 helper Series 做 outer-join 把列數翻倍 → 在 transform 一開始 `reset_index(drop=True)` 解掉
+  - `src/qd_ingest/common/io.py::write_silver_partitioned()`：用 pyarrow `write_to_dataset` + `delete_matching` 行 idempotent upsert
+  - **Ingest 結果**：`6,356,541` 列 2010-01-04~2025-12-31 → `silver/bars/bars_1d/asset_class=tw_stock/year=*/`（共 25 MB、16 個年分區、15.7 秒）
+  - **Smoke**：DuckDB 直接 `read_parquet(...)` 撈 2330 2024 前 5 日，OHLC 正確
+  - `tests/test_tej_stock.py`：5/5 通過
+- 後續可接：M4 寫 TAIFEX 三大法人、TWSE bfi82u、TEJ 個股法人/財報/融資券
+
