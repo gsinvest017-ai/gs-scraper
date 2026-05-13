@@ -25,7 +25,7 @@
 
 ### 1.1 規模與範圍
 
-- **總量**：~825 GB、2,539 個檔案（含 2,373 個 parquet/CSV）
+- **總量**：~2.9 GB、2,539 個檔案（含 2,373 個 parquet / CSV；最大為 TEJ CSV 共 1.46 GB）
 - **資產類別 7 大類**：
   - 台指期 / 小台（TXF / MXF）
   - TXO 選擇權
@@ -855,7 +855,7 @@ register('silver_tquant', silver_tquant_bundle, calendar_name='TEJ_XTAI')
 | **gold 全部** | — | **~500 MB** | — |
 | **bronze（保留原始）** | — | **~50 GB**（含 archive 解壓後） | — |
 
-整理後可從 ~825 GB 縮到 **~55 GB**（bronze）+ **~2 GB**（silver+gold）。
+整理後可從 ~2.9 GB 原貌縮到 **~1.5 GB**（bronze，含解壓 archive 但去除 D1/D2 重複）+ **~500 MB**（silver+gold，去除中間重複與 cp950 雙存）。
 
 ---
 

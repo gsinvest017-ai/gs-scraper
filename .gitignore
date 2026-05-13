@@ -52,11 +52,21 @@ _quarantine/**
 !_staging/.gitkeep
 !**/.gitkeep
 
-# Reference 內小型 seed (yaml/json) 例外
+# Reference 內小型 seed (yaml/json) + 編譯後 parquet 例外
 !reference/*.yaml
 !reference/*.yml
 !reference/*.json
+!reference/*.parquet
+!reference/seeds/
 !reference/seeds/**
+
+# 保留 audit manifest 與 inventory baseline（小檔，反正只進不出）
+!meta/
+!meta/audit/
+!meta/audit/*.csv
+!meta/audit/*.jsonl
+!_quarantine/
+!_quarantine/manifest_*.jsonl
 
 # === Python ===
 __pycache__/

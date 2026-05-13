@@ -1,0 +1,273 @@
+# Canonical symbol map. Seed only (hot symbols + indices/ETFs).
+# Stock symbols (TWSE/TPEX) are loaded from TEJ ingester (M3) and merged in.
+
+# === Taiwan futures ===
+- canonical_symbol: TXF
+  name_zh: 臺股期貨
+  name_en: TAIEX Futures
+  asset_class: tw_futures
+  exchange: TAIFEX
+  currency: TWD
+  taifex_code: TX
+  tej_id: TX
+  yahoo_ticker: null
+  contract_spec_id: TXF
+  underlying_symbol: TAIEX
+
+- canonical_symbol: MXF
+  name_zh: 小型臺指期貨
+  name_en: Mini TAIEX Futures
+  asset_class: tw_futures
+  exchange: TAIFEX
+  currency: TWD
+  taifex_code: MXF
+  tej_id: MTX
+  contract_spec_id: MXF
+  underlying_symbol: TAIEX
+
+- canonical_symbol: TXO
+  name_zh: 臺指選擇權
+  name_en: TAIEX Options
+  asset_class: tw_option
+  exchange: TAIFEX
+  currency: TWD
+  taifex_code: TXO
+  contract_spec_id: TXO
+  underlying_symbol: TAIEX
+
+# === Taiwan index / ETF ===
+- canonical_symbol: TAIEX
+  name_zh: 加權股價指數
+  name_en: TAIEX Index
+  asset_class: tw_index
+  exchange: TWSE
+  currency: TWD
+  yahoo_ticker: ^TWII
+  tej_id: Y9999
+
+- canonical_symbol: "0050"
+  name_zh: 元大台灣50
+  name_en: Yuanta TW50 ETF
+  asset_class: tw_etf
+  exchange: TWSE
+  currency: TWD
+  yahoo_ticker: 0050.TW
+  tej_id: "0050"
+
+- canonical_symbol: "0056"
+  name_zh: 元大高股息
+  name_en: Yuanta Hi-Div ETF
+  asset_class: tw_etf
+  exchange: TWSE
+  currency: TWD
+  yahoo_ticker: 0056.TW
+  tej_id: "0056"
+
+# === US futures ===
+- canonical_symbol: ES
+  name_zh: 標普500期貨
+  name_en: E-mini S&P 500
+  asset_class: us_futures
+  exchange: CME
+  currency: USD
+  yahoo_ticker: ES=F
+  histdata_ticker: spxusd
+  contract_spec_id: ES
+  underlying_symbol: SPX
+
+- canonical_symbol: NQ
+  name_zh: 那斯達克100期貨
+  name_en: E-mini Nasdaq-100
+  asset_class: us_futures
+  exchange: CME
+  currency: USD
+  yahoo_ticker: NQ=F
+  histdata_ticker: nsxusd
+  contract_spec_id: NQ
+  underlying_symbol: NDX
+
+- canonical_symbol: YM
+  name_zh: 道瓊期貨
+  name_en: E-mini Dow
+  asset_class: us_futures
+  exchange: CBOT
+  currency: USD
+  yahoo_ticker: YM=F
+  contract_spec_id: YM
+  underlying_symbol: DJI
+
+- canonical_symbol: RTY
+  name_zh: 羅素2000期貨
+  name_en: E-mini Russell 2000
+  asset_class: us_futures
+  exchange: CME
+  currency: USD
+  yahoo_ticker: RTY=F
+  contract_spec_id: RTY
+  underlying_symbol: RUT
+
+- canonical_symbol: GC
+  name_zh: 黃金期貨
+  name_en: Gold Futures
+  asset_class: us_futures
+  exchange: COMEX
+  currency: USD
+  yahoo_ticker: GC=F
+  histdata_ticker: xauusd
+  contract_spec_id: GC
+
+- canonical_symbol: CL
+  name_zh: 原油期貨
+  name_en: WTI Crude Oil
+  asset_class: us_futures
+  exchange: NYMEX
+  currency: USD
+  yahoo_ticker: CL=F
+  contract_spec_id: CL
+
+# === US index / ETF ===
+- canonical_symbol: SPX
+  name_zh: 標普500指數
+  name_en: S&P 500 Index
+  asset_class: us_index
+  exchange: NYSE
+  currency: USD
+  yahoo_ticker: ^GSPC
+
+- canonical_symbol: NDX
+  name_zh: 那斯達克100
+  name_en: Nasdaq-100 Index
+  asset_class: us_index
+  exchange: NASDAQ
+  currency: USD
+  yahoo_ticker: ^NDX
+
+- canonical_symbol: VIX
+  name_zh: VIX 波動率指數
+  name_en: CBOE VIX
+  asset_class: us_index
+  exchange: CBOE
+  currency: USD
+  yahoo_ticker: ^VIX
+
+- canonical_symbol: DJI
+  name_zh: 道瓊工業指數
+  name_en: Dow Jones Industrial
+  asset_class: us_index
+  exchange: NYSE
+  currency: USD
+  yahoo_ticker: ^DJI
+
+- canonical_symbol: SOX
+  name_zh: 費城半導體指數
+  name_en: PHLX Semiconductor
+  asset_class: us_index
+  exchange: NASDAQ
+  currency: USD
+  yahoo_ticker: ^SOX
+
+- canonical_symbol: RUT
+  name_zh: 羅素2000指數
+  name_en: Russell 2000
+  asset_class: us_index
+  exchange: NYSE
+  currency: USD
+  yahoo_ticker: ^RUT
+
+- canonical_symbol: TNX
+  name_zh: 10Y 美債殖利率
+  name_en: 10-Year US Treasury Yield
+  asset_class: us_index
+  exchange: CBOE
+  currency: USD
+  yahoo_ticker: ^TNX
+
+- canonical_symbol: IRX
+  name_zh: 13W 美國國庫券殖利率
+  name_en: 13-Week US T-Bill
+  asset_class: us_index
+  exchange: CBOE
+  currency: USD
+  yahoo_ticker: ^IRX
+
+- canonical_symbol: SPY
+  name_zh: SPDR S&P 500 ETF
+  name_en: SPDR S&P 500
+  asset_class: us_etf
+  exchange: NYSE
+  currency: USD
+  yahoo_ticker: SPY
+
+- canonical_symbol: QQQ
+  name_zh: Invesco Nasdaq-100 ETF
+  name_en: Invesco QQQ
+  asset_class: us_etf
+  exchange: NASDAQ
+  currency: USD
+  yahoo_ticker: QQQ
+
+- canonical_symbol: TLT
+  name_zh: 20+ 年美債 ETF
+  name_en: iShares 20+ Year Treasury
+  asset_class: us_etf
+  exchange: NASDAQ
+  currency: USD
+  yahoo_ticker: TLT
+
+- canonical_symbol: GLD
+  name_zh: 黃金 ETF
+  name_en: SPDR Gold Shares
+  asset_class: us_etf
+  exchange: NYSE
+  currency: USD
+  yahoo_ticker: GLD
+
+# === FX ===
+- canonical_symbol: USDTWD
+  name_zh: 美元/新台幣
+  name_en: USD/TWD
+  asset_class: fx
+  exchange: OTC
+  currency: TWD
+  yahoo_ticker: TWD=X
+
+- canonical_symbol: DXY
+  name_zh: 美元指數
+  name_en: US Dollar Index
+  asset_class: fx
+  exchange: ICE
+  currency: USD
+  yahoo_ticker: "DX-Y.NYB"
+
+- canonical_symbol: EURUSD
+  name_zh: 歐元/美元
+  name_en: EUR/USD
+  asset_class: fx
+  exchange: OTC
+  currency: USD
+  yahoo_ticker: EURUSD=X
+
+# === Asia indices ===
+- canonical_symbol: HSI
+  name_zh: 恒生指數
+  name_en: Hang Seng Index
+  asset_class: asia_index
+  exchange: HKEX
+  currency: HKD
+  yahoo_ticker: ^HSI
+
+- canonical_symbol: N225
+  name_zh: 日經225
+  name_en: Nikkei 225
+  asset_class: asia_index
+  exchange: TSE
+  currency: JPY
+  yahoo_ticker: ^N225
+
+- canonical_symbol: KS11
+  name_zh: 韓國KOSPI
+  name_en: KOSPI
+  asset_class: asia_index
+  exchange: KRX
+  currency: KRW
+  yahoo_ticker: ^KS11

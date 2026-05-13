@@ -1,0 +1,147 @@
+# Contract specifications. Hand-curated. Source: TAIFEX / CME product pages.
+# product_id: canonical short code used across symbol_map + silver tables.
+- product_id: TXF
+  exchange: TAIFEX
+  multiplier: 200       # NTD per index point
+  tick_size: 1.0
+  tick_value: 200.0
+  currency: TWD
+  session_open_local: "08:45"
+  session_close_local: "13:45"
+  has_afterhours: true
+  ah_open_local: "15:00"
+  ah_close_local: "05:00"
+  settle_method: cash
+  notes: "Taiwan Stock Index Futures (大台)"
+
+- product_id: MXF
+  exchange: TAIFEX
+  multiplier: 50
+  tick_size: 1.0
+  tick_value: 50.0
+  currency: TWD
+  session_open_local: "08:45"
+  session_close_local: "13:45"
+  has_afterhours: true
+  ah_open_local: "15:00"
+  ah_close_local: "05:00"
+  settle_method: cash
+  notes: "Mini Taiwan Stock Index Futures (小台)"
+
+- product_id: TXO
+  exchange: TAIFEX
+  multiplier: 50        # NTD per index point
+  tick_size: 0.1
+  tick_value: 5.0
+  currency: TWD
+  session_open_local: "08:45"
+  session_close_local: "13:45"
+  has_afterhours: true
+  ah_open_local: "15:00"
+  ah_close_local: "05:00"
+  settle_method: cash
+  notes: "TAIEX Options (台指選擇權)"
+
+- product_id: ES
+  exchange: CME
+  multiplier: 50
+  tick_size: 0.25
+  tick_value: 12.5
+  currency: USD
+  session_open_local: "08:30"
+  session_close_local: "15:15"
+  has_afterhours: true
+  ah_open_local: "17:00"
+  ah_close_local: "08:30"
+  settle_method: cash
+  notes: "E-mini S&P 500 Futures"
+
+- product_id: NQ
+  exchange: CME
+  multiplier: 20
+  tick_size: 0.25
+  tick_value: 5.0
+  currency: USD
+  session_open_local: "08:30"
+  session_close_local: "15:15"
+  has_afterhours: true
+  ah_open_local: "17:00"
+  ah_close_local: "08:30"
+  settle_method: cash
+  notes: "E-mini NASDAQ-100 Futures"
+
+- product_id: YM
+  exchange: CBOT
+  multiplier: 5
+  tick_size: 1.0
+  tick_value: 5.0
+  currency: USD
+  session_open_local: "08:30"
+  session_close_local: "15:15"
+  has_afterhours: true
+  settle_method: cash
+  notes: "E-mini Dow Jones Futures"
+
+- product_id: RTY
+  exchange: CME
+  multiplier: 50
+  tick_size: 0.10
+  tick_value: 5.0
+  currency: USD
+  session_open_local: "08:30"
+  session_close_local: "15:15"
+  has_afterhours: true
+  settle_method: cash
+  notes: "E-mini Russell 2000 Futures"
+
+- product_id: GC
+  exchange: COMEX
+  multiplier: 100
+  tick_size: 0.10
+  tick_value: 10.0
+  currency: USD
+  session_open_local: "07:20"
+  session_close_local: "13:30"
+  has_afterhours: true
+  settle_method: physical
+  notes: "Gold Futures"
+
+- product_id: CL
+  exchange: NYMEX
+  multiplier: 1000
+  tick_size: 0.01
+  tick_value: 10.0
+  currency: USD
+  has_afterhours: true
+  settle_method: physical
+  notes: "WTI Crude Oil Futures"
+
+- product_id: NG
+  exchange: NYMEX
+  multiplier: 10000
+  tick_size: 0.001
+  tick_value: 10.0
+  currency: USD
+  has_afterhours: true
+  settle_method: physical
+  notes: "Natural Gas Futures"
+
+- product_id: HG
+  exchange: COMEX
+  multiplier: 25000
+  tick_size: 0.0005
+  tick_value: 12.5
+  currency: USD
+  has_afterhours: true
+  settle_method: physical
+  notes: "Copper Futures"
+
+- product_id: SI
+  exchange: COMEX
+  multiplier: 5000
+  tick_size: 0.005
+  tick_value: 25.0
+  currency: USD
+  has_afterhours: true
+  settle_method: physical
+  notes: "Silver Futures"
