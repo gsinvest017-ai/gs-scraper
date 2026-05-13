@@ -109,3 +109,65 @@
   - **silver 總計**：bars 63 MB + flows 214 MB + fundamentals 21 MB + macro 2.6 MB ≈ 300 MB（原 TEJ 1.46 GB CSV 縮 5×）
 - Fallback：catalog 重建 `python -m qd_ingest.common.catalog`；silver 重建 `python -m qd_ingest.sources.<module>`
 
+---
+
+## Phase 2（M6–M9）— histdata US + TW futures silver/gold + zipline adapter + 備份
+
+### M6 — histdata US futures 1m ingester
+
+- Commit: M6 (`histdata US futures 1m ingester (NQ/ES/GC 2010-2024)`)
+- 做了：
+  - `sources/histdata.py::ingest_us_futures_1m()`：讀 `NQ/`、`ES/`、`GC/` 下的 yearly parquet
+  - 13.9M 列總計（NQ 4.65M + ES 4.03M + GC 5.25M × 15 年）→ `silver/bars/bars_1m/asset_class=us_futures/symbol=*/year=*`
+  - 由於 histdata 是 CFD/spot 而非真正 CME 期貨（embedded `volume_not_real, cfd_not_cme_future`），每列 `quality_flag='cfd_proxy'`，並擴充 `QUALITY` enum 加入此值
+  - 18 秒處理完 14M 列
+
+### M7 — TW futures + 股票期貨 silver/gold
+
+- Commit: M7 (`TW futures + stock futures silver/gold ingester`)
+- 做了：
+  - `sources/tw_futures.py::ingest_mxf()`：MXF_1m_clean_all.parquet（1.67M）+ MXF_1d_clean_all（1523）→ `silver/bars/bars_{1m,1d}/asset_class=tw_futures/symbol=MXF/year=*`
+    - Asia/Taipei datetime → UTC ts_utc
+    - `is_settlement_day` → `quality_flag='settlement'`
+    - `adj_factor = adj_close/close` 反推
+  - `ingest_tw_futures_continuous()`：TX + MTX 連續月（TEJ tquant lab）→ `gold/continuous/{tx,mtx}_continuous_d.parquet`（各 2518 列 2016-01-04~2026-05-08，含 adj_factor）
+  - `ingest_stock_futures()`：
+    - 3.38M 列 stock_futures_daily × 261 underlyings → `silver/bars/bars_1d/asset_class=tw_stock_futures`（symbol=underlying_code、contract_id=futures_code+delivery_month、session 一般→day / 盤後→ah）
+    - 540K 列 continuous_near_month → `gold/continuous/stock_futures_continuous_d.parquet`
+
+### M8 — Gold features + derived
+
+- Commit: M8 (`gold features (TXO + cross-market + stock factor daily)`)
+- 做了：
+  - `sources/derived.py`：
+    - `copy_txo_daily_features()`：SUPPLEMENT/DERIVED/txo_daily_features → gold（1481 列，含 PCR/max-pain/IV proxy）
+    - `copy_cross_market_features()`：cross_market_features → gold（2080 列 × 27 cols，NQ/ES/VIX/gold/oil/dxy/nikkei ret + ratio）
+    - `build_stock_factor_daily()`：用 Polars lazy + window 從 silver/bars/bars_1d (tw_stock) 算 ret_{1,5,20,60,120}d、`mom_12_1`（Jegadeesh-Titman）、`vol_{20,60}d`、`turnover_20d` → 6.36M 列 × 2109 symbols × 11 cols，1.7 秒
+  - 驗證：2024-12-31 top mom_12_1 排序合理（小型股居多）
+
+### M9 — Zipline-tej bundle adapter + backup + 最終 catalog
+
+- Commit: M9 (`zipline adapter + backup snapshot + catalog refresh`)
+- 做了：
+  - `src/qd_ingest/sinks/zipline_bundle.py`：silver bars_1d (tw_stock) → zipline daily bundle
+    - `silver_tquant_bundle()` 函式餵 zipline 的 `asset_db_writer`、`daily_bar_writer`、`adjustment_writer`
+    - `register_silver_bundle()` 可在 `~/.zipline/extension.py` 一行註冊；之後 `zipline ingest -b silver_tquant` 即可
+    - zipline 是 lazy import，qd_ingest 不依賴 zipline-tej
+  - `scripts/backup_snapshot.sh`：rsync 整套到 `<target>/<YYYY-MM-DD>/` 並更新 `latest` symlink（預設 target `/mnt/d/QUANTDATA-snapshots`，WSL2-friendly）
+  - **Catalog 大擴**：原 10 → **18 個 views + macros**
+    - 新增 `bars_1m`、`tw_stock_bars`、`tx_continuous_d`、`mtx_continuous_d`、`stock_futures_continuous_d`、`txo_daily_features`、`cross_market_features`、`stock_factor_daily`
+    - `bars_1d` 因為不同 asset_class 用不同 partition key（tw_stock: year only; tw_futures: symbol+year）→ 改用 `hive_partitioning=FALSE, union_by_name=TRUE`
+    - 新加 `tw_stock_bars` convenience view 避免 `symbol='2330'` 在 tw_stock 與 tw_stock_futures 之間 Cartesian product；macros 更新使用之
+    - 新加 `bars_1m_for(asset_class, symbol, start_ts, end_ts)` macro
+  - **Smoke (`smoke_query.py`)** 擴充為 11 段，全 PASS
+  - **總資料量**：35.8M rows across 18 tables（bars_1m 15.6M + bars_1d 9.7M + stock_factor 6.4M + inst_stock 6.4M + margin 3.5M + stkfut_cont 540K + fund_q 203K + macro 91K + ...）
+
+## 完成總結
+
+10 個 commits（M1–M9 each + progress log），原始 ~3 GB CSV/parquet → 結構化 medallion lakehouse：
+- Bronze 在 `bronze/`（目前指向既有目錄，仍待 W1 重組）
+- Silver 約 350 MB、Gold 約 60 MB、catalog DB 318 KB
+- DuckDB catalog 一行 `duckdb.connect('catalog/quant.duckdb')` 即可 SQL 任何表
+- Zipline-tej bundle 可即接（需安裝 zipline-tej + TEJ_API_KEY）
+- 備份腳本可 cron 化（建議 `0 3 * * * cd /home/kevin/gs-scraper/QUANTDATA && scripts/backup_snapshot.sh`）
+
