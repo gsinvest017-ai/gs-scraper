@@ -39,15 +39,27 @@ def build(*, db_path=None) -> None:
     """)
 
     # === Silver bars ===
+    # NOTE: hive_partitioning=FALSE because different asset classes use different partition
+    # keys (tw_stock: year only; tw_futures: symbol+year). The asset_class/symbol/year
+    # columns are already present *inside* each parquet, so no info is lost.
     con.execute(f"""
         CREATE OR REPLACE VIEW bars_1d AS
         SELECT * FROM read_parquet(
             '{_rel(SILVER / "bars" / "bars_1d")}/**/*.parquet',
-            hive_partitioning=TRUE
+            hive_partitioning=FALSE,
+            union_by_name=TRUE
         );
     """)
-    # bars_1m has no data yet but pre-register the view target (will return empty for now)
-    # Actually skip until data exists, or guard with try/except in queries.
+    bars_1m_root = SILVER / "bars" / "bars_1m"
+    if bars_1m_root.exists() and any(bars_1m_root.rglob("*.parquet")):
+        con.execute(f"""
+            CREATE OR REPLACE VIEW bars_1m AS
+            SELECT * FROM read_parquet(
+                '{_rel(bars_1m_root)}/**/*.parquet',
+                hive_partitioning=FALSE,
+                union_by_name=TRUE
+            );
+        """)
 
     # === Silver flows ===
     for tbl in ("tw_inst_futures_daily", "tw_inst_stock_daily", "tw_margin_daily", "tw_inst_market_daily"):
@@ -80,36 +92,64 @@ def build(*, db_path=None) -> None:
             SELECT * FROM read_parquet('{_rel(macro_fp)}');
         """)
 
-    # === Gold (placeholders for future) ===
-    # gold/features/, gold/continuous/ -- not yet populated
+    # === Gold ===
+    for name, fp in [
+        ("tx_continuous_d",  GOLD / "continuous" / "tx_continuous_d.parquet"),
+        ("mtx_continuous_d", GOLD / "continuous" / "mtx_continuous_d.parquet"),
+        ("stock_futures_continuous_d", GOLD / "continuous" / "stock_futures_continuous_d.parquet"),
+        ("txo_daily_features",         GOLD / "features" / "txo_daily_features.parquet"),
+        ("cross_market_features",      GOLD / "features" / "cross_market_features.parquet"),
+        ("stock_factor_daily",         GOLD / "features" / "stock_factor_daily.parquet"),
+    ]:
+        if fp.exists():
+            con.execute(f"""
+                CREATE OR REPLACE VIEW {name} AS
+                SELECT * FROM read_parquet('{_rel(fp)}');
+            """)
 
     # === Convenience macros ===
+    # Filter b.asset_class = 'tw_stock' to avoid Cartesian product with tw_stock_futures
+    # (the stock-futures underlying_code shares the same '2330' symbol).
+    con.execute("""
+        CREATE OR REPLACE VIEW tw_stock_bars AS
+            SELECT * FROM bars_1d
+            WHERE asset_class = 'tw_stock' AND session = 'day';
+    """)
     con.execute("""
         CREATE OR REPLACE MACRO tw_stock_with_inst(stock_id_, start_, end_) AS TABLE
             SELECT b.trading_date, b.symbol, b.close, b.volume,
                    i.foreign_net_lot, i.sitc_net_lot, i.dealer_net_lot, i.total_net_lot,
                    m.margin_balance_lot, m.short_balance_lot, m.short_to_margin_pct
-            FROM bars_1d b
-            LEFT JOIN tw_inst_stock_daily i USING (trading_date)
-            LEFT JOIN tw_margin_daily m USING (trading_date, stock_id)
-            WHERE b.asset_class = 'tw_stock'
-              AND b.symbol = stock_id_
-              AND i.stock_id = stock_id_
+            FROM tw_stock_bars b
+            LEFT JOIN tw_inst_stock_daily i
+              ON b.trading_date = i.trading_date AND b.symbol = i.stock_id
+            LEFT JOIN tw_margin_daily m
+              ON b.trading_date = m.trading_date AND b.symbol = m.stock_id
+            WHERE b.symbol = stock_id_
               AND b.trading_date BETWEEN start_ AND end_;
     """)
 
     con.execute("""
         CREATE OR REPLACE MACRO tw_stock_asof_fundamentals(stock_id_, start_, end_) AS TABLE
             SELECT b.trading_date, b.close, f.fiscal_period, f.publish_date, f.eps, f.roe_post
-            FROM bars_1d b
-            ASOF LEFT JOIN fundamentals_q f
+            FROM tw_stock_bars b
+            ASOF LEFT JOIN (SELECT * FROM fundamentals_q WHERE period_type = 'Q') f
               ON b.symbol = f.stock_id
               AND b.trading_date >= f.publish_date
-            WHERE b.asset_class = 'tw_stock'
-              AND b.symbol = stock_id_
-              AND f.period_type = 'Q'
+            WHERE b.symbol = stock_id_
               AND b.trading_date BETWEEN start_ AND end_;
     """)
+
+    # bars_1m intraday by symbol
+    if bars_1m_root.exists() and any(bars_1m_root.rglob("*.parquet")):
+        con.execute("""
+            CREATE OR REPLACE MACRO bars_1m_for(asset_class_, symbol_, start_ts_, end_ts_) AS TABLE
+                SELECT * FROM bars_1m
+                WHERE asset_class = asset_class_
+                  AND symbol = symbol_
+                  AND ts_utc BETWEEN start_ts_ AND end_ts_
+                ORDER BY ts_utc;
+        """)
 
     views = con.sql("SHOW TABLES").df()
     console.log(f"[catalog] built {len(views)} views/macros at {db}")
