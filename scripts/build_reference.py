@@ -9,6 +9,7 @@ Idempotent: rerun overwrites.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ import pyarrow.parquet as pq
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+RAW_ROOT = Path(os.environ.get("QUANTDATA_RAW", ROOT.parent / "RAW_SOURCES"))
 SEEDS = ROOT / "reference" / "seeds"
 OUT = ROOT / "reference"
 
@@ -64,8 +66,8 @@ def build_calendar_xtai() -> None:
     """Derive XTAI trading dates from existing TEJ stock CSV if present;
     otherwise fall back to MXF cleaned daily parquet."""
     dates: pd.Series | None = None
-    tej_csv = ROOT / "TEJ資料" / "TWN_EWPRCD_股價.csv"
-    mxf_pq = ROOT / "MXF_1d_clean_all.parquet" / "MXF_1d_clean_all.parquet"
+    tej_csv = RAW_ROOT / "TEJ資料" / "TWN_EWPRCD_股價.csv"
+    mxf_pq = RAW_ROOT / "MXF_1d_clean_all.parquet" / "MXF_1d_clean_all.parquet"
 
     if tej_csv.exists():
         # ~6M rows; read date col only

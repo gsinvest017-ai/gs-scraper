@@ -17,7 +17,7 @@ import pyarrow.parquet as pq
 from rich.console import Console
 
 from ..common.audit import IngestRecord, sha256_file, write_audit
-from ..common.paths import ROOT, silver_macro
+from ..common.paths import RAW_ROOT, silver_macro
 
 console = Console()
 
@@ -134,7 +134,7 @@ def ingest_macro_daily(*, dry_run: bool = False) -> dict:
     """Walk SUPPLEMENT/* parquets -> silver/macro/macro_daily.parquet (single file)."""
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    supp = ROOT / "SUPPLEMENT"
+    supp = RAW_ROOT / "SUPPLEMENT"
     dest = silver_macro() / "macro_daily.parquet"
     parts: list[pd.DataFrame] = []
     files_seen = 0

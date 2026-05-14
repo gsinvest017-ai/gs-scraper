@@ -23,7 +23,7 @@ from rich.console import Console
 
 from ..common.audit import IngestRecord, sha256_file, write_audit
 from ..common.io import write_silver_partitioned
-from ..common.paths import GOLD, ROOT, silver_bars
+from ..common.paths import GOLD, RAW_ROOT, silver_bars
 
 console = Console()
 
@@ -73,7 +73,7 @@ def ingest_mxf(*, dry_run: bool = False) -> dict:
     summary: dict = {"mxf_1m": None, "mxf_1d": None, "elapsed_sec": 0.0}
 
     # --- 1m ---
-    fp = ROOT / "MXF_1m_clean_all.parquet"
+    fp = RAW_ROOT / "MXF_1m_clean_all.parquet"
     if fp.exists():
         sha = sha256_file(fp)
         console.log(f"[MXF 1m] reading {fp.name} sha256={sha[:12]}...")
@@ -128,7 +128,7 @@ def ingest_mxf(*, dry_run: bool = False) -> dict:
             ))
 
     # --- 1d ---
-    fp1d = ROOT / "MXF_1d_clean_all.parquet" / "MXF_1d_clean_all.parquet"
+    fp1d = RAW_ROOT / "MXF_1d_clean_all.parquet" / "MXF_1d_clean_all.parquet"
     if fp1d.exists():
         sha = sha256_file(fp1d)
         console.log(f"[MXF 1d] reading {fp1d.name} sha256={sha[:12]}...")
@@ -193,7 +193,7 @@ def ingest_mxf(*, dry_run: bool = False) -> dict:
 
 def ingest_tw_futures_continuous(*, dry_run: bool = False) -> dict:
     """日k 期貨tquant lab/{TX,MTX}_continuous_adj_back.parquet -> gold/continuous/{tx,mtx}_continuous_d.parquet."""
-    src_dir = ROOT / "日k 期貨tquant lab"
+    src_dir = RAW_ROOT / "日k 期貨tquant lab"
     dest_dir = GOLD / "continuous"
     dest_dir.mkdir(parents=True, exist_ok=True)
     summary: dict = {}
@@ -262,7 +262,7 @@ def ingest_stock_futures(*, dry_run: bool = False) -> dict:
     """股票期貨/{stock_futures_daily,continuous_near_month}.parquet."""
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    src_dir = ROOT / "股票期貨"
+    src_dir = RAW_ROOT / "股票期貨"
     summary: dict = {}
 
     # --- daily (per-contract, all delivery months) ---

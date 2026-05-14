@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+
+# Raw, pre-medallion source data (TEJ CSVs, SUPPLEMENT parquets, vendor dumps).
+# Lives outside the repo by default so QUANTDATA stays code + medallion-only.
+# Override with QUANTDATA_RAW env var to point elsewhere.
+RAW_ROOT = Path(os.environ.get("QUANTDATA_RAW", ROOT.parent / "RAW_SOURCES"))
 
 BRONZE = ROOT / "bronze"
 SILVER = ROOT / "silver"

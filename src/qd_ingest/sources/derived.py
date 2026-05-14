@@ -20,13 +20,13 @@ import pyarrow.parquet as pq
 from rich.console import Console
 
 from ..common.audit import IngestRecord, sha256_file, write_audit
-from ..common.paths import GOLD, ROOT, SILVER
+from ..common.paths import GOLD, RAW_ROOT, SILVER
 
 console = Console()
 
 
 def copy_txo_daily_features() -> dict:
-    src = ROOT / "SUPPLEMENT" / "DERIVED" / "txo_daily_features.parquet"
+    src = RAW_ROOT / "SUPPLEMENT" / "DERIVED" / "txo_daily_features.parquet"
     dest = GOLD / "features" / "txo_daily_features.parquet"
     if not src.exists():
         console.log(f"[red]missing {src}[/red]")
@@ -51,7 +51,7 @@ def copy_txo_daily_features() -> dict:
 
 
 def copy_cross_market_features() -> dict:
-    src = ROOT / "SUPPLEMENT" / "DERIVED" / "cross_market_features.parquet"
+    src = RAW_ROOT / "SUPPLEMENT" / "DERIVED" / "cross_market_features.parquet"
     dest = GOLD / "features" / "cross_market_features.parquet"
     if not src.exists():
         console.log(f"[red]missing {src}[/red]")
@@ -64,7 +64,7 @@ def copy_cross_market_features() -> dict:
     elif "date" not in df.columns:
         # Sometimes pyarrow strips index; if so date isn't recoverable — use US_FUTURES NQ_F_daily as alignment
         # Cheap fallback: count rows == nq_f_daily length; reattach
-        nq_fp = ROOT / "SUPPLEMENT" / "US_FUTURES" / "NQ_F_daily.parquet"
+        nq_fp = RAW_ROOT / "SUPPLEMENT" / "US_FUTURES" / "NQ_F_daily.parquet"
         nq = pq.read_table(nq_fp).to_pandas()
         if len(df) == len(nq):
             df.insert(0, "date", nq.index)
