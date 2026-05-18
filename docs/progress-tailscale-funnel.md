@@ -38,7 +38,16 @@ URL 格式預期：`https://desktop-p44q3ni-1.tailffb0ce.ts.net`，自帶 Let's 
 
 ## 進度日誌
 
-（每完成一個 milestone 追加）
+### M2 — `scripts/tailscale_funnel.sh`
+
+- 新增 wrapper script，支援 `check / start / stop / status / url`。
+- `check` 用 `tailscale serve reset` 當 write-side probe，能正確判讀 operator 是否設好；operator 未設時跳過後續兩道檢查（因為 funnel/cert 也都被 access-denied，看不出真實狀態）。
+- `start` 嘗試 `tailscale funnel --bg`，依錯誤字串輸出 DIAGNOSIS：
+  - `access denied` → 提示 `sudo tailscale set --operator=$USER`
+  - `funnel is not enabled` → 提示 admin magic-link
+  - `https.*cert` → 提示 admin HTTPS toggle
+- 過程踩到的 bug：`set -e` 會讓 `out=$(tailscale funnel --bg ...)` 在 non-zero exit 時導致 script 早退，改包 `set +e/-e`。
+- 實測 `check` 正確抓到「operator 未設」，`start` 也正確輸出 DIAGNOSIS。
 
 ## Fallback 指引
 
