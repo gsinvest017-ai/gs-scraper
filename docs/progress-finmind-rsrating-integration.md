@@ -108,7 +108,7 @@ qc_stock_price_diff  ← TEJ ⨯ FinMind 2010+ 重疊段對帳
 |---|---|---|
 | **M1** | 寫本份進度文件（設計 + 路線） | ✅ |
 | **M2** | 解 RS_Rating 7z 抽出 source code → `_quarantine/rs_rating_unpacked/` + 留 manifest | ✅ |
-| **M3** | 寫 `docs/spec-gold-rs-rating-daily.md`（演算法規格 + DuckDB SQL skeleton，**不執行**） | ⏳ |
+| **M3** | 寫 `docs/spec-gold-rs-rating-daily.md`（演算法規格 + DuckDB SQL skeleton，**不執行**） | ✅ |
 | M4 | 等 `quantdata-scraper` session 完成 TEJ 寫入，解 FinMind zip 到 `bronze/finmind/finmind_2026-05-18.sqlite` + SHA256 + manifest | 未開始 |
 | M5 | DuckDB ATTACH FinMind + 寫 `qc_stock_price_diff` view（100 檔 sample 對 TEJ 5%） | 未開始 |
 | M6 | 若 QC 通過：寫 `src/qd_ingest/finmind.py` 跑 2000-2009 silver 補完 | 未開始 |
@@ -143,7 +143,18 @@ Manifest 落在 `_quarantine/manifest_rs_rating_2026-05-18.jsonl`（受 `.gitign
 
 `_quarantine/rs_rating_unpacked/` 本身依 `.gitignore` 規則不入版控，避免把第三方 source 灌進 repo。要刪除直接 `rm -rf` 即可，manifest 留下追溯記錄。
 
-### M3 — pending
+### M3 — `gold.rs_rating_daily` 規格 draft
+
+落地 `docs/spec-gold-rs-rating-daily.md`，~280 行。內容：
+
+1. **演算法** 照搬 `compute_rs_ranking()` line 171-206：5 個月份 anchor → 1M / 1Q / 1Y 三種 lookback → cross-sectional `PERCENT_RANK()` → `floor(1 + 98·pct_rank).clip(1,99)`。
+2. **資料源** 是現有 `bars_1d` view（filter `asset_class='tw_stock'` AND `exchange IN ('TWSE','TPEX')`），不重抓。
+3. **schema** 設計為 `(trading_date, symbol, lookback)` 主鍵，三種 lookback 同表，分區按 `lookback × year`。
+4. **DuckDB SQL skeleton** 用 5 個 bucket join + `PERCENT_RANK()` 一次 SQL 出完一個 as_of 的全市場 ranking；driver 逐日跑寫 parquet。
+5. **5 個 open question** 已列：close vs adj_close（OQ-1）、calendar vs trading-day anchor（OQ-2）、DuckDB tie 規則 vs pandas（OQ-3）、興櫃納入（OQ-4）、sub-universe rank（OQ-5）。
+6. **Validation plan**：等有人在 Windows 跑過原版 exe 之後，用 `daily_close_wide.parquet` 做 reference 比對；無 fixture 前先做分佈 sanity check。
+
+**未執行**：本次只寫規格，沒寫 driver、沒跑 ingest、沒建 view。等 quantdata-scraper session 結束 + DuckDB 寫鎖釋放後接 M4。
 
 ---
 
