@@ -38,6 +38,49 @@ URL 格式預期：`https://desktop-p44q3ni-1.tailffb0ce.ts.net`，自帶 Let's 
 
 ## 進度日誌
 
+### M3 — 卡關：三道門檻全部需要使用者親自完成
+
+不在 agent 能執行範圍內：
+
+| # | 動作 | 為何 agent 不能做 |
+|---|---|---|
+| A | `sudo tailscale set --operator=kevin` | sudo 要密碼，agent 的 Bash 沒 stdin、無法輸入 |
+| B | 點 `https://login.tailscale.com/f/funnel?node=nfAHt8nSqn11CNTRL` | 要瀏覽器（且機器沒 `xdg-open`） |
+| C | 點 https://login.tailscale.com/admin/dns 啟用 HTTPS Certificates | 同上 |
+
+按 /safe-yolo 第 4 條卡關處理規則：commit 已可運行狀態（M1+M2），把 handoff 寫進進度檔。
+
+**使用者要依序做的三件事**（合計約 30 秒）：
+
+```bash
+# 1. 設定本機 operator（sudo 提示輸密碼）
+sudo tailscale set --operator=$USER
+
+# 2. 開瀏覽器點以下 magic-link：
+#    https://login.tailscale.com/f/funnel?node=nfAHt8nSqn11CNTRL
+#    → 會帶你到 Tailscale Admin → 直接 enable funnel for this node
+
+# 3. 開瀏覽器點：
+#    https://login.tailscale.com/admin/dns
+#    → 找 "HTTPS Certificates" 區 → 點 Enable
+
+# 4. 確認三道都過：
+cd /home/kevin/gs-scraper/QUANTDATA
+scripts/tailscale_funnel.sh check
+# 預期 4 項都顯示 OK
+
+# 5. 啟動 funnel
+scripts/tailscale_funnel.sh start
+# 預期輸出：https://desktop-p44q3ni-1.tailffb0ce.ts.net
+
+# 6. 瀏覽器打開那個 URL，應該就會看到 DuckDB UI
+```
+
+### M4 — Blocked
+
+需 user 完成 M3 三步後才能進行（actual funnel 拉起 + 公開 URL HTTP 200 驗證）。
+做完後 user 跑 `scripts/tailscale_funnel.sh start` 並把輸出貼回，agent 就能驗證並收尾。
+
 ### M2 — `scripts/tailscale_funnel.sh`
 
 - 新增 wrapper script，支援 `check / start / stop / status / url`。
