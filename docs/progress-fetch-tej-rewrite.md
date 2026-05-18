@@ -39,6 +39,20 @@
 
 ## 進度日誌
 
+### M2 — 重寫 `scripts/fetch_tej.py`
+
+完成項目：
+
+- 拋掉原本 5 個 logical table 的設計，新版 3 個：`stock_daily / inst_stock / margin`。
+- 上游只打 2 張 API 表：`TWN/APIPRCD`（給 stock_daily）+ `TWN/APISHRACT`（給 inst_stock 跟 margin **共用**，少一次 API 呼叫）。
+- 3 個 schema adapter：
+  - `adapt_apiprcd_to_ew_stock` — 把 API 中文 cols 轉成 EW 中文 cols；`OHLC × adjfac` 算除權息調整 OHLC。
+  - `adapt_apishract_to_ew_inst_stock` — join APIPRCD 拿流通在外股數，再用 `持股率% × 股數 / 100` 回算「外資/投信/自營總持股數」。自營商「自行 + 避險」相加成 EW 的單一自營欄。
+  - `adapt_apishract_to_ew_margin` — 1 張 = 1 千股，直接 rename；融資/融券使用率用 `餘額 / 限額 × 100` 回算（EW 直接給，APISHRACT 沒給）。
+- Fundamentals 在新版 **不暴露**（`--table` choices 把 `fundamentals_*` 拿掉），等之後另開任務從 `AINVFINB` 算 EWIFINQ ratios。
+- `--append-since-silver` 邏輯保留並改良：對 3 個 table 各自查 silver max，取最小值當 union 起點，APIPRCD/APISHRACT 各跑一次而不是三次。
+- `--dry-run` 跑通：3 個 table 都從 2026-01-01 起跳到 2026-05-18，等待 M3 真打。
+
 ### M1 — API 表 schema 盤點
 
 實際打 `tejapi.table_info()` + 小量試打 2330 2026-01-01..10 後的真實對應：
