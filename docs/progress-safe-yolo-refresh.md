@@ -44,6 +44,39 @@ DuckDB UI session 占用 lock（PID 1594 `duckdb -ui catalog/quant.duckdb`）—
 
 ## 進度日誌
 
+### M4 — Catalog rebuild + smoke test
+
+完成項目：
+
+- 因為 `duckdb -ui` UI session（PID 1594）仍持有 `catalog/quant.duckdb` 的寫入 lock，無法直接覆蓋。改用 `build-catalog --db-path catalog/quant_new.duckdb` 建到 staging 檔。
+- Staging catalog 含全部 18 個 view + 3 個 macro，與線上版完全一致。
+- 對 staging 跑 11 段 smoke test 全部 PASS：
+  - `symbol_map` 30 列 / `calendar_xtai` 2010-01-04 → 2025-12-31
+  - `tw_stock_bars` symbol=2330 共 3,924 列
+  - `tw_inst_stock_daily` 2024 年 442,875 列、`tw_margin_daily` 220,541 列
+  - `fundamentals_q period_type='Q'` 101,281 列
+  - `tx_continuous_d` / `mtx_continuous_d` 各 2,518 列到 2026-05-08
+  - `stock_factor_daily` 2024 起 900,510 列、`macro_daily VIX` 2,091 列
+  - macro `tw_stock_with_inst('2330', 2024-01-02, 2024-01-10)` 回傳 7 列
+- 留下 staging 檔 `catalog/quant_new.duckdb` 等使用者完成 swap（見尾部「結尾報告」）。
+
+### M3 — CLI subcommand 全套 dry-run 驗證
+
+8 個 ingest subcommand 全部 dry-run 一次（log 存於 `/tmp/safe-yolo-m3/*.log`），結果：
+
+| Subcommand | rows_in | rows_out | 備註 |
+|---|---|---|---|
+| `tej-stock` | 6,356,541 | 6,356,541 | 12.8s |
+| `tej-inst-stock` | 6,352,126 | 6,352,126 | 8.7s |
+| `tej-margin` | 3,498,545 | 3,498,545 | 4.4s |
+| `tej-fundamentals` Q+YTD | 101,281 + 101,287 | 同 | 0.9s |
+| `taifex-inst` | 2,187 → 6,561 (melted long) | — | 0.4s |
+| `mxf` 1m + 1d | 1,668,004 + 1,523 | — | 1.5s |
+| `continuous` TX + MTX | 2,518 + 2,518 | — | <1s |
+| `stock-futures` daily + continuous | 3,382,429 + 539,992 | — | 4.5s |
+
+所有 dry-run 走完後 `git status` 維持乾淨、`meta/audit/` 無新檔 — confirm 全部 source 都正確 honor `dry_run=True` flag。
+
 ### M2 — `scripts/fetch_tej.py`
 
 完成項目：
@@ -73,6 +106,41 @@ DuckDB UI session 占用 lock（PID 1594 `duckdb -ui catalog/quant.duckdb`）—
   - `build-catalog`（原有，多了 `--db-path` 可指定 staging 路徑）
 - 全部 `--help` 都印得出來，`tej-stock --dry-run` 驗證 12.4s 跑完 ~6.3M rows 沒爆。
 - 修正起始假設：silver 已與 RAW 對齊。
+
+## 結尾報告 — 使用者需要做的一件事
+
+`catalog/quant_new.duckdb`（新版 catalog）已建好且通過 smoke test，但因 `duckdb -ui catalog/quant.duckdb`（PID 1594）持有寫入 lock，無法在這次 session 內完成 swap。請使用者執行：
+
+```bash
+# 1. 關掉 DuckDB UI（在那個 session 內按 Ctrl-D 或 .exit，或直接 kill）
+kill 1594
+
+# 2. 把 staging swap 成 live
+cd /home/kevin/gs-scraper/QUANTDATA
+mv catalog/quant.duckdb catalog/quant.duckdb.bak
+mv catalog/quant_new.duckdb catalog/quant.duckdb
+
+# 3. (Optional) 確認 swap 後 catalog 仍正常
+.venv/bin/python scripts/smoke_query.py
+```
+
+成功後可刪掉 `catalog/quant.duckdb.bak`。
+
+⚠️ 之後常態 refresh 工作流（拿到 TEJAPI_KEY 後）：
+
+```bash
+export TEJAPI_KEY=<your_key>
+.venv/bin/pip install tejapi   # 一次性
+cd /home/kevin/gs-scraper/QUANTDATA
+.venv/bin/python scripts/fetch_tej.py --table all --append-since-silver
+.venv/bin/python -m qd_ingest.cli tej-stock --csv ../RAW_SOURCES/TEJ資料/TWN_EWPRCD_股價.csv
+.venv/bin/python -m qd_ingest.cli tej-inst-stock --csv ../RAW_SOURCES/TEJ資料/TWN_EWTINST1_三大法人.csv
+.venv/bin/python -m qd_ingest.cli tej-margin --csv ../RAW_SOURCES/TEJ資料/TWN_EWGIN_融資融券.csv
+.venv/bin/python -m qd_ingest.cli tej-fundamentals \
+    --quarterly ../RAW_SOURCES/TEJ資料/TWN_EWIFINQ_單季財報.csv \
+    --ytd ../RAW_SOURCES/TEJ資料/TWN_EWIFINQ_累季財報.csv
+.venv/bin/python -m qd_ingest.cli build-catalog
+```
 
 ## Fallback 指引
 
