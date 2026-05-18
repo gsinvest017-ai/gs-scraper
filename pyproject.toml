@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ingest = ["yfinance>=0.2.30", "requests>=2.31", "feedparser>=6.0", "beautifulsoup4>=4.12"]
+ingest = ["yfinance>=0.2.30", "requests>=2.31", "feedparser>=6.0", "beautifulsoup4>=4.12", "tejapi>=0.1.31"]
 zipline = []  # zipline-tej installed via /home/kevin/gs-zipline-tej
 dev = ["pytest>=7.4", "ruff>=0.4", "mypy>=1.8"]
 
