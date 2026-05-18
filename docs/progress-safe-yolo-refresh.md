@@ -44,6 +44,19 @@ DuckDB UI session 占用 lock（PID 1594 `duckdb -ui catalog/quant.duckdb`）—
 
 ## 進度日誌
 
+### M2 — `scripts/fetch_tej.py`
+
+完成項目：
+
+- 新增 `scripts/fetch_tej.py`：呼叫 `tejapi.get(...)` 拉最新 TEJ 資料，**直接寫成 `RAW_SOURCES/TEJ資料/*.csv`**（與 ingester 期望的中文 header + column order 完全一致），不繞 zipline bundle。
+- 支援 5 個 logical table：`stock_daily`、`inst_stock`、`margin`、`fundamentals_q`、`fundamentals_ytd`，可單跑或 `--table all`。
+- `--append-since-silver` 自動讀 DuckDB catalog 取 silver max date + 1 當起點（read-only snapshot 連線，不會撞 UI lock）。
+- `--mode merge`（預設）按 `(證券碼, 日期)` 去重後 append；`--mode overwrite` 直接蓋過。
+- `--dry-run` 不呼叫 TEJ，只印計畫。
+- **未啟用 end-to-end 驗證**：當前環境無 `TEJAPI_KEY`，也沒有安裝 `tejapi` 套件（pyproject.toml 也未列為 dependency）。下次拿到 key + `pip install tejapi` 後即可跑。
+
+⚠️ 後續若要把這個納入自動化，要在 `pyproject.toml` 的 `[project.optional-dependencies] ingest` 加入 `tejapi`。
+
 ### M1 — CLI 補齊 8 個 subcommand
 
 完成項目：
