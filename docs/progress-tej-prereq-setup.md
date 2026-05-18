@@ -33,6 +33,20 @@
 
 ## 進度日誌
 
+### M2 — TEJAPI_KEY / TEJAPI_BASE 設成 fish universal var
+
+- 執行 `fish -c 'set -Ux TEJAPI_KEY ...; set -Ux TEJAPI_BASE https://api.tej.com.tw'`，寫入 `~/.config/fish/fish_variables`（家目錄外、非 repo）。
+- 開新 fish process 驗證：`$TEJAPI_KEY` 長度 30、`$TEJAPI_BASE` 為 `https://api.tej.com.tw`，皆持續存在。
+- `~/.config/fish/config.fish` 補一段註解（無 key），指明 TEJAPI 從哪載入、怎麼改：
+  ```fish
+  # TEJ API credentials live in fish universal vars (~/.config/fish/fish_variables).
+  # Set / inspect / clear with:
+  #   set -Ux TEJAPI_KEY <key>
+  #   set | grep TEJAPI
+  #   set -e TEJAPI_KEY
+  ```
+- 這個 milestone 沒有 repo file 變更（fish config 不在 repo 內），純粹 commit progress doc 紀錄。
+
 ### M1 — tejapi 裝進 venv + pyproject.toml
 
 - `.venv/bin/pip install tejapi` 成功，版本 `0.1.31`，連帶帶入 `requests / fastparquet / fsspec / certifi / urllib3 / charset_normalizer / inflection / cramjam / idna / more-itertools`。
