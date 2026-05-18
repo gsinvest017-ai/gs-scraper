@@ -38,6 +38,43 @@ URL 格式預期：`https://desktop-p44q3ni-1.tailffb0ce.ts.net`，自帶 Let's 
 
 ## 進度日誌
 
+### M4 — Funnel 拉起來但 UI 初始化錯誤（已解）
+
+User 完成三道門檻後 `scripts/tailscale_funnel.sh start` 真的拉起 funnel：
+
+```
+# Funnel on:
+#     - https://desktop-p44q3ni-1.tailffb0ce.ts.net
+```
+
+但瀏覽器打開該 URL 出現：
+```
+Initialization Error
+Failed to resolve app state with user - RangeError: Offset is outside the bounds of the DataView
+Username: unknown
+User E-mail: unknown
+```
+
+#### 診斷
+
+- 確認 HTTPS 端點 OK：`curl -sI https://...` 回 HTTP/2 200，含 COOP/COEP（WASM 需要的 cross-origin isolation header）
+- 確認資產傳輸 OK：8.2MB 的 `hatchling.bundle.js` 在 local vs funnel 兩端 **MD5 完全相同**，沒被 proxy 截斷或重壓
+- 排除網路層後，最可能：DuckDB UI（MotherDuck "Hatchling"）試圖把 user prefs 寫進 DB，但我們起 `-readonly`，初始化卡死成 DataView 範圍錯誤
+
+#### 修法
+
+`scripts/duckdb_public_ui.sh` 改為**預設 writable 模式 on snapshot**（snapshot 是 274KB 副本，與 live catalog 隔離，被破壞可從 live 重建）。要強制唯讀的話 `DUCKDB_PUBLIC_READONLY=1 scripts/duckdb_public_ui.sh start`。
+
+順手修了同 script 的 pgrep pattern bug（empty `$mode_flag` 留下 double-space 導致 PID file 沒寫入）。
+
+#### 使用者要做的最後一步
+
+之前瀏覽器存了 read-only 失敗時的 state 在 IndexedDB / localStorage，會繼續 cache 壞 state。三選一：
+
+1. `Ctrl+Shift+R` 強制重新整理
+2. 開無痕視窗連 `https://desktop-p44q3ni-1.tailffb0ce.ts.net/`
+3. DevTools → Application → Storage → Clear site data
+
 ### M3 — 卡關：三道門檻全部需要使用者親自完成
 
 不在 agent 能執行範圍內：

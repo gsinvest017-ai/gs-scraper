@@ -55,18 +55,28 @@ is_running() {
 
 launch() {
     snapshot
-    echo "launching duckdb -readonly -ui against snapshot (log: $LOG_FILE)..."
-    # cd into ROOT so view definitions resolve relative parquet paths.
+    # By default we run writable against the snapshot. The DuckDB UI ("hatchling"
+    # by MotherDuck) stores per-user preferences inside the database and breaks
+    # on a writable session with "RangeError: Offset is outside the bounds of
+    # the DataView" if started -readonly. The snapshot is a throwaway file —
+    # if a public visitor corrupts it we just rebuild from the live catalog.
+    # Set DUCKDB_PUBLIC_READONLY=1 to force read-only mode anyway.
+    local mode_flag=""
+    if [[ "${DUCKDB_PUBLIC_READONLY:-0}" == "1" ]]; then
+        mode_flag="-readonly"
+    fi
+    echo "launching duckdb $mode_flag -ui against snapshot (log: $LOG_FILE)..."
     cd "$ROOT"
     # The duckdb -ui CLI reads stdin and exits on EOF (so the UI server dies).
-    # Feed it `tail -f /dev/null` so its stdin never closes; backgrounded so
-    # the script returns. We capture the duckdb PID (not the tail PID).
-    setsid bash -c "tail -f /dev/null | duckdb -readonly -ui '$PUBLIC_DB'" \
+    # Feed it `tail -f /dev/null` so its stdin never closes.
+    # Collapse mode_flag into the command so empty doesn't yield double-space.
+    local cmd="duckdb${mode_flag:+ $mode_flag} -ui '$PUBLIC_DB'"
+    setsid bash -c "tail -f /dev/null | $cmd" \
         >"$LOG_FILE" 2>&1 &
     sleep 2
-    # find the duckdb child
     local duck_pid
-    duck_pid="$(pgrep -f "duckdb -readonly -ui $PUBLIC_DB" | head -1)"
+    # Pattern matches the actual cmdline: 'duckdb [-readonly] -ui /path'
+    duck_pid="$(pgrep -f "duckdb($| -readonly ) -ui $PUBLIC_DB" | head -1)"
     if [[ -z "$duck_pid" ]]; then
         echo "ERROR: duckdb -ui did not start; check $LOG_FILE" >&2
         tail -20 "$LOG_FILE" >&2 || true
