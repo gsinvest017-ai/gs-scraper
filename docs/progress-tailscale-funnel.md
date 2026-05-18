@@ -38,6 +38,40 @@ URL 格式預期：`https://desktop-p44q3ni-1.tailffb0ce.ts.net`，自帶 Let's 
 
 ## 進度日誌
 
+### 下一步建議（need user 決定方向後再開新 /safe-yolo）
+
+DuckDB UI 不能直接 expose。三條替代：
+
+| 選項 | 工作量 | 描述 |
+|---|---|---|
+| **A. Datasette + DuckDB plugin** | 中（裝 datasette + datasette-duckdb，2 小時內） | 專為 SQLite/DuckDB 設計的 web frontend，內建 auth、API、SPA UI |
+| **B. FastAPI/Flask SQL playground** | 小（自己寫 ~80 行） | textarea 輸入 SQL、後端 read-only 連 DuckDB，HTML table 輸出；可加 basic auth |
+| **C. SSH tunnel + 本機 browser** | 0（user 端設定） | `ssh -L 4213:localhost:4213 ...` 把遠端 4213 映成本機，瀏覽器照走 localhost — 解 auth 也解資料外洩。**不是 "public" 但安全** |
+
+我認為 **B（FastAPI playground）** 是 ROI 最高 — 既滿足 "public URL"、又有 auth control、不依賴 DuckDB UI 的 internal token。
+
+### M5 — 真實阻擋：DuckDB UI 強制 token-based auth，funnel-exposing 行不通
+
+User 回報瀏覽器 console 顯示 `/localToken` 跟 `/ddb/run` 都 401。M4 的「換成 writable」沒解決問題。實打驗證：
+
+```
+curl http://127.0.0.1:4213/localToken          → 401
+curl http://127.0.0.1:4213/ddb/run (POST)     → 401
+curl https://...ts.net/localToken              → 401
+curl https://...ts.net/ddb/run (POST)         → 401
+```
+
+**所有 endpoint 都 401，連 localhost 也一樣**。DuckDB UI 的 hatchling bundle 設計：
+
+1. 依賴 Browser cookie / localStorage 從早先的 localhost session 拿到 token
+2. 沒 cookie → 試 Auth0 silent sign-in（MotherDuck 雲端，未登入也回 unauthenticated mode）
+3. unauthenticated mode 仍要 /ddb/run 才能裝 autocomplete / httpfs / icu / json extensions
+4. /ddb/run 沒 token → 401 → DataView 解析空回應炸成 RangeError
+
+User 之前能用 UI 是因為 PID 12818 的 writable session 走過 localhost-only 的 init 流程，cookie 留在 browser，重啟 duckdb-ui 後那 session token 就 invalidated。
+
+**結論：DuckDB UI 不能直接 funnel-expose**，這是設計上限制，不是 funnel 或 cert 問題。
+
 ### M4 — Funnel 拉起來但 UI 初始化錯誤（已解）
 
 User 完成三道門檻後 `scripts/tailscale_funnel.sh start` 真的拉起 funnel：
