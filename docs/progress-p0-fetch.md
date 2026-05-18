@@ -33,6 +33,52 @@
 
 ## 進度日誌
 
+### M4 — Catalog 重建 + smoke test PASS
+
+DuckDB UI PID 18348 仍持鎖，build 到 `catalog/quant_p0.duckdb` staging。
+
+新 view 全部出現：`revenue_monthly`、`tw_futures_large_trader_daily`。`bars_1d` 也自然擴張到 56 個新期貨 symbol。
+
+Smoke 抽樣：
+
+| view | 範圍 | 行數 | 樣本 |
+|---|---|---|---|
+| `bars_1d tw_futures TX` | 2020-01-02 → 2020-12-31 | 1,470 | TX202001 open=12044 close=12102 vol=100401 oi=87608 ✓ |
+| `bars_1d tw_futures MXF` | 2020-03-02 → 2026-03-12 | 1,523 | 沒被 AFUTR 覆寫（skip-if-exists 起作用） ✓ |
+| `revenue_monthly` 2330 2024 | 2024-01..12 | 12 | 215.8B → 278.2B；YoY 7.87% → 57.78% ✓ |
+| `tw_futures_large_trader_daily` | 2026-04-07 → 2026-05-18 | 29,940 | 僅 ~6 週覆蓋，TEJ 30K row 上限截斷 |
+
+使用者 swap 步驟：
+```bash
+kill 18348
+mv catalog/quant.duckdb catalog/quant.duckdb.bak3
+mv catalog/quant_p0.duckdb catalog/quant.duckdb
+scripts/smoke_query.py
+```
+
+### M3 — Fetch 結果（部分成功、TEJ 限流為主要阻擋）
+
+**成功**：
+
+- `APISALE` 2013-2026 → 95,061 rows，5 個 year partition 完整覆蓋（單次 fetch 拿到所有歷史）
+- `AFUTRHU` 2020-2026 → 29,940 rows，但 **TEJ 單次 API call 約 30K row 上限**，這份只覆蓋 2026-04-07 → 2026-05-18 ~6 週
+- `AFUTR` 2020 → 54,105 rows / 56 個 non-MXF 期貨 symbol（TX/MTX/TE/TF/E4F/G2F/MSCI/TWNF…），每 symbol ~1,470 rows ≈ 完整 250 個交易日 × 6 個月合約
+
+**卡關**：
+
+- 第一次 `AFUTR 2020-2026` 單 call ⇒ TEJ `LimitExceededError`（**rows-per-call 上限**）。
+- 改 year-by-year 後，2020 跑了 12 分鐘成功；**2021 跑了 30+ 分鐘 TCP 連線靜默 44 秒、4KB 累計傳輸後 hang**。Python alive，TEJ 連線 ESTAB 但無資料。判定 TEJ **per-key request rate limit**，需要在 paginate page 間加 sleep / exponential backoff。
+- 終止 stuck process，silver 留下 AFUTR 2020 + AFUTRHU 2026-04 + APISALE 2022-2026。
+
+**未完成**：AFUTR 2021-2026（6 年）、AFUTRHU 2020-2026 backfill。
+
+**後續修法（不在本次 /safe-yolo 範圍）**：
+
+1. `tejapi` 沒內建 rate-limit 退避；在 `_tej_get` 包 retry-with-backoff（catch `LimitExceededError`、sleep 60s+、重試）
+2. 改用 `coid` 縮小 query：例如先取 product list 再逐個 fetch（FXF / EXF / GTF…）— 每 call 更小、不容易撞上限
+3. 用 `gs-zipline-tej` 的 `morning_txf` bundle 走 `zipline ingest -b morning_txf`，看它的限流邏輯 — 可能已內建退避
+4. AFUTRHU 同上策略
+
 ### M2 — fetch_tej.py 擴張 + catalog 新增 view
 
 - `scripts/fetch_tej.py`:
