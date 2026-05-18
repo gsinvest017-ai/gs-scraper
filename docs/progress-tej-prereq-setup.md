@@ -33,6 +33,35 @@
 
 ## 進度日誌
 
+### M3 — Key 有效性驗證 + 訂閱範圍盤點
+
+**結論：Key 認證有效，但訂閱不含 `fetch_tej.py` 預設打的 EW 版資料表。**
+
+驗證細節（key 本體已去除）：
+
+- `tejapi.ApiConfig.info()` 成功回傳 user info，確認 key 通過認證。
+- 訂閱方案名稱：「TQ高手過招-期貨+TQ初入江湖-個股」
+- 訂閱期間：2026-05-06 → 2027-05-06
+- 配額：rowsDayLimit=40,000,000、reqDayLimit=2,000、multiConn=True
+- 用 `tejapi.get("TWN/EWPRCD", ...)` 打 2330 兩週日 K，回 `ForbiddenError (PDB003) 您沒有存取資料表的權限`。
+- 訂閱實際包含的 25 張資料表（**API 版而非 EW 版**）：
+
+| 類別 | 可用表 |
+|---|---|
+| 個股 OHLCV / 屬性 | `TWN/APIPRCD`（股價）、`TWN/APISTOCK`、`TWN/APISTK1`、`TWN/APISTKATTR` |
+| 個股籌碼 | `TWN/AINVFINB`、`TWN/AFINST`、`TWN/APIMT1`（融資融券） |
+| 個股財務 / 配發 | `TWN/APISALE`/`APISALE1`（營收）、`TWN/ADIV`、`TWN/APIDV1`、`TWN/APISHRACT`/`APISHRACTW`、`TWN/AFESTM1` |
+| 期貨 | `TWN/AFUTR`（期貨日 K）、`TWN/AFUTRSTK`（股期）、`TWN/AFUTRSTD`、`TWN/AFUTRHU`、`TWN/ASTK1` |
+| 其他 | `TWN/ARATE`、`TWN/AGBD8A`、`TWN/EWISAMPLE`、`TWN/TRADEDAY_TWSE`、`GLOBAL/WIBOR1` |
+
+**重要**：QUANTDATA silver 的歷史檔是 EW 版 schema（中文欄位、千股單位、固定欄序），而這個訂閱出的是 API 版 schema（不同欄名 / 欄序）。
+
+**下一步建議（不在這個 /safe-yolo 範圍內）**：
+
+1. 重寫 `scripts/fetch_tej.py` 的 dataset 對應到 API 版（`TWN/APIPRCD`、`TWN/APIMT1`、`TWN/AINVFINB`、`TWN/AFUTR`），並寫 schema adapter 把欄名 / 單位轉成 ingester 預期的中文 header → 才能 drop-in 接到既有 silver。
+2. 或者升級 TEJ 訂閱到「TQ高手過招-個股」以拿到 EW 版資料表。
+3. **無論走 1 還是 2**，env var 設定 + tejapi 套件這兩件 prereq 已完成；之後不用再設。
+
 ### M2 — TEJAPI_KEY / TEJAPI_BASE 設成 fish universal var
 
 - 執行 `fish -c 'set -Ux TEJAPI_KEY ...; set -Ux TEJAPI_BASE https://api.tej.com.tw'`，寫入 `~/.config/fish/fish_variables`（家目錄外、非 repo）。
