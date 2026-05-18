@@ -42,6 +42,16 @@
 
 ## 進度日誌
 
+### M2 — `scripts/duckdb_public_ui.sh`
+
+- 新增 helper script，支援 `start / replace / stop / status / refresh`：
+  - `start` — 若機器上沒有其他 `duckdb -ui` 在跑，snapshot live catalog → snapshot file → 啟動 `duckdb -readonly -ui` 對 snapshot；refuse 若已有別的 UI（per-machine singleton）
+  - `replace` — kill existing duckdb -ui 後再 launch，給 user 主動把 writable session 換成公開唯讀
+  - `refresh` — 重新 snapshot（要 stop + start 才會生效）
+- 踩到 DuckDB CLI 收到 EOF 即退出的坑，改用 `setsid bash -c 'tail -f /dev/null | duckdb -readonly -ui ...'` 讓 stdin 永不關。
+- 實測：snapshot 274KB（catalog 都是 view，資料在 parquet）、UI listening 127.0.0.1:4213、`curl -sI` 200 OK、snapshot 含 tw_stock_bars max=2026-05-18。
+- 提示行直接告訴 user 兩條 tunnel 指令（tailscale funnel / ngrok）。
+
 ### M1 — 安裝 ngrok binary
 
 - 從 `https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz` 下載 v3.39.2，解壓到 `~/.local/bin/ngrok`（已在 fish PATH 內）。
