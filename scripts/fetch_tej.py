@@ -32,11 +32,18 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
 RAW = Path(os.environ.get("QUANTDATA_RAW", REPO.parent / "RAW_SOURCES")) / "TEJ資料"
+SILVER = REPO / "silver"
 
 
-# Logical tables exposed to the user. inst_stock and margin both consume the
-# same upstream API response (TWN/APISHRACT) but produce different CSVs.
-LOGICAL_TABLES = ["stock_daily", "inst_stock", "margin"]
+# Logical tables exposed to the user.
+#   stock_daily / inst_stock / margin — write EW-format CSVs to RAW for the
+#       existing qd_ingest.sources.tej.* ingesters to consume.
+#   futures_daily / futures_large_trader / revenue_monthly — write Parquet
+#       directly to silver/ partitioned by year (no RAW intermediate).
+LOGICAL_TABLES = [
+    "stock_daily", "inst_stock", "margin",
+    "futures_daily", "futures_large_trader", "revenue_monthly",
+]
 
 # Where the existing ingester reads from (must match qd_ingest.sources.tej rename maps)
 OUT_CSV = {
@@ -244,6 +251,10 @@ def _silver_max_date(table: str) -> dt.date | None:
             "stock_daily": ("tw_stock_bars", "trading_date"),
             "inst_stock":  ("tw_inst_stock_daily", "trading_date"),
             "margin":      ("tw_margin_daily", "trading_date"),
+            # P0 silver tables — written directly by fetch_tej.py
+            "futures_daily":        ("bars_1d", "trading_date"),
+            "futures_large_trader": ("tw_futures_large_trader_daily", "trading_date"),
+            "revenue_monthly":      ("revenue_monthly", "fiscal_month"),
         }
         if table not in view_map:
             return None
@@ -258,6 +269,302 @@ def _silver_max_date(table: str) -> dt.date | None:
             tmp.parent.rmdir()
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# P0: AFUTR / AFUTRHU / APISALE — write directly to silver Parquet
+# ---------------------------------------------------------------------------
+
+import re as _re
+import pyarrow as _pa
+import pyarrow.parquet as _pq
+import shutil as _shutil
+
+_STOCK_RE = _re.compile(r"^\d{4}$")  # 4-digit numeric = stock code (skip 個股期)
+
+
+def adapt_afutr_to_bars_1d(df) -> "pd.DataFrame":
+    """TWN/AFUTR (chinese cols) -> canonical bars_1d schema rows.
+
+    Filters out individual-stock-futures contracts (underlying_id matches
+    `^\\d{4}$`) since those already live in silver under
+    asset_class=tw_stock_futures.
+    """
+    if len(df) == 0:
+        return df
+    underlying = df["標的證券碼"].astype(str)
+    keep = ~underlying.str.match(_STOCK_RE)
+    df = df.loc[keep].copy()
+    if df.empty:
+        return df
+
+    contract_id = df["期貨名稱"].astype(str)
+    # root code = first 3 chars (TXF, MXF, EXF, FXF, GXF, ZXF, …)
+    symbol = contract_id.str.slice(0, 3)
+    td = pd.to_datetime(df["日期"]).dt.tz_localize(None)
+    # close at 13:45 Asia/Taipei
+    ts_utc = (td + pd.Timedelta(hours=13, minutes=45)).dt.tz_localize("Asia/Taipei").dt.tz_convert("UTC")
+
+    n = len(df)
+    out = pd.DataFrame({
+        "ts_utc":       ts_utc,
+        "trading_date": td.dt.date,
+        "asset_class":  "tw_futures",
+        "exchange":     "TAIFEX",
+        "symbol":       symbol.values,
+        "contract_id":  contract_id.values,
+        "session":      "day",
+        "open":         pd.to_numeric(df["開盤價"], errors="coerce").values,
+        "high":         pd.to_numeric(df["最高價"], errors="coerce").values,
+        "low":          pd.to_numeric(df["最低價"], errors="coerce").values,
+        "close":        pd.to_numeric(df["收盤價"], errors="coerce").values,
+        "volume":       pd.array(pd.to_numeric(df["成交張數(量)"], errors="coerce"), dtype="Int64"),
+        "open_interest": pd.array(pd.to_numeric(df["未平倉合約數"], errors="coerce"), dtype="Int64"),
+        "vwap":         pd.to_numeric(df["標的證券價格"], errors="coerce").values,
+        "settlement":   pd.to_numeric(df["每日結算價"], errors="coerce").values,
+        "adj_open":     pd.Series([pd.NA] * n, dtype="Float64").astype(float),
+        "adj_high":     pd.Series([pd.NA] * n, dtype="Float64").astype(float),
+        "adj_low":      pd.Series([pd.NA] * n, dtype="Float64").astype(float),
+        "adj_close":    pd.Series([pd.NA] * n, dtype="Float64").astype(float),
+        "adj_factor":   pd.Series([pd.NA] * n, dtype="Float64").astype(float),
+        "source":       "tej_afutr",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+        "quality_flag": "ok",
+    })
+    out["year"] = pd.to_datetime(out["ts_utc"]).dt.year.astype("int32")
+    return out
+
+
+_BARS_1D_SCHEMA = _pa.schema([
+    ("ts_utc",        _pa.timestamp("ns", tz="UTC")),
+    ("trading_date",  _pa.date32()),
+    ("asset_class",   _pa.string()),
+    ("exchange",      _pa.string()),
+    ("symbol",        _pa.string()),
+    ("contract_id",   _pa.string()),
+    ("session",       _pa.string()),
+    ("open",          _pa.float64()),
+    ("high",          _pa.float64()),
+    ("low",           _pa.float64()),
+    ("close",         _pa.float64()),
+    ("volume",        _pa.int64()),
+    ("open_interest", _pa.int64()),
+    ("vwap",          _pa.float64()),
+    ("settlement",    _pa.float64()),
+    ("adj_open",      _pa.float64()),
+    ("adj_high",      _pa.float64()),
+    ("adj_low",       _pa.float64()),
+    ("adj_close",     _pa.float64()),
+    ("adj_factor",    _pa.float64()),
+    ("source",        _pa.string()),
+    ("ingestion_ts",  _pa.timestamp("ns", tz="UTC")),
+    ("quality_flag",  _pa.string()),
+    ("year",          _pa.int32()),
+])
+
+
+def write_silver_futures_daily(out_df: "pd.DataFrame", *, mode: str) -> None:
+    """Write AFUTR rows to silver/bars/bars_1d/asset_class=tw_futures/symbol=<X>/year=<YYYY>/."""
+    if out_df.empty:
+        print("[silver] futures_daily: nothing to write")
+        return
+    dest_root = SILVER / "bars" / "bars_1d" / "asset_class=tw_futures"
+    written = 0
+    for (sym, yr), group in out_df.groupby(["symbol", "year"]):
+        # MXF is also covered by the existing MXF cleaned-parquet ingest. To
+        # avoid the two sources double-writing the same year, we skip MXF in
+        # AFUTR fetch when that destination directory already has data from
+        # the mxf_clean source.
+        if sym == "MXF":
+            mxf_dir = dest_root / f"symbol={sym}" / f"year={yr}"
+            if mxf_dir.exists() and any(mxf_dir.iterdir()):
+                continue
+        sub_dir = dest_root / f"symbol={sym}" / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _BARS_1D_SCHEMA]],
+            schema=_BARS_1D_SCHEMA, preserve_index=False,
+        )
+        # Append-friendly: one parquet per fetch session
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"afutr_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] futures_daily: wrote {written:,} rows across {dest_root}")
+
+
+def adapt_afutrhu_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    # Same individual-stock-futures skip
+    contract_id = df["期貨名稱"].astype(str)
+    keep = ~contract_id.str.slice(0, 3).isin([])  # placeholder — no skip here, want all
+    df = df.loc[keep].copy()
+    contract_id = df["期貨名稱"].astype(str)
+    product = contract_id.str.slice(0, 3)
+    td = pd.to_datetime(df["日期"]).dt.tz_localize(None)
+    ts_utc = (td + pd.Timedelta(hours=13, minutes=45)).dt.tz_localize("Asia/Taipei").dt.tz_convert("UTC")
+    out = pd.DataFrame({
+        "trading_date": td.dt.date,
+        "ts_utc":       ts_utc,
+        "product":      product.values,
+        "contract_id":  contract_id.values,
+        "expiry_month": df["到期月"].astype(str).values,
+        "total_oi":     pd.array(pd.to_numeric(df["全市場未沖銷部位"], errors="coerce"), dtype="Int64"),
+        "top5_buy_traders":   pd.array(pd.to_numeric(df["前五大買方未沖銷部位-交易人"], errors="coerce"), dtype="Int64"),
+        "top5_sell_traders":  pd.array(pd.to_numeric(df["前五大賣方未沖銷部位-交易人"], errors="coerce"), dtype="Int64"),
+        "top10_buy_traders":  pd.array(pd.to_numeric(df["前十大買方未沖銷部位-交易人"], errors="coerce"), dtype="Int64"),
+        "top10_sell_traders": pd.array(pd.to_numeric(df["前十大賣方未沖銷部位-交易人"], errors="coerce"), dtype="Int64"),
+        "top5_buy_traders_pct":   pd.to_numeric(df["前五大買方未沖銷部位%-交易人"], errors="coerce").values,
+        "top5_sell_traders_pct":  pd.to_numeric(df["前五大賣方未沖銷部位%-交易人"], errors="coerce").values,
+        "top10_buy_traders_pct":  pd.to_numeric(df["前十大買方未沖銷部位%-交易人"], errors="coerce").values,
+        "top10_sell_traders_pct": pd.to_numeric(df["前十大賣方未沖銷部位%-交易人"], errors="coerce").values,
+        "top5_buy_institutional":   pd.array(pd.to_numeric(df["前五大買方未沖銷部位-特定法人"], errors="coerce"), dtype="Int64"),
+        "top5_sell_institutional":  pd.array(pd.to_numeric(df["前五大賣方未沖銷部位-特定法人"], errors="coerce"), dtype="Int64"),
+        "top10_buy_institutional":  pd.array(pd.to_numeric(df["前十大買方未沖銷部位-特定法人"], errors="coerce"), dtype="Int64"),
+        "top10_sell_institutional": pd.array(pd.to_numeric(df["前十大賣方未沖銷部位-特定法人"], errors="coerce"), dtype="Int64"),
+        "top5_buy_institutional_pct":   pd.to_numeric(df["前五大買方未沖銷部位%-特定法人"], errors="coerce").values,
+        "top5_sell_institutional_pct":  pd.to_numeric(df["前五大賣方未沖銷部位%-特定法人"], errors="coerce").values,
+        "top10_buy_institutional_pct":  pd.to_numeric(df["前十大買方未沖銷部位%-特定法人"], errors="coerce").values,
+        "top10_sell_institutional_pct": pd.to_numeric(df["前十大賣方未沖銷部位%-特定法人"], errors="coerce").values,
+        "source":       "tej_afutrhu",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.to_datetime(out["trading_date"]).dt.year.astype("int32")
+    return out
+
+
+_LARGE_TRADER_SCHEMA = _pa.schema([
+    ("trading_date", _pa.date32()),
+    ("ts_utc",       _pa.timestamp("ns", tz="UTC")),
+    ("product",      _pa.string()),
+    ("contract_id",  _pa.string()),
+    ("expiry_month", _pa.string()),
+    ("total_oi",     _pa.int64()),
+    ("top5_buy_traders",   _pa.int64()),
+    ("top5_sell_traders",  _pa.int64()),
+    ("top10_buy_traders",  _pa.int64()),
+    ("top10_sell_traders", _pa.int64()),
+    ("top5_buy_traders_pct",   _pa.float64()),
+    ("top5_sell_traders_pct",  _pa.float64()),
+    ("top10_buy_traders_pct",  _pa.float64()),
+    ("top10_sell_traders_pct", _pa.float64()),
+    ("top5_buy_institutional",   _pa.int64()),
+    ("top5_sell_institutional",  _pa.int64()),
+    ("top10_buy_institutional",  _pa.int64()),
+    ("top10_sell_institutional", _pa.int64()),
+    ("top5_buy_institutional_pct",   _pa.float64()),
+    ("top5_sell_institutional_pct",  _pa.float64()),
+    ("top10_buy_institutional_pct",  _pa.float64()),
+    ("top10_sell_institutional_pct", _pa.float64()),
+    ("source",       _pa.string()),
+    ("ingestion_ts", _pa.timestamp("ns", tz="UTC")),
+    ("year",         _pa.int32()),
+])
+
+
+def write_silver_large_trader(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] futures_large_trader: nothing to write")
+        return
+    dest_root = SILVER / "flows" / "tw_futures_large_trader_daily"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _LARGE_TRADER_SCHEMA]],
+            schema=_LARGE_TRADER_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"afutrhu_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] futures_large_trader: wrote {written:,} rows under {dest_root}")
+
+
+def adapt_apisale_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    fiscal = pd.to_datetime(df["年月"]).dt.tz_localize(None).dt.date
+    publish = pd.to_datetime(df["營收發布日"]).dt.tz_localize(None).dt.date
+    out = pd.DataFrame({
+        "stock_id":      df["公司"].astype(str).values,
+        "fiscal_month":  fiscal,
+        "publish_date":  publish,
+        "revenue_monthly_ktwd":      pd.array(pd.to_numeric(df["單月營收(千元)"], errors="coerce"), dtype="Int64"),
+        "revenue_yoy_ktwd":          pd.array(pd.to_numeric(df["去年單月營收(千元)"], errors="coerce"), dtype="Int64"),
+        "revenue_yoy_growth_pct":    pd.to_numeric(df["單月營收成長率％"], errors="coerce").values,
+        "revenue_mom_growth_pct":    pd.to_numeric(df["單月營收與上月比％"], errors="coerce").values,
+        "revenue_cum_ktwd":          pd.array(pd.to_numeric(df["累計營收(千元)"], errors="coerce"), dtype="Int64"),
+        "revenue_cum_yoy_ktwd":      pd.array(pd.to_numeric(df["去年累計營收(千元)"], errors="coerce"), dtype="Int64"),
+        "revenue_cum_yoy_growth_pct": pd.to_numeric(df["累計營收成長率％"], errors="coerce").values,
+        "revenue_ttm_ktwd":          pd.array(pd.to_numeric(df["近12月累計營收(千元)"], errors="coerce"), dtype="Int64"),
+        "revenue_ttm_growth_pct":    pd.to_numeric(df["近12月累計營收成長率％"], errors="coerce").values,
+        "revenue_3m_ktwd":           pd.array(pd.to_numeric(df["近 3月累計營收(千元)"], errors="coerce"), dtype="Int64"),
+        "revenue_3m_growth_pct":     pd.to_numeric(df["近3月累計營收成長率％"], errors="coerce").values,
+        "shares_outstanding_kshare": pd.array(pd.to_numeric(df["流通在外股數(千股)"], errors="coerce"), dtype="Int64"),
+        "revenue_monthly_per_share": pd.to_numeric(df["單月每股營收(元)"], errors="coerce").values,
+        "revenue_cum_per_share":     pd.to_numeric(df["累計每股營收(元)"], errors="coerce").values,
+        "revenue_ttm_per_share":     pd.to_numeric(df["近12月每股營收(元)"], errors="coerce").values,
+        "revenue_3m_per_share":      pd.to_numeric(df["近 3月每股營收(元)"], errors="coerce").values,
+        "source":       "tej_apisale",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.DatetimeIndex(out["fiscal_month"]).year.astype("int32")
+    return out
+
+
+_REVENUE_SCHEMA = _pa.schema([
+    ("stock_id",                  _pa.string()),
+    ("fiscal_month",              _pa.date32()),
+    ("publish_date",              _pa.date32()),
+    ("revenue_monthly_ktwd",      _pa.int64()),
+    ("revenue_yoy_ktwd",          _pa.int64()),
+    ("revenue_yoy_growth_pct",    _pa.float64()),
+    ("revenue_mom_growth_pct",    _pa.float64()),
+    ("revenue_cum_ktwd",          _pa.int64()),
+    ("revenue_cum_yoy_ktwd",      _pa.int64()),
+    ("revenue_cum_yoy_growth_pct", _pa.float64()),
+    ("revenue_ttm_ktwd",          _pa.int64()),
+    ("revenue_ttm_growth_pct",    _pa.float64()),
+    ("revenue_3m_ktwd",           _pa.int64()),
+    ("revenue_3m_growth_pct",     _pa.float64()),
+    ("shares_outstanding_kshare", _pa.int64()),
+    ("revenue_monthly_per_share", _pa.float64()),
+    ("revenue_cum_per_share",     _pa.float64()),
+    ("revenue_ttm_per_share",     _pa.float64()),
+    ("revenue_3m_per_share",      _pa.float64()),
+    ("source",                    _pa.string()),
+    ("ingestion_ts",              _pa.timestamp("ns", tz="UTC")),
+    ("year",                      _pa.int32()),
+])
+
+
+def write_silver_revenue(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] revenue_monthly: nothing to write")
+        return
+    dest_root = SILVER / "fundamentals" / "revenue_monthly"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _REVENUE_SCHEMA]],
+            schema=_REVENUE_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"apisale_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] revenue_monthly: wrote {written:,} rows under {dest_root}")
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +630,30 @@ def fetch(tables: list[str], start: str, end: str, *, mode: str) -> None:
     if "margin" in tables:
         ew = adapt_apishract_to_ew_margin(shract_df)
         _merge_and_write("margin", ew, mode=mode)
+
+    # --- P0: direct-to-silver datasets ---
+
+    if "futures_daily" in tables:
+        print(f"[fetch] TWN/AFUTR {start}..{end}", flush=True)
+        afutr = _tej_get("TWN/AFUTR", mdate={"gte": start, "lte": end})
+        print(f"  -> {len(afutr):,} rows", flush=True)
+        out = adapt_afutr_to_bars_1d(afutr)
+        print(f"  -> {len(out):,} rows after filtering individual-stock-futures", flush=True)
+        write_silver_futures_daily(out, mode=mode)
+
+    if "futures_large_trader" in tables:
+        print(f"[fetch] TWN/AFUTRHU {start}..{end}", flush=True)
+        afutrhu = _tej_get("TWN/AFUTRHU", mdate={"gte": start, "lte": end})
+        print(f"  -> {len(afutrhu):,} rows", flush=True)
+        out = adapt_afutrhu_to_silver(afutrhu)
+        write_silver_large_trader(out, mode=mode)
+
+    if "revenue_monthly" in tables:
+        print(f"[fetch] TWN/APISALE {start}..{end}", flush=True)
+        apisale = _tej_get("TWN/APISALE", mdate={"gte": start, "lte": end})
+        print(f"  -> {len(apisale):,} rows", flush=True)
+        out = adapt_apisale_to_silver(apisale)
+        write_silver_revenue(out, mode=mode)
 
 
 def main() -> None:

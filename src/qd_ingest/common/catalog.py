@@ -62,7 +62,8 @@ def build(*, db_path=None) -> None:
         """)
 
     # === Silver flows ===
-    for tbl in ("tw_inst_futures_daily", "tw_inst_stock_daily", "tw_margin_daily", "tw_inst_market_daily"):
+    for tbl in ("tw_inst_futures_daily", "tw_inst_stock_daily", "tw_margin_daily",
+                "tw_inst_market_daily", "tw_futures_large_trader_daily"):
         path = SILVER / "flows" / tbl
         if (path).exists():
             con.execute(f"""
@@ -80,6 +81,15 @@ def build(*, db_path=None) -> None:
             CREATE OR REPLACE VIEW fundamentals_q AS
             SELECT * FROM read_parquet(
                 '{_rel(fin_q_path)}/**/*.parquet',
+                hive_partitioning=TRUE
+            );
+        """)
+    rev_path = SILVER / "fundamentals" / "revenue_monthly"
+    if rev_path.exists():
+        con.execute(f"""
+            CREATE OR REPLACE VIEW revenue_monthly AS
+            SELECT * FROM read_parquet(
+                '{_rel(rev_path)}/**/*.parquet',
                 hive_partitioning=TRUE
             );
         """)

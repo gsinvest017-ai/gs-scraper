@@ -33,6 +33,25 @@
 
 ## 進度日誌
 
+### M2 — fetch_tej.py 擴張 + catalog 新增 view
+
+- `scripts/fetch_tej.py`:
+  - `LOGICAL_TABLES` 從 3 個擴到 6 個（多 `futures_daily / futures_large_trader / revenue_monthly`）
+  - 3 個 adapter functions（API 中文 cols → canonical 英文 silver schema）
+  - 3 個 write_silver_* functions：跳過 RAW-CSV 中間層、直接寫 silver parquet partitioned by year（這 3 個是 TEJ-API-only，沒有 vendor file 概念）
+  - AFUTR 內建 `^\d{4}$` underlying_id filter，避免和 `tw_stock_futures` 雙寫
+  - AFUTR 對 MXF symbol 做 skip-if-exists 檢查（避免和 mxf_clean 來源衝突）
+  - `_silver_max_date` 新增三個 view 對應，`--append-since-silver` 自動可用
+  - `fetch()` orchestrator 加 3 個 dispatch 分支，print 都加 `flush=True`（修上次 9 分鐘黑箱問題）
+
+- `src/qd_ingest/common/catalog.py`:
+  - silver/flows 迴圈加 `tw_futures_large_trader_daily`
+  - silver/fundamentals 新增 `revenue_monthly` view
+
+- 不需要新 CLI subcommand：直接 `python scripts/fetch_tej.py --table futures_daily` 即可。
+- 不需要新 ingester module：fetch_tej.py 直接 adapter + parquet write 一步搞定。
+- 語法檢查通過、`--help` 正確列出 6 個 choices。
+
 ### M1 — 三張 TEJ 表 schema + mapping
 
 **TWN/AFUTR**（24 欄、per-contract per-day、2008 起）：
