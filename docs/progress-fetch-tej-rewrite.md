@@ -39,6 +39,38 @@
 
 ## 進度日誌
 
+### M4 — Rebuild catalog + silver advance 驗證
+
+- DuckDB UI（PID 9157）又持有 lock，照舊用 `--db-path catalog/quant_new.duckdb` 走 staging。
+- 對 staging catalog 驗證：
+  | view | min | max | rows |
+  |---|---|---|---|
+  | `tw_stock_bars` | 2010-01-04 | **2026-05-18** | 6,587,436 |
+  | `tw_inst_stock_daily` | 2010-01-04 | **2026-05-15** | 6,554,948 |
+  | `tw_margin_daily` | 2010-01-04 | **2026-05-15** | 3,701,367 |
+- 2330 抽樣 2026-05：OHLC 2200-2300（與真實價位匹配）、三大法人變化合理、融資融券餘額 26K-28K 張穩定。
+- inst_stock / margin 比 stock_daily 落後 1 個交易日 —— TEJ APISHRACT 在當日收盤後才會 batch 出，是正常 lag。
+- 使用者再做一次和上次相同的 swap：
+  ```bash
+  kill 9157     # 關 duckdb -ui
+  mv catalog/quant.duckdb catalog/quant.duckdb.bak2
+  mv catalog/quant_new.duckdb catalog/quant.duckdb
+  .venv/bin/python scripts/smoke_query.py
+  ```
+
+### M3 — 真打 + ingest 推進 silver
+
+- 先把 3 個 RAW CSV backup 到 `RAW_SOURCES/_backup_tej_20260518_160238/`，破壞時可救回。
+- `fetch_tej.py --table all --append-since-silver` 跑了 9 分鐘，rate 約 1.5MB/s API throughput（CPU 1-2%，瓶頸在 TEJ paginate roundtrip）。
+- 結果：
+  | logical | API rows | RAW CSV 增加 |
+  |---|---|---|
+  | stock_daily | 230,895 | 6,356,541 → 6,587,436 (+230,895) |
+  | inst_stock | 202,822 | 6,352,126 → 6,554,948 (+202,822) |
+  | margin | 202,822 (同 inst) | 3,498,545 → 3,701,367 (+202,822) |
+- 3 個 ingest 各 6-14 秒跑完，silver 2026 partition 寫好。
+- ⚠️ **Bug 已知**：fetch_tej.py 的 `print()` 沒加 `flush=True`，pipe 後完全看不到 progress（這次 9 分鐘黑箱中度過）。下次任務順手修。
+
 ### M2 — 重寫 `scripts/fetch_tej.py`
 
 完成項目：
