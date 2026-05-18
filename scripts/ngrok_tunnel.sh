@@ -27,6 +27,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_FILE="$ROOT/catalog/.ngrok.log"
 PID_FILE="$ROOT/catalog/.ngrok.pid"
+POLICY_FILE="$ROOT/catalog/.ngrok_policy.yml"
 PORT="${2:-4213}"
 
 cmd="${1:-status}"
@@ -61,11 +62,26 @@ case "$cmd" in
         if [[ -n "${NGROK_DOMAIN:-}" ]]; then
             ARGS+=(--url="$NGROK_DOMAIN")
         fi
-        if [[ -n "${NGROK_BASIC_AUTH:-}" ]]; then
-            ARGS+=(--basic-auth="$NGROK_BASIC_AUTH")
-        fi
-        if [[ -n "${NGROK_CIDR_ALLOW:-}" ]]; then
-            ARGS+=(--cidr-allow="$NGROK_CIDR_ALLOW")
+        # ngrok v3.39+ deprecated --basic-auth / --cidr-allow in favor of
+        # traffic-policy. We write a one-off policy file when either is set.
+        if [[ -n "${NGROK_BASIC_AUTH:-}" || -n "${NGROK_CIDR_ALLOW:-}" ]]; then
+            {
+                echo "on_http_request:"
+                if [[ -n "${NGROK_CIDR_ALLOW:-}" ]]; then
+                    echo "  - expressions:"
+                    echo "      - \"!(conn.client_ip.matches('${NGROK_CIDR_ALLOW}'))\""
+                    echo "    actions:"
+                    echo "      - type: deny"
+                fi
+                if [[ -n "${NGROK_BASIC_AUTH:-}" ]]; then
+                    echo "  - actions:"
+                    echo "      - type: basic-auth"
+                    echo "        config:"
+                    echo "          credentials:"
+                    echo "            - \"${NGROK_BASIC_AUTH}\""
+                fi
+            } > "$POLICY_FILE"
+            ARGS+=(--traffic-policy-file="$POLICY_FILE")
         fi
         echo "starting: ngrok ${ARGS[*]} (log: $LOG_FILE)"
         nohup ngrok "${ARGS[@]}" >"$LOG_FILE" 2>&1 &
@@ -92,7 +108,7 @@ case "$cmd" in
             sleep 1
         done
         kill -9 "$(cat "$PID_FILE")" 2>/dev/null || true
-        rm -f "$PID_FILE"
+        rm -f "$PID_FILE" "$POLICY_FILE"
         echo "stopped"
         ;;
     status)
