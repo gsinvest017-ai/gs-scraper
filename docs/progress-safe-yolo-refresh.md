@@ -1,0 +1,84 @@
+# Safe-YOLO: 全套 TW 資料 refresh + CLI 補齊
+
+> 啟動：2026-05-18
+> 觸發指令：`/safe-yolo 全部`
+> 操作者：claude-opus-4-7（kevin 授權）
+
+## 目標
+
+一次處理三件事：
+
+1. 把 `cli.py` 缺的 5 個 ingest function 接上 subcommand，讓未來的 refresh 全部走 CLI。
+2. 寫 `scripts/fetch_tej.py`，把 TEJ 最新資料直接拉成 CSV（與 `RAW_SOURCES/TEJ資料/` 同 schema），不用走 zipline bundle。
+3. 把目前已在 `RAW_SOURCES/` 但還沒進 silver 的資料推完（股價、三大法人、融資融券、財報、MXF、股期、連續期），rebuild DuckDB catalog，跑 smoke test 確認。
+
+## 起始狀態（2026-05-18）— 修正後
+
+⚠️ **重要修正**：起始假設 RAW 比 silver 新 4 個月是基於 CSV mtime，但實際 CSV「內容日期上限」並未超過 silver。所有資料表 silver 都已與 RAW 對齊：
+
+| View | silver max | RAW 內容 max | Δ |
+|---|---|---|---|
+| `tw_stock_bars` | 2025-12-31 | 2025-12-31 | OK |
+| `tw_inst_stock_daily` | 2025-12-31 | 2025-12-31 | OK |
+| `tw_margin_daily` | 2025-12-31 | 2025-12-31 | OK |
+| `fundamentals_q` | 2026-03-31 | 2026-03-31 | OK |
+| `tw_inst_futures_daily` | 2026-05-08 | 2026-05-08 | OK |
+| `bars_1d tw_futures (MXF)` | 2026-03-12 | 2026-03-12 | OK |
+| `bars_1d tw_stock_futures` | 2026-04-13 | 2026-04-13 | OK |
+| `tx_continuous_d` / `mtx_continuous_d` | 2026-05-08 | 2026-05-08 | OK |
+
+**結論**：silver 已是最新。M3 的真正價值是「驗證新接的 CLI subcommand 全部能用」+「之後 refresh 走得通」，不是補資料。
+M2 的 `fetch_tej.py` 才是擴張 silver 到 > 2025-12-31 的關鍵（需要 TEJAPI_KEY 才能跑）。
+
+Branch: `main`，工作目錄乾淨。
+DuckDB UI session 占用 lock（PID 1594 `duckdb -ui catalog/quant.duckdb`）— rebuild 時要處理。
+
+## Milestone 計畫
+
+| M | 目標 | 預期產出 |
+|---|---|---|
+| M1 | 補齊 CLI subcommands（tej-inst-stock / tej-margin / tej-fundamentals / mxf / stock-futures / continuous） | `src/qd_ingest/cli.py` 增 6 個 subcommand；commit |
+| M2 | 寫 `scripts/fetch_tej.py` 用 `tejapi` SDK 拉最新 CSV 蓋過 RAW_SOURCES/TEJ資料/ | 新檔 `scripts/fetch_tej.py`；commit |
+| M3 | 驗證所有新 CLI subcommand 能跑（dry-run + 小規模 idempotent re-ingest） | 8 個 subcommand 全部走通；commit verification log |
+| M4 | Rebuild catalog + smoke test | `catalog/quant.duckdb` 重建；commit progress doc 更新 |
+
+## 進度日誌
+
+### M1 — CLI 補齊 8 個 subcommand
+
+完成項目：
+
+- `src/qd_ingest/cli.py` 從 3 個 subcommand 擴展到 8 個：
+  - `tej-stock`（原有）
+  - `tej-inst-stock`（新）
+  - `tej-margin`（新）
+  - `tej-fundamentals`（新，吃 --quarterly + --ytd）
+  - `taifex-inst`（原有）
+  - `mxf`（新）
+  - `continuous`（新）
+  - `stock-futures`（新）
+  - `build-catalog`（原有，多了 `--db-path` 可指定 staging 路徑）
+- 全部 `--help` 都印得出來，`tej-stock --dry-run` 驗證 12.4s 跑完 ~6.3M rows 沒爆。
+- 修正起始假設：silver 已與 RAW 對齊。
+
+## Fallback 指引
+
+如果中途要 rollback：
+
+```bash
+cd /home/kevin/gs-scraper/QUANTDATA
+git log --oneline -20                   # 找 commit hash
+git reset --hard <hash-before-M1>       # 回到開始前
+
+# silver 資料若要 rollback，從 backup snapshot 還原：
+ls /home/kevin/gs-scraper/QUANTDATA/_backup/ 2>/dev/null  # 確認最近一份 backup
+# 或從 git LFS / 外部備援還原（如有）
+```
+
+DuckDB catalog 即使 rollback 也可 idempotent 重建：
+
+```bash
+# UI session 必須先關
+kill <PID-of-duckdb-ui>
+.venv/bin/python -m qd_ingest.common.catalog
+```
