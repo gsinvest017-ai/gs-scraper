@@ -107,7 +107,7 @@ qc_stock_price_diff  ← TEJ ⨯ FinMind 2010+ 重疊段對帳
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 寫本份進度文件（設計 + 路線） | ✅ |
-| **M2** | 解 RS_Rating 7z 抽出 source code → `_quarantine/rs_rating_unpacked/` + 留 manifest | ⏳ |
+| **M2** | 解 RS_Rating 7z 抽出 source code → `_quarantine/rs_rating_unpacked/` + 留 manifest | ✅ |
 | **M3** | 寫 `docs/spec-gold-rs-rating-daily.md`（演算法規格 + DuckDB SQL skeleton，**不執行**） | ⏳ |
 | M4 | 等 `quantdata-scraper` session 完成 TEJ 寫入，解 FinMind zip 到 `bronze/finmind/finmind_2026-05-18.sqlite` + SHA256 + manifest | 未開始 |
 | M5 | DuckDB ATTACH FinMind + 寫 `qc_stock_price_diff` view（100 檔 sample 對 TEJ 5%） | 未開始 |
@@ -127,7 +127,21 @@ qc_stock_price_diff  ← TEJ ⨯ FinMind 2010+ 重疊段對帳
 - 結論：RS_Rating 是程式不是資料 → 抽 source；FinMind 真有用的部分只有 2000-2009 + 興櫃 → 走方案 B 選擇性合併。
 - Commit: 見 `git log` `M1: …` commit。
 
-### M2 — pending
+### M2 — RS_Rating 原始碼抽出
+
+從 `RAW_SOURCES/RS_Rating.7z`（287 MB）中只抽出 15 個檔案（合計 176 KB）到 `_quarantine/rs_rating_unpacked/RS_Rating/`：
+
+- 5 份設計文件（`AI_CONTEXT.md` / `ARCHITECTURE.md` / `HANDOFF.md` / `OPERATIONS.md` / `TEST_REPORT.md` / `使用說明.txt`）
+- `_internal/app.py` + `_internal/update_data.py`
+- `_internal/core/{__init__, config, db, crawler, indices, backtest}.py`
+- `_internal/tests/test_backtest.py`（30 個合成資料 unit test，0 I/O）
+- `_internal/.streamlit/config.toml`（深色主題設定，留作 UI 參考）
+
+排除：`_internal/` 下其餘 1.5 GB Python 3.12 runtime + DLL + pyarrow/numpy libs、整個 `test_venv/`、`RS_Rating.exe`、pyc、dist-info。
+
+Manifest 落在 `_quarantine/manifest_rs_rating_2026-05-18.jsonl`（受 `.gitignore` `manifest_*.jsonl` 例外規則納入版控），含原 7z 的 SHA256 與每個抽出檔的 SHA256，便於將來驗證或重抽。
+
+`_quarantine/rs_rating_unpacked/` 本身依 `.gitignore` 規則不入版控，避免把第三方 source 灌進 repo。要刪除直接 `rm -rf` 即可，manifest 留下追溯記錄。
 
 ### M3 — pending
 
