@@ -42,6 +42,68 @@
 
 ## 進度日誌
 
+### M4 — `scripts/ngrok_tunnel.sh` + Tailscale Funnel 步驟
+
+新增 `scripts/ngrok_tunnel.sh` 全套 wrapper：
+
+- `start [port]` — 啟動 ngrok tunnel，吃以下 env：
+  - `NGROK_DOMAIN` — reserved static domain（從 ngrok dashboard 拿）
+  - `NGROK_BASIC_AUTH` — `user:pass` 形式的 basic auth（**強烈建議**）
+  - `NGROK_CIDR_ALLOW` — IP 白名單
+- `stop / status / url` — 查 / 控制 tunnel
+- 拒絕啟動若 ngrok 未 `add-authtoken`
+
+驗證：CLI 各段邏輯都 PASS（status 顯示 not running、start 沒 token 正確拒絕）。
+End-to-end 需要 user 完成「one-time setup」三步（dashboard 註冊、`ngrok config add-authtoken`、reserve domain）。
+
+---
+
+#### 使用者一行啟動公開 URL
+
+完成 ngrok 一次性設定後：
+
+```bash
+cd /home/kevin/gs-scraper/QUANTDATA
+
+# A. 啟動 read-only public DuckDB UI on 127.0.0.1:4213（會 take over user 既有的寫入 UI）
+scripts/duckdb_public_ui.sh replace
+
+# B. 啟動 ngrok tunnel（建議帶 basic-auth 與 static domain）
+NGROK_DOMAIN=your-name-quantdata.ngrok-free.app \
+NGROK_BASIC_AUTH="kevin:長一點的密碼" \
+  scripts/ngrok_tunnel.sh start
+
+# C. 看公開 URL
+scripts/ngrok_tunnel.sh url
+
+# D. 結束時
+scripts/ngrok_tunnel.sh stop
+scripts/duckdb_public_ui.sh stop      # 還原成沒有 UI 的狀態
+# 之後 user 想恢復自己的寫入 UI：
+duckdb -ui catalog/quant.duckdb
+```
+
+---
+
+#### Tailscale Funnel 替代路線（如想避開 ngrok）
+
+機器已裝 Tailscale 且登入 tailnet `tailffb0ce.ts.net`，machine name `desktop-p44q3ni-1`。
+Funnel 比 ngrok static URL 更貼近「免費 + 永久」需求，但要過三道門檻：
+
+1. **Tailnet admin 啟用 Funnel**：訪問 `https://login.tailscale.com/f/funnel?node=nfAHt8nSqn11CNTRL`
+2. **Tailnet admin 啟用 HTTPS cert**：`https://login.tailscale.com/admin/dns` → HTTPS Certificates
+3. **本機允許非 root 操作**：`sudo tailscale set --operator=$USER`（會問 sudo 密碼）
+
+完成後一行啟動：
+
+```bash
+scripts/duckdb_public_ui.sh replace
+tailscale funnel --bg 4213
+tailscale funnel status         # 顯示 https://desktop-p44q3ni-1.tailffb0ce.ts.net
+```
+
+Funnel 的 stable URL 是 `https://<machine>.<tailnet>.ts.net`，自帶 Let's Encrypt cert。
+
 ### M2 — `scripts/duckdb_public_ui.sh`
 
 - 新增 helper script，支援 `start / replace / stop / status / refresh`：
