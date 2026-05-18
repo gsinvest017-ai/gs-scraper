@@ -281,6 +281,7 @@ import pyarrow.parquet as _pq
 import shutil as _shutil
 
 _STOCK_RE = _re.compile(r"^\d{4}$")  # 4-digit numeric = stock code (skip 個股期)
+_ROOT_RE = _re.compile(r"^([A-Z]+)")   # leading uppercase letters = product root
 
 
 def adapt_afutr_to_bars_1d(df) -> "pd.DataFrame":
@@ -298,22 +299,25 @@ def adapt_afutr_to_bars_1d(df) -> "pd.DataFrame":
     if df.empty:
         return df
 
+    df = df.reset_index(drop=True)
     contract_id = df["期貨名稱"].astype(str)
-    # root code = first 3 chars (TXF, MXF, EXF, FXF, GXF, ZXF, …)
-    symbol = contract_id.str.slice(0, 3)
+    # Product root = leading alphabetic prefix (TX, MTX, BRF, TWNF, …),
+    # NOT the first 3 chars (which would give "TX2" for TX202605).
+    # Stop at the 6-digit YYYYMM date boundary so roots like E4F/G2F/MTX
+    # keep their embedded digits.
+    symbol = contract_id.str.extract(r"^(.+?)(?=\d{6})", expand=False).fillna(contract_id.str.slice(0, 3))
     td = pd.to_datetime(df["日期"]).dt.tz_localize(None)
-    # close at 13:45 Asia/Taipei
     ts_utc = (td + pd.Timedelta(hours=13, minutes=45)).dt.tz_localize("Asia/Taipei").dt.tz_convert("UTC")
 
     n = len(df)
     out = pd.DataFrame({
-        "ts_utc":       ts_utc,
-        "trading_date": td.dt.date,
-        "asset_class":  "tw_futures",
-        "exchange":     "TAIFEX",
+        "ts_utc":       ts_utc.values,
+        "trading_date": td.dt.date.values,
+        "asset_class":  ["tw_futures"] * n,
+        "exchange":     ["TAIFEX"] * n,
         "symbol":       symbol.values,
         "contract_id":  contract_id.values,
-        "session":      "day",
+        "session":      ["day"] * n,
         "open":         pd.to_numeric(df["開盤價"], errors="coerce").values,
         "high":         pd.to_numeric(df["最高價"], errors="coerce").values,
         "low":          pd.to_numeric(df["最低價"], errors="coerce").values,
@@ -322,14 +326,14 @@ def adapt_afutr_to_bars_1d(df) -> "pd.DataFrame":
         "open_interest": pd.array(pd.to_numeric(df["未平倉合約數"], errors="coerce"), dtype="Int64"),
         "vwap":         pd.to_numeric(df["標的證券價格"], errors="coerce").values,
         "settlement":   pd.to_numeric(df["每日結算價"], errors="coerce").values,
-        "adj_open":     pd.Series([pd.NA] * n, dtype="Float64").astype(float),
-        "adj_high":     pd.Series([pd.NA] * n, dtype="Float64").astype(float),
-        "adj_low":      pd.Series([pd.NA] * n, dtype="Float64").astype(float),
-        "adj_close":    pd.Series([pd.NA] * n, dtype="Float64").astype(float),
-        "adj_factor":   pd.Series([pd.NA] * n, dtype="Float64").astype(float),
-        "source":       "tej_afutr",
-        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
-        "quality_flag": "ok",
+        "adj_open":     [float("nan")] * n,
+        "adj_high":     [float("nan")] * n,
+        "adj_low":      [float("nan")] * n,
+        "adj_close":    [float("nan")] * n,
+        "adj_factor":   [float("nan")] * n,
+        "source":       ["tej_afutr"] * n,
+        "ingestion_ts": [pd.Timestamp.now(tz="UTC")] * n,
+        "quality_flag": ["ok"] * n,
     })
     out["year"] = pd.to_datetime(out["ts_utc"]).dt.year.astype("int32")
     return out
@@ -399,11 +403,9 @@ def adapt_afutrhu_to_silver(df) -> "pd.DataFrame":
     if len(df) == 0:
         return df
     # Same individual-stock-futures skip
+    df = df.reset_index(drop=True)
     contract_id = df["期貨名稱"].astype(str)
-    keep = ~contract_id.str.slice(0, 3).isin([])  # placeholder — no skip here, want all
-    df = df.loc[keep].copy()
-    contract_id = df["期貨名稱"].astype(str)
-    product = contract_id.str.slice(0, 3)
+    product = contract_id.str.extract(r"^(.+?)(?=\d{6})", expand=False).fillna(contract_id.str.slice(0, 3))
     td = pd.to_datetime(df["日期"]).dt.tz_localize(None)
     ts_utc = (td + pd.Timedelta(hours=13, minutes=45)).dt.tz_localize("Asia/Taipei").dt.tz_convert("UTC")
     out = pd.DataFrame({
