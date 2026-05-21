@@ -26,7 +26,7 @@
 | **M1** | scaffold：`mkdocs.yml` + `.github/workflows/docs.yml` + `docs-site/index.md` + 目錄 | ✅ |
 | **M2** | 架構頁三張（overview / medallion / dataflow） | ✅ |
 | **M3** | DB 頁五張（overview / views / schema / finmind / rs-rating） | ✅ |
-| **M4** | UI 頁四張（overview / duckdb-ui / gap-dashboard / funnel） | ⏳ |
+| **M4** | UI 頁四張（overview / duckdb-ui / gap-dashboard / funnel） | ✅ |
 | **M5** | Ops 頁五張 + changelog；本地 `mkdocs build --strict` 跑通 | ⏳ |
 
 每完成一個 milestone commit 一次。
@@ -61,7 +61,14 @@ mermaid 用 `flowchart` + `sequenceDiagram` 混用，全部能被 pymdownx super
 - `db/finmind.md` — 為什麼接、如何接（sqlite_scan view-baked path）、8 個 view、QC 結果（100% bit-exact）、4 種典型查詢、deferred M8/M9 路線
 - `db/rs-rating.md` — RS rating IBD 公式、設計總覽、output schema、完整 DuckDB SQL skeleton、5 個 open question、implementation order、來源參考
 
-### M4 — pending
+### M4 — UI 頁
+
+4 張：
+
+- `ui/overview.md` — 三條看資料路徑（Web UI / CLI / gap dashboard）、遠端存取三選一比較、工具版本
+- `ui/duckdb-ui.md` — 啟動 + 雙 catalog DB 分工 + 寫鎖 troubleshooting + 5 個 sample query（content tabs）
+- `ui/gap-dashboard.md` — gap_report.py 用法 + 5 個 severity + classify SLA 邏輯 + 加新 view 步驟 + 自動化
+- `ui/funnel.md` — Tailscale Funnel WIP-blocked 紀錄（DuckDB UI 內建 token-auth funnel 不行）+ 三條替代方案（SSH / 靜態 funnel / FastAPI playground）+ 安全清單
 
 ### M5 — pending
 
