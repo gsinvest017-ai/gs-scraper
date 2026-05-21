@@ -71,6 +71,17 @@ dispatcher：APISTOCK 單 shot（small static table）、APISTKATTR 30 天 chunk
 
 EWISAMPLE 試打 0050 + 2026-01 返回 0 rows — 該表 API 需特定 `idx_id` 或不接受 coid filter，留 P3 探索。
 
+### M3 (fetch) — P1 datasets 4 個成功落地
+
+| dataset | rows | 觀察 |
+|---|---:|---|
+| `chip_dist` (APISHRACTW) | 479,101 | 2013-2026 範圍掃完，前期 chunks 0 rows、近年才有 |
+| `cash_dividend` (ADIV) | 10,458 | event-based，2013-2026 ~10K 除息事件合理 |
+| `stock_futures_corp_actions` (AFUTRSTK) | 55,741 | 個股期合約調整事件 |
+| `inst_futures_full` (AFINST) | 465,819 | 期交所完整三大法人 2008-2026 全範圍，比 SUPPLEMENT scrape 多 ~70x |
+
+無 rate-limit 卡關、無 hang。整體 ~16 分鐘完成 4 個 dataset。
+
 ### M3 (code only) — P1 datasets schema + adapters
 
 `scripts/fetch_tej.py` 加 4 個新 logical table：
