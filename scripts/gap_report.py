@@ -4,8 +4,8 @@ compute lag vs expected freshness, and emit a dashboard.
 Usage:
   python scripts/gap_report.py                     # terminal text (default)
   python scripts/gap_report.py --format json       # machine-readable
-  python scripts/gap_report.py --format html       # writes docs/gap_dashboard.html
-  python scripts/gap_report.py --format all        # text + json + html
+  python scripts/gap_report.py --format html       # writes docs/gap_dashboard.html (+ mirror docs-site/)
+  python scripts/gap_report.py --format all        # text + json + html (+ mirror docs-site/)
 
 Lag severity by category:
   daily-trading: 0-1 trading days = OK, 2-5 = WARN, >5 = STALE
@@ -432,6 +432,9 @@ def main() -> int:
                         help="Disable ANSI color in text output")
     parser.add_argument("--out-html", default=str(REPO / "docs" / "gap_dashboard.html"),
                         help="HTML output path (used by --format html / all)")
+    parser.add_argument("--out-html-mirror", default=str(REPO / "docs-site" / "gap_dashboard.html"),
+                        help="Secondary HTML mirror — copied into docs-site so MkDocs publishes it"
+                             " at https://<pages-url>/gap_dashboard.html. Set to empty string to skip.")
     parser.add_argument("--out-json", default=str(REPO / "meta" / "audit" / "gap_report.json"),
                         help="JSON output path (used by --format json / all)")
     parser.add_argument("--catalog", default=str(CATALOG),
@@ -462,9 +465,14 @@ def main() -> int:
         print(f"\n[json] wrote {args.out_json}", file=sys.stderr)
 
     if args.format in ("html", "all"):
+        html_body = render_html(rows, today)
         Path(args.out_html).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out_html).write_text(render_html(rows, today))
+        Path(args.out_html).write_text(html_body)
         print(f"[html] wrote {args.out_html}", file=sys.stderr)
+        if args.out_html_mirror:
+            Path(args.out_html_mirror).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out_html_mirror).write_text(html_body)
+            print(f"[html] mirrored to {args.out_html_mirror}", file=sys.stderr)
 
     # Exit code reflects severity for use in cron / CI
     sev_counts = {sev: 0 for sev in SEVERITY}
