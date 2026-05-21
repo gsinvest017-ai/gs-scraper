@@ -2,8 +2,13 @@
 
 量化資料 medallion lakehouse（bronze → silver → gold）。
 
-完整設計、schema、Mermaid 圖：[`DATA_ARCHITECTURE.md`](./DATA_ARCHITECTURE.md)。
-分階段實作進度：[`docs/progress-data-arch-impl.md`](./docs/progress-data-arch-impl.md)。
+📖 **文檔網站**：<https://gsinvest017-ai.github.io/gs-scraper/>（MkDocs Material，每次 push 自動重新發佈）
+
+其他入口：
+
+- 完整設計、schema、Mermaid 圖：[`DATA_ARCHITECTURE.md`](./DATA_ARCHITECTURE.md)
+- 分階段實作進度：[`docs/progress-data-arch-impl.md`](./docs/progress-data-arch-impl.md)
+- 文檔站源碼：[`docs-site/`](./docs-site/)
 
 ## 目錄
 

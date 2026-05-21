@@ -30,9 +30,9 @@
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 寫此進度檔 + 確認 pre-flight（remote / branch / gh auth / repo public） | ✅ |
-| **M2** | `git push origin main`：把 20 個本地 commit 推上去；觸發第一次 `docs.yml` workflow run | ⏳ |
-| **M3** | 等 docs.yml 完成（建出 `gh-pages` branch）→ `gh api ... /pages -F source.branch=gh-pages` 設 Pages source | ⏳ |
-| **M4** | 確認 live URL 200，把 URL 寫進 README / index.md | ⏳ |
+| **M2** | `git push origin main`：把 20 個本地 commit 推上去；觸發第一次 `docs.yml` workflow run | ✅ |
+| **M3** | 等 docs.yml 完成（建出 `gh-pages` branch）→ `gh api ... /pages -F source.branch=gh-pages` 設 Pages source | ✅ |
+| **M4** | 確認 live URL 200，把 URL 寫進 README / index.md | ✅ |
 
 ---
 
@@ -42,11 +42,45 @@
 
 Confirmed `gh repo view`: public + main + 不啟用 Pages（404）；`gh-pages` branch 不存在。本地 20 commits ahead，無 dirty changes（meta/audit/ingest jsonl 被 .gitignore 蓋掉）。
 
-### M2 — pending
+### M2 — git push origin main
 
-### M3 — pending
+```
+721e45a..2d78382  main -> main   (push 成功)
+```
 
-### M4 — pending
+21 commit 推上去（從 M1-M5 docs-site 系列 + .gitignore + 進度檔）。push 完馬上觸發 `docs.yml` workflow run `26214505154`，24s 完成 status=success。`peaceiris/actions-gh-pages@v4` 把 `site/` 推到 `gh-pages` branch（`dd3c65a1...`，force-orphan）。
+
+### M3 — Enable Pages with gh-pages source
+
+```bash
+gh api -X POST repos/gsinvest017-ai/gs-scraper/pages \
+    -F source[branch]=gh-pages -F source[path]=/
+```
+
+回傳：
+- `html_url`: **https://gsinvest017-ai.github.io/gs-scraper/**
+- `source.branch`: `gh-pages`
+- `https_enforced`: true
+- `custom_404`: true（MkDocs Material 自帶）
+
+Pages build 從 `status=building` 經 ~24s 切到 `status=built`。
+
+### M4 — Smoke-test live URL
+
+| Path | HTTP |
+|---|---:|
+| `/` | **200** |
+| `/architecture/overview/` | **200** |
+| `/db/finmind/` | **200** |
+| `/ui/gap-dashboard/` | **200** |
+| `/ops/install/` | **200** |
+| `/changelog/` | **200** |
+
+HTML 內容驗證：`<html lang="zh-TW">` + `<meta name="description" content="QUANTDATA — 台股 / 期 / 選 ...">` + `<meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">` 全部正確。
+
+**🌐 Live URL**：https://gsinvest017-ai.github.io/gs-scraper/
+
+往後每次 push main 摸到 `docs-site/` 或 `mkdocs.yml`，CI 會自動 rebuild 並 force-push 到 gh-pages。手動觸發：`gh workflow run docs.yml --ref main`。
 
 ---
 
