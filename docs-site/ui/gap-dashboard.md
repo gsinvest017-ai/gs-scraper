@@ -2,6 +2,12 @@
 
 `scripts/gap_report.py` 走遍 catalog 裡監控中的 view，計算 `today - MAX(date_col)` 當 lag，按 view 類型分級成 OK / WARN / STALE / EMPTY / INFO，輸出文字 / JSON / HTML 三種格式。
 
+!!! tip "📊 看當前 live dashboard"
+
+    [**→ 開啟 `gap_dashboard.html`**](../gap_dashboard.html){ target=_blank }
+
+    這份 HTML 由最近一次 commit 觸發 docs.yml workflow 時的 snapshot。要看更即時的，本地跑 `.venv/bin/python scripts/gap_report.py --format html` 即可。
+
 ## 跑
 
 ```bash

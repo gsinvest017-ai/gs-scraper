@@ -25,7 +25,7 @@
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 改 `scripts/gap_report.py` 加 mirror 寫入，regen 兩份 HTML | ✅ |
-| **M2** | 在 `docs-site/ui/gap-dashboard.md` + `docs-site/index.md` 加 live URL 連結；加 nav 條目；strict build PASS | ⏳ |
+| **M2** | 在 `docs-site/ui/gap-dashboard.md` + `docs-site/index.md` 加 live URL 連結；加 nav 條目；strict build PASS | ✅ |
 | **M3** | push + verify https://...github.io/gs-scraper/gap_dashboard.html HTTP 200 | ⏳ |
 
 ## 進度日誌
@@ -36,7 +36,16 @@
 
 向後相容：`--out-html-mirror=""` 可以關掉鏡像（給 systemd / cron 不需要更新 docs-site 時用）。
 
-### M2 — pending
+### M2 — 連結 + nav 條目 + strict build
+
+- `docs-site/ui/gap-dashboard.md` 開頭加 Material admonition `!!! tip "📊 看當前 live dashboard"` 含 `[→ 開啟 gap_dashboard.html](../gap_dashboard.html){target=_blank}`
+- `mkdocs.yml` nav 加頂層條目 `- Live Dashboard ↗: gap_dashboard.html`（MkDocs 1.6.1 nav 接受 HTML 檔；不會 strict-fail）
+- `.venv/bin/mkdocs build --strict` PASS（0.36s，加碼 `gap_dashboard.html` 進到 site/）
+
+Verify：
+- `site/gap_dashboard.html` 出現
+- `site/index.html` 含 3 個 `gap_dashboard.html` reference（nav）
+- `site/ui/gap-dashboard/index.html` 含 8 個 reference（admonition + nav + 內文）
 
 ### M3 — pending
 
