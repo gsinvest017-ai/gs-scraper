@@ -53,7 +53,32 @@
 
 ### M3 — 整合 daily_refresh + commit
 
-完成項目：（待補）
+完成項目：
+
+- `scripts/daily_refresh.sh` 加 `step 4/4: regenerate gap dashboard`：跑完 catalog rebuild 後自動 `gap_report.py --format all`，把 STALE/WARN exit code 轉成 log WARN（不讓 pipeline 失敗）。
+- `.gitignore` 加 `meta/audit/daily_refresh_*.log` / `daily_refresh_cron.log` 規則；HTML 故意保留追蹤（提供 GitHub 線上瀏覽快照）；JSON 由 `meta/**` 既有規則自動忽略。
+- Dry-run 路徑保持不動（dry-run 不會跑到 step 4）。
+- Commits:
+  - `63a493b` — M1-M2: gap_report.py + 初始 dashboard
+  - 後續 commit — M3: 整合 daily_refresh + 進度檔終稿
+
+## 視覺看板使用方式（更新）
+
+```bash
+# 看終端表
+.venv/bin/python scripts/gap_report.py
+
+# 產 HTML（瀏覽器開 docs/gap_dashboard.html）
+.venv/bin/python scripts/gap_report.py --format html
+
+# 機器讀取（JSON，落到 meta/audit/gap_report.json）
+.venv/bin/python scripts/gap_report.py --format json
+
+# 三者一起（cron / daily_refresh.sh 用）
+.venv/bin/python scripts/gap_report.py --format all
+```
+
+cron 自動跑（`30 17 * * 1-5`）會把最新 dashboard 寫回 `docs/gap_dashboard.html`。
 
 ## 視覺看板使用方式
 

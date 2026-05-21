@@ -176,5 +176,18 @@ else
     log INFO "catalog swapped: $CATALOG"
 fi
 
+# ---- 6. Regenerate gap dashboard ----------------------------------------
+log INFO "step 4/4: regenerate gap dashboard"
+# gap_report.py exits 2 if any STALE — we treat that as informational, not a
+# pipeline failure. The dashboard still gets written either way.
+"$VENV_PY" "$REPO/scripts/gap_report.py" --format all --no-color >> "$LOG" 2>&1
+GAP_RC=$?
+case $GAP_RC in
+    0) log INFO "gap report: all OK" ;;
+    1) log WARN "gap report: some datasets WARN — see docs/gap_dashboard.html" ;;
+    2) log WARN "gap report: some datasets STALE — see docs/gap_dashboard.html" ;;
+    *) log ERROR "gap report failed (rc=$GAP_RC)" ;;
+esac
+
 log INFO "==== daily_refresh OK ===="
 exit 0
