@@ -41,13 +41,13 @@
 </head>
 <body>
 <h1>📊 QUANTDATA Gap Dashboard</h1>
-<div class="subtitle">Generated 2026-05-21 14:00:56 · catalog: <code>catalog/quant.duckdb</code> · 23 datasets monitored</div>
+<div class="subtitle">Generated 2026-05-21 15:41:16 · catalog: <code>catalog/quant.duckdb</code> · 26 datasets monitored</div>
 
 <div class="summary">
   <div class="pill STALE">🔴 STALE<br><b>12</b></div>
   <div class="pill WARN">⚠️ WARN<br><b>2</b></div>
   <div class="pill EMPTY">❓ EMPTY<br><b>1</b></div>
-  <div class="pill INFO">ℹ️ INFO<br><b>1</b></div>
+  <div class="pill INFO">ℹ️ INFO<br><b>4</b></div>
   <div class="pill OK">✅ OK<br><b>7</b></div>
 </div>
 
@@ -82,6 +82,9 @@
 <tr class="WARN"><td>⚠️  WARN</td><td class="tier-P2">P2</td><td><code>accounting_raw</code></td><td>原始會計簽證科目（AINVFINB 118 欄）</td><td>quarterly</td><td>2026-03-01</td><td class="lag">81d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:162px"></span></span></td><td><code>fetch_tej.py --table accounting_raw --append-since-silver</code></td></tr>
 <tr class="EMPTY"><td>❓ EMPTY</td><td class="tier-P2">P2</td><td><code>cross_market_features</code></td><td>跨市場特徵（VIX-vol、SPY-corr 等）</td><td>derived</td><td>—</td><td class="lag">—</td><td></td><td><code>(cross-market features — derived from VIX/SPY/macro; rebuild after macro_daily refresh)</code></td></tr>
 <tr class="INFO"><td>ℹ️  INFO</td><td class="tier-P1">P1</td><td><code>stock_factor_daily</code></td><td>個股技術因子（漲跌幅、RSI、ADX 等）</td><td>derived</td><td>2025-12-31</td><td class="lag">141d</td><td><span class="bar" style="width:180px"><span class="INFO" style="width:180px"></span></span></td><td><code>qd-ingest rebuild-stock-factors  (依 tw_stock_bars 衍生)</code></td></tr>
+<tr class="INFO"><td>ℹ️  INFO</td><td class="tier-P1">P1</td><td><code>finmind_stock_price_norm</code></td><td>FinMind 個股日 K (canonical 命名 + 2000-2026 完整)</td><td>snapshot</td><td>2026-05-15</td><td class="lag">6d</td><td><span class="bar" style="width:180px"><span class="INFO" style="width:12px"></span></span></td><td><code>(re-sync bronze/finmind/finmind_*.sqlite when FinMind crawler produces a new snapshot)</code></td></tr>
+<tr class="INFO"><td>ℹ️  INFO</td><td class="tier-P2">P2</td><td><code>finmind_stock_price_adj_norm</code></td><td>FinMind 還原權息日 K (TEJ adj_close 對帳用)</td><td>snapshot</td><td>2026-05-13</td><td class="lag">8d</td><td><span class="bar" style="width:180px"><span class="INFO" style="width:16px"></span></span></td><td><code>(re-sync bronze/finmind/finmind_*.sqlite for fresh adj series)</code></td></tr>
+<tr class="INFO"><td>ℹ️  INFO</td><td class="tier-P2">P2</td><td><code>qc_stock_price_diff</code></td><td>TEJ vs FinMind 對帳 view（2010+ 重疊段）</td><td>derived</td><td>2026-05-15</td><td class="lag">6d</td><td><span class="bar" style="width:180px"><span class="INFO" style="width:12px"></span></span></td><td><code>(rebuild after either tw_stock_bars or finmind_stock_price_norm updates)</code></td></tr>
 <tr class="OK"><td>✅ OK</td><td class="tier-P0">P0</td><td><code>tw_futures_large_trader_daily</code></td><td>期貨大額交易人未沖銷部位</td><td>daily-trading</td><td>2026-05-20</td><td class="lag">1d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:2px"></span></span></td><td></td></tr>
 <tr class="OK"><td>✅ OK</td><td class="tier-P0">P0</td><td><code>bars_1d</code></td><td>所有期貨日 K（含 MXF/TXF/個股期）</td><td>daily-trading</td><td>2026-05-20</td><td class="lag">1d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:2px"></span></span></td><td></td></tr>
 <tr class="OK"><td>✅ OK</td><td class="tier-P1">P1</td><td><code>fundamentals_q</code></td><td>季報（單季 + 累季財報）</td><td>quarterly</td><td>2026-03-31</td><td class="lag">51d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:102px"></span></span></td><td></td></tr>

@@ -133,6 +133,17 @@ DATASETS = [
             "(市場層級三大法人 — 上游應由 tw_inst_stock_daily aggregated 而來)",
             "市場層級三大法人彙總", "P2"),
 
+    # --- FinMind bronze snapshot (one-shot dump 2026-05-18, not auto-refreshed) ---
+    Dataset("finmind_stock_price_norm",     "trading_date", "snapshot",
+            "(re-sync bronze/finmind/finmind_*.sqlite when FinMind crawler produces a new snapshot)",
+            "FinMind 個股日 K (canonical 命名 + 2000-2026 完整)", "P1"),
+    Dataset("finmind_stock_price_adj_norm", "trading_date", "snapshot",
+            "(re-sync bronze/finmind/finmind_*.sqlite for fresh adj series)",
+            "FinMind 還原權息日 K (TEJ adj_close 對帳用)", "P2"),
+    Dataset("qc_stock_price_diff",          "trading_date", "derived",
+            "(rebuild after either tw_stock_bars or finmind_stock_price_norm updates)",
+            "TEJ vs FinMind 對帳 view（2010+ 重疊段）", "P2"),
+
     # --- Event-driven (future-dated rows; check MAX vs today) ---
     Dataset("cash_dividend_events",    "ex_date",      "event",
             "fetch_tej.py --table cash_dividend --append-since-silver",
@@ -177,6 +188,10 @@ def classify(lag_days: int | None, category: str) -> str:
         # Downstream tables — we just flag, the action is "rebuild".
         if lag_days is None or lag_days <= 1: return "OK"
         return "INFO"
+    if category == "snapshot":
+        # Bronze snapshot — never expected to be "fresh". If it has data,
+        # surface as INFO (weight 0, won't trigger alerts); empty → EMPTY.
+        return "INFO" if lag_days is not None else "EMPTY"
     # daily-trading
     if lag_days <= 1: return "OK"
     if lag_days <= 5: return "WARN"

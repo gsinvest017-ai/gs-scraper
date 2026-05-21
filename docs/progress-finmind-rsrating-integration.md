@@ -255,6 +255,18 @@ WHERE t.asset_class='tw_stock' AND t.close IS NOT NULL
 | (選) | `taiwan_stock_price_adj` vs TEJ `adj_close` 對帳；發現方法論差異後決定要不要保留兩家 adj 序列 | 易 |
 | (選) | 興櫃 367 檔的 silver bars 補完 | 中 |
 
+### Post-M7 — gap_report 接入 FinMind
+
+把 3 個新 view 掛進 `scripts/gap_report.py` 的 `DATASETS` 註冊表，讓 `docs/gap_dashboard.html` 反映 FinMind / QC 的存在：
+
+- `finmind_stock_price_norm` (snapshot, P1) — max_date 2026-05-15
+- `finmind_stock_price_adj_norm` (snapshot, P2) — max_date 2026-05-13
+- `qc_stock_price_diff` (derived, P2) — max_date 2026-05-15
+
+新增 `classify()` 的 `snapshot` 分支：有資料 → INFO（weight 0，不觸發 alert）、空 → EMPTY。FinMind 是 one-shot snapshot，故不應隨時間自動轉紅。
+
+Regen：`.venv/bin/python scripts/gap_report.py --format all` → 同步寫出 text / `meta/audit/gap_report.json` / `docs/gap_dashboard.html`。
+
 ---
 
 ## Fallback / 接手指引
