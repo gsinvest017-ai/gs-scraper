@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>QUANTDATA Gap Dashboard</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang TC", sans-serif;
+          margin: 24px; color: #1f2937; background: #f9fafb; }
+  h1 { margin: 0 0 6px 0; font-size: 22px; }
+  .subtitle { color: #6b7280; margin-bottom: 18px; font-size: 13px; }
+  .summary { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
+  .pill { padding: 10px 18px; border-radius: 10px; font-weight: 600; min-width: 90px; text-align: center; }
+  .pill.OK    { background: #d1fae5; color: #065f46; }
+  .pill.WARN  { background: #fef3c7; color: #92400e; }
+  .pill.STALE { background: #fee2e2; color: #991b1b; }
+  .pill.EMPTY { background: #ede9fe; color: #5b21b6; }
+  .pill.INFO  { background: #dbeafe; color: #1e40af; }
+  table { width: 100%; border-collapse: collapse; background: white;
+           box-shadow: 0 1px 2px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+  th { background: #f3f4f6; font-weight: 600; color: #374151; }
+  tr:last-child td { border-bottom: none; }
+  tr.OK    { background: #ffffff; }
+  tr.WARN  { background: #fffbeb; }
+  tr.STALE { background: #fef2f2; }
+  tr.EMPTY { background: #faf5ff; }
+  tr.INFO  { background: #eff6ff; }
+  .lag { font-variant-numeric: tabular-nums; text-align: right; }
+  .bar { position: relative; display: inline-block; height: 10px; background: #d1d5db; border-radius: 4px; vertical-align: middle; }
+  .bar > span { position: absolute; left: 0; top: 0; height: 100%; border-radius: 4px; }
+  .bar > span.OK    { background: #10b981; }
+  .bar > span.WARN  { background: #f59e0b; }
+  .bar > span.STALE { background: #ef4444; }
+  .bar > span.INFO  { background: #3b82f6; }
+  code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px;
+          font-family: "JetBrains Mono", "Menlo", monospace; }
+  .tier-P0 { font-weight: 700; }
+  .tier-P2 { opacity: 0.7; }
+  .legend { font-size: 12px; color: #6b7280; margin-top: 16px; }
+</style>
+</head>
+<body>
+<h1>📊 QUANTDATA Gap Dashboard</h1>
+<div class="subtitle">Generated 2026-05-21 14:00:56 · catalog: <code>catalog/quant.duckdb</code> · 23 datasets monitored</div>
+
+<div class="summary">
+  <div class="pill STALE">🔴 STALE<br><b>12</b></div>
+  <div class="pill WARN">⚠️ WARN<br><b>2</b></div>
+  <div class="pill EMPTY">❓ EMPTY<br><b>1</b></div>
+  <div class="pill INFO">ℹ️ INFO<br><b>1</b></div>
+  <div class="pill OK">✅ OK<br><b>7</b></div>
+</div>
+
+<table>
+<thead>
+<tr>
+  <th>Status</th>
+  <th>Tier</th>
+  <th>View</th>
+  <th>Description</th>
+  <th>Category</th>
+  <th>Max date</th>
+  <th class="lag">Lag</th>
+  <th>Lag visual</th>
+  <th>Suggested action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P0">P0</td><td><code>revenue_monthly</code></td><td>月營收（每月 10 日前後公告）</td><td>monthly</td><td>2026-04-01</td><td class="lag">50d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:100px"></span></span></td><td><code>fetch_tej.py --table revenue_monthly --append-since-silver</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P0">P0</td><td><code>tw_inst_futures_daily</code></td><td>期貨三大法人（TAIFEX 直抓）</td><td>daily-trading</td><td>2026-05-08</td><td class="lag">13d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:26px"></span></span></td><td><code>(TAIFEX scraper — currently no auto-refresh)</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P0">P0</td><td><code>tw_inst_stock_daily</code></td><td>個股三大法人買賣超</td><td>daily-trading</td><td>2026-05-15</td><td class="lag">6d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:12px"></span></span></td><td><code>fetch_tej.py --table inst_stock --append-since-silver</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P0">P0</td><td><code>tw_margin_daily</code></td><td>融資融券餘額</td><td>daily-trading</td><td>2026-05-15</td><td class="lag">6d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:12px"></span></span></td><td><code>fetch_tej.py --table margin --append-since-silver</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>macro_daily</code></td><td>總體變數日資料 (VIX, USDTWD, ...)</td><td>daily-trading</td><td>2026-05-07</td><td class="lag">14d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:28px"></span></span></td><td><code>yfinance scraper for VIX/USDTWD/...  (no auto job yet)</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>tx_continuous_d</code></td><td>TX 連續期</td><td>daily-trading</td><td>2026-05-08</td><td class="lag">13d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:26px"></span></span></td><td><code>(TX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>mtx_continuous_d</code></td><td>MTX 連續期</td><td>daily-trading</td><td>2026-05-08</td><td class="lag">13d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:26px"></span></span></td><td><code>(MTX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>tw_chip_dist_daily</code></td><td>TEJ 集保戶股權分散表</td><td>daily-trading</td><td>2026-05-15</td><td class="lag">6d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:12px"></span></span></td><td><code>fetch_tej.py --table chip_dist --append-since-silver</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P2">P2</td><td><code>bars_1m</code></td><td>1 分鐘 K 線 (MXF)</td><td>daily-trading</td><td>2026-03-12</td><td class="lag">70d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:140px"></span></span></td><td><code>(MXF 1m — 來自 RAW_SOURCES/MXF_1m_clean_all/，需手動更新)</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P2">P2</td><td><code>txo_daily_features</code></td><td>選擇權 TXO 日特徵</td><td>daily-trading</td><td>2026-04-01</td><td class="lag">50d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:100px"></span></span></td><td><code>(TXO daily features — 來自選擇權日盤逐筆，無 auto-refresh)</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P2">P2</td><td><code>stock_futures_continuous_d</code></td><td>個股期連續近月</td><td>daily-trading</td><td>2026-04-10</td><td class="lag">41d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:82px"></span></span></td><td><code>(個股期連續 — 來自 RAW_SOURCES/股票期貨/，無自動 refresh)</code></td></tr>
+<tr class="STALE"><td>🔴 STALE</td><td class="tier-P2">P2</td><td><code>tw_inst_market_daily</code></td><td>市場層級三大法人彙總</td><td>daily-trading</td><td>2026-04-16</td><td class="lag">35d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:70px"></span></span></td><td><code>(市場層級三大法人 — 上游應由 tw_inst_stock_daily aggregated 而來)</code></td></tr>
+<tr class="WARN"><td>⚠️  WARN</td><td class="tier-P0">P0</td><td><code>tw_stock_bars</code></td><td>TEJ 個股日 K (OHLCV + 除權息調整)</td><td>daily-trading</td><td>2026-05-18</td><td class="lag">3d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:6px"></span></span></td><td><code>fetch_tej.py --table stock_daily --append-since-silver</code></td></tr>
+<tr class="WARN"><td>⚠️  WARN</td><td class="tier-P2">P2</td><td><code>accounting_raw</code></td><td>原始會計簽證科目（AINVFINB 118 欄）</td><td>quarterly</td><td>2026-03-01</td><td class="lag">81d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:162px"></span></span></td><td><code>fetch_tej.py --table accounting_raw --append-since-silver</code></td></tr>
+<tr class="EMPTY"><td>❓ EMPTY</td><td class="tier-P2">P2</td><td><code>cross_market_features</code></td><td>跨市場特徵（VIX-vol、SPY-corr 等）</td><td>derived</td><td>—</td><td class="lag">—</td><td></td><td><code>(cross-market features — derived from VIX/SPY/macro; rebuild after macro_daily refresh)</code></td></tr>
+<tr class="INFO"><td>ℹ️  INFO</td><td class="tier-P1">P1</td><td><code>stock_factor_daily</code></td><td>個股技術因子（漲跌幅、RSI、ADX 等）</td><td>derived</td><td>2025-12-31</td><td class="lag">141d</td><td><span class="bar" style="width:180px"><span class="INFO" style="width:180px"></span></span></td><td><code>qd-ingest rebuild-stock-factors  (依 tw_stock_bars 衍生)</code></td></tr>
+<tr class="OK"><td>✅ OK</td><td class="tier-P0">P0</td><td><code>tw_futures_large_trader_daily</code></td><td>期貨大額交易人未沖銷部位</td><td>daily-trading</td><td>2026-05-20</td><td class="lag">1d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:2px"></span></span></td><td></td></tr>
+<tr class="OK"><td>✅ OK</td><td class="tier-P0">P0</td><td><code>bars_1d</code></td><td>所有期貨日 K（含 MXF/TXF/個股期）</td><td>daily-trading</td><td>2026-05-20</td><td class="lag">1d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:2px"></span></span></td><td></td></tr>
+<tr class="OK"><td>✅ OK</td><td class="tier-P1">P1</td><td><code>fundamentals_q</code></td><td>季報（單季 + 累季財報）</td><td>quarterly</td><td>2026-03-31</td><td class="lag">51d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:102px"></span></span></td><td></td></tr>
+<tr class="OK"><td>✅ OK</td><td class="tier-P1">P1</td><td><code>tw_inst_futures_full_daily</code></td><td>期貨三大法人完整版（含選擇權）</td><td>daily-trading</td><td>2026-05-20</td><td class="lag">1d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:2px"></span></span></td><td></td></tr>
+<tr class="OK"><td>✅ OK</td><td class="tier-P1">P1</td><td><code>cash_dividend_events</code></td><td>現金股利除息事件（forward-looking）</td><td>event</td><td>2026-10-15</td><td class="lag">-147d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:0px"></span></span></td><td></td></tr>
+<tr class="OK"><td>✅ OK</td><td class="tier-P2">P2</td><td><code>tw_stock_trading_attrs_daily</code></td><td>個股交易屬性（注意/處置/全額交割）</td><td>daily-trading</td><td>2026-05-21</td><td class="lag">0d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:0px"></span></span></td><td></td></tr>
+<tr class="OK"><td>✅ OK</td><td class="tier-P2">P2</td><td><code>tw_stock_futures_corp_actions</code></td><td>個股期調整事件</td><td>event</td><td>2026-09-16</td><td class="lag">-118d</td><td><span class="bar" style="width:180px"><span class="OK" style="width:0px"></span></span></td><td></td></tr>
+</tbody>
+</table>
+
+<div class="legend">
+  Severity rules — daily-trading: 0-1d=OK / 2-5d=WARN / &gt;5d=STALE.
+  Monthly: 0-15d=OK / 15-45d=WARN / &gt;45d=STALE.
+  Quarterly: 0-60d=OK / 60-120d=WARN / &gt;120d=STALE.
+  Event (forward-looking): MAX&lt;today = WARN/STALE depending on age.
+  Derived tables (e.g. stock_factor_daily) inherit from upstream — flagged INFO only.
+</div>
+</body>
+</html>
