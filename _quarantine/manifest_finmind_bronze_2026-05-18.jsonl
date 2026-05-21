@@ -1,0 +1,11 @@
+{"type": "manifest_header", "task": "finmind_bronze_extract", "extracted_at_utc": "2026-05-21T07:24:48Z", "source_archive": "/home/kevin/gs-scraper/RAW_SOURCES/FINMIND資料集.zip", "source_archive_sha256": "24692ad671b19f7437756619e26e33a30a1909cf125794bb559dcc8ae83602b5", "source_archive_size_bytes": 805215044, "snapshot_date": "2026-05-18", "intent": "Bronze immutable snapshot of FinMind sqlite for selective silver merge (TEJ-gap backfill 2000-2009 + emerging board + adj-price QC cross-check)"}
+{"type": "file", "path": "bronze/finmind/finmind_2026-05-18.sqlite", "size_bytes": 2518978560, "sha256": "ab3a7633c9600ce69134f00784517e48f02fb934bc018eaf66b7cc70338a18a5"}
+{"type": "sqlite_table", "table": "_meta_datasets", "rows": 47, "cols": ["name", "category", "table_name", "fetch_mode", "primary_key", "earliest_date", "note", "first_seen", "last_updated", "total_rows"]}
+{"type": "sqlite_table", "table": "_meta_progress", "rows": 14174, "cols": ["dataset", "stock_id", "chunk_start", "chunk_end", "status", "rows", "error", "updated_at"]}
+{"type": "sqlite_table", "table": "taiwan_stock_info", "rows": 3088, "cols": ["industry_category", "stock_id", "stock_name", "type", "date"]}
+{"type": "sqlite_table", "table": "taiwan_stock_info_with_warrant", "rows": 126311, "cols": ["industry_category", "stock_id", "stock_name", "type", "date"]}
+{"type": "sqlite_table", "table": "taiwan_stock_price", "rows": 10578728, "cols": ["date", "stock_id", "Trading_Volume", "Trading_money", "open", "max", "min", "close", "spread", "Trading_turnover"]}
+{"type": "sqlite_table", "table": "taiwan_stock_price_adj", "rows": 10571636, "cols": ["date", "stock_id", "Trading_Volume", "Trading_money", "open", "max", "min", "close", "spread", "Trading_turnover"]}
+{"type": "sqlite_table", "table": "taiwan_stock_price_tick", "rows": 378933, "cols": ["date", "stock_id", "deal_price", "volume", "Time", "TickType"]}
+{"type": "sqlite_table", "table": "taiwan_stock_trading_date", "rows": 6512, "cols": ["date"]}
+{"type": "sqlite_table", "table": "taiwan_stock_week_price", "rows": 2225018, "cols": ["stock_id", "yweek", "max", "min", "trading_volume", "trading_money", "trading_turnover", "date", "close", "open", "spread"]}

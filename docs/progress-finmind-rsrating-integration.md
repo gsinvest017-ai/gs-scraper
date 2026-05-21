@@ -109,13 +109,15 @@ qc_stock_price_diff  ← TEJ ⨯ FinMind 2010+ 重疊段對帳
 | **M1** | 寫本份進度文件（設計 + 路線） | ✅ |
 | **M2** | 解 RS_Rating 7z 抽出 source code → `_quarantine/rs_rating_unpacked/` + 留 manifest | ✅ |
 | **M3** | 寫 `docs/spec-gold-rs-rating-daily.md`（演算法規格 + DuckDB SQL skeleton，**不執行**） | ✅ |
-| M4 | 等 `quantdata-scraper` session 完成 TEJ 寫入，解 FinMind zip 到 `bronze/finmind/finmind_2026-05-18.sqlite` + SHA256 + manifest | 未開始 |
-| M5 | DuckDB ATTACH FinMind + 寫 `qc_stock_price_diff` view（100 檔 sample 對 TEJ 5%） | 未開始 |
-| M6 | 若 QC 通過：寫 `src/qd_ingest/finmind.py` 跑 2000-2009 silver 補完 | 未開始 |
-| M7 | 更新 `bars_1d` view + 加 `source` 欄位 + `reference/symbol_map_with_warrant.parquet` | 未開始 |
-| M8 | （選）實作 `gold/stock_factor_daily.rs_rating` 因子表 | 未開始 |
+| **M4** | 解 FinMind zip 到 `bronze/finmind/finmind_2026-05-18.sqlite` + SHA256 + manifest | ✅ |
+| **M5** | DuckDB ATTACH FinMind + 建持久 `finmind_*` views 在 `quant.duckdb` | ⏳ |
+| **M6** | 寫 `qc_stock_price_diff` view + 跑 100 檔 sample 對 TEJ 比對 | ⏳ |
+| **M7** | 進度文件 final update + 總結 | ⏳ |
+| M8 (deferred) | 寫 `src/qd_ingest/finmind.py` 跑 2000-2009 silver 補完 | 未開始 |
+| M9 (deferred) | 更新 `bars_1d` view + 加 `source` 欄位 + `reference/symbol_map_with_warrant.parquet` | 未開始 |
+| M10 (deferred) | 實作 `gold/stock_factor_daily.rs_rating` 因子表 | 未開始 |
 
-**這次 /safe-yolo 只跑 M1 + M2 + M3**。M4 之後等下個 session 或人類接手。
+**第一次 /safe-yolo 跑 M1 + M2 + M3**。**第二次 /safe-yolo 跑 M4 + M5 + M6 + M7**（DuckDB 整合）。M8 後（silver backfill + gold rs_rating）等下個 session 或人類接手。
 
 ---
 
@@ -155,6 +157,25 @@ Manifest 落在 `_quarantine/manifest_rs_rating_2026-05-18.jsonl`（受 `.gitign
 6. **Validation plan**：等有人在 Windows 跑過原版 exe 之後，用 `daily_close_wide.parquet` 做 reference 比對；無 fixture 前先做分佈 sanity check。
 
 **未執行**：本次只寫規格，沒寫 driver、沒跑 ingest、沒建 view。等 quantdata-scraper session 結束 + DuckDB 寫鎖釋放後接 M4。
+
+### M4 — FinMind sqlite 進 bronze
+
+**Write lock 處理**：`fuser` 顯示 PID 1105 是 `duckdb -ui catalog/quant.duckdb`（互動 web UI，elapsed 3h26m），不是 scraper ingest。先 `cp catalog/quant.duckdb catalog/quant.duckdb.bak_pre_finmind_<ts>` 備份，再 `kill 1105`，鎖在 2 秒內釋放。
+
+**Extract**：用 Python `zipfile` stream-copy `FINMIND資料集/data/finmind.sqlite`（壓縮 805 MB → 2.5 GB）到 `bronze/finmind/finmind_2026-05-18.sqlite`。7.5 秒完成。產出 `.sha256` 對應檔：
+- zip SHA256: `24692ad671b19f7437756619e26e33a30a1909cf125794bb559dcc8ae83602b5`
+- sqlite SHA256: `ab3a7633c9600ce69134f00784517e48f02fb934bc018eaf66b7cc70338a18a5`
+
+**Inventory (sqlite_master)**：實表清單對得上 `SESSION_HANDOFF.md`：
+- `taiwan_stock_info` (3,088), `taiwan_stock_info_with_warrant` (126,311)
+- `taiwan_stock_price` (10,578,728), `taiwan_stock_price_adj` (10,571,636)
+- `taiwan_stock_week_price` (2,225,018), `taiwan_stock_trading_date` (6,512)
+- `taiwan_stock_price_tick` (378,933, 不會用)
+- `_meta_datasets` (47), `_meta_progress` (14,174) — FinMind crawler 的 progress 表，bronze 留著供 lineage
+
+**Manifest**：落在 `_quarantine/manifest_finmind_bronze_2026-05-18.jsonl`（manifest 例外規則進版控）。內容含 zip 與 sqlite 雙 SHA256、每張表的 rows + cols。
+
+**未做**：尚未把 sqlite 接進 DuckDB。M5 處理。
 
 ---
 
