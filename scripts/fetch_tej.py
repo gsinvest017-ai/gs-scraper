@@ -102,6 +102,122 @@ def _tej_get(dataset: str, **params) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Resilient fetch: signal timeout + exponential backoff + date chunking
+# ---------------------------------------------------------------------------
+
+class _TejTimeout(Exception):
+    pass
+
+
+def _tej_get_with_timeout(dataset: str, timeout_sec: int = 120, **params):
+    """Wrap tejapi.get with SIGALRM-based timeout. Required because the TEJ
+    server silently rate-limits by hanging the TCP connection — no exception
+    is raised even after minutes of no response."""
+    import signal
+
+    def _handler(signum, frame):
+        raise _TejTimeout(f"tejapi.get({dataset}) timed out after {timeout_sec}s")
+
+    old = signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(timeout_sec)
+    try:
+        return _tej_get(dataset, **params)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
+
+
+def _tej_get_resilient(dataset: str, *, timeout_sec: int = 120,
+                        max_retries: int = 5, backoff_base: int = 60,
+                        **params):
+    """tejapi.get with timeout + exponential backoff on hang.
+
+    Does NOT retry LimitExceededError (those mean the caller should chunk
+    smaller). Retries _TejTimeout and generic connection errors.
+    """
+    import time
+
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            return _tej_get_with_timeout(dataset, timeout_sec=timeout_sec, **params)
+        except _TejTimeout as e:
+            last_err = e
+            wait = backoff_base * (2 ** attempt)
+            print(f"  [retry {attempt+1}/{max_retries}] {e}, sleep {wait}s", flush=True)
+            time.sleep(wait)
+        except Exception as e:
+            # LimitExceededError or other library errors — re-raise immediately
+            if "Limit" in type(e).__name__ or "Limit" in str(e):
+                raise
+            # Network errors: same backoff
+            last_err = e
+            wait = backoff_base * (2 ** attempt)
+            print(f"  [retry {attempt+1}/{max_retries}] {type(e).__name__}: {e}, sleep {wait}s", flush=True)
+            time.sleep(wait)
+    raise RuntimeError(f"tejapi.get({dataset}) failed after {max_retries} retries; last: {last_err}")
+
+
+def _tej_get_chunked(dataset: str, start: str, end: str, *,
+                      chunk_days: int = 30, sleep_between: float = 3.0,
+                      timeout_sec: int = 180, **params) -> pd.DataFrame:
+    """Fetch a date range in chunks, concatenating results.
+
+    Use for AFUTR / AFUTRHU (~per-day high volume). chunk_days picks the
+    largest window that fits comfortably under TEJ's per-call row limit:
+      - AFUTR raw is ~2.4K rows/day → 30-day chunk ≈ 72K rows (over limit)
+      - At chunk_days=15 → ~36K rows (still over). Use 10 days.
+    Callers should tune per-dataset.
+    """
+    import time
+
+    sd = dt.datetime.strptime(start, "%Y%m%d").date()
+    ed = dt.datetime.strptime(end, "%Y%m%d").date()
+    dfs = []
+    cur = sd
+    chunk_i = 0
+    while cur <= ed:
+        chunk_end = min(cur + dt.timedelta(days=chunk_days - 1), ed)
+        s_str = cur.strftime("%Y%m%d")
+        e_str = chunk_end.strftime("%Y%m%d")
+        chunk_i += 1
+        print(f"  [chunk {chunk_i}] {dataset} {s_str}..{e_str}", flush=True)
+        try:
+            df = _tej_get_resilient(
+                dataset, timeout_sec=timeout_sec,
+                mdate={"gte": s_str, "lte": e_str}, **params,
+            )
+        except Exception as e:
+            if "Limit" in type(e).__name__ or "Limit" in str(e):
+                # Halve chunk window and retry recursively
+                if chunk_days <= 3:
+                    raise RuntimeError(
+                        f"  chunked fetch hit LimitExceeded even at {chunk_days}-day window; "
+                        f"caller must add coid filter"
+                    ) from e
+                print(f"    LimitExceeded at chunk_days={chunk_days}, halving and retrying", flush=True)
+                sub = _tej_get_chunked(
+                    dataset, s_str, e_str,
+                    chunk_days=max(chunk_days // 2, 3),
+                    sleep_between=sleep_between, timeout_sec=timeout_sec, **params,
+                )
+                dfs.append(sub)
+            else:
+                raise
+        else:
+            print(f"    -> {len(df):,} rows", flush=True)
+            if len(df):
+                dfs.append(df)
+        cur = chunk_end + dt.timedelta(days=1)
+        if cur <= ed:
+            time.sleep(sleep_between)
+
+    if not dfs:
+        return pd.DataFrame()
+    return pd.concat(dfs, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Schema adapters: API table -> EW CSV row format
 # ---------------------------------------------------------------------------
 
@@ -636,23 +752,23 @@ def fetch(tables: list[str], start: str, end: str, *, mode: str) -> None:
     # --- P0: direct-to-silver datasets ---
 
     if "futures_daily" in tables:
-        print(f"[fetch] TWN/AFUTR {start}..{end}", flush=True)
-        afutr = _tej_get("TWN/AFUTR", mdate={"gte": start, "lte": end})
-        print(f"  -> {len(afutr):,} rows", flush=True)
+        print(f"[fetch] TWN/AFUTR {start}..{end} (chunked)", flush=True)
+        afutr = _tej_get_chunked("TWN/AFUTR", start, end, chunk_days=10)
+        print(f"  -> {len(afutr):,} rows total", flush=True)
         out = adapt_afutr_to_bars_1d(afutr)
         print(f"  -> {len(out):,} rows after filtering individual-stock-futures", flush=True)
         write_silver_futures_daily(out, mode=mode)
 
     if "futures_large_trader" in tables:
-        print(f"[fetch] TWN/AFUTRHU {start}..{end}", flush=True)
-        afutrhu = _tej_get("TWN/AFUTRHU", mdate={"gte": start, "lte": end})
-        print(f"  -> {len(afutrhu):,} rows", flush=True)
+        print(f"[fetch] TWN/AFUTRHU {start}..{end} (chunked)", flush=True)
+        afutrhu = _tej_get_chunked("TWN/AFUTRHU", start, end, chunk_days=30)
+        print(f"  -> {len(afutrhu):,} rows total", flush=True)
         out = adapt_afutrhu_to_silver(afutrhu)
         write_silver_large_trader(out, mode=mode)
 
     if "revenue_monthly" in tables:
         print(f"[fetch] TWN/APISALE {start}..{end}", flush=True)
-        apisale = _tej_get("TWN/APISALE", mdate={"gte": start, "lte": end})
+        apisale = _tej_get_resilient("TWN/APISALE", mdate={"gte": start, "lte": end})
         print(f"  -> {len(apisale):,} rows", flush=True)
         out = adapt_apisale_to_silver(apisale)
         write_silver_revenue(out, mode=mode)
