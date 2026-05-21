@@ -24,7 +24,7 @@
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | scaffold：`mkdocs.yml` + `.github/workflows/docs.yml` + `docs-site/index.md` + 目錄 | ✅ |
-| **M2** | 架構頁三張（overview / medallion / dataflow） | ⏳ |
+| **M2** | 架構頁三張（overview / medallion / dataflow） | ✅ |
 | **M3** | DB 頁五張（overview / views / schema / finmind / rs-rating） | ⏳ |
 | **M4** | UI 頁四張（overview / duckdb-ui / gap-dashboard / funnel） | ⏳ |
 | **M5** | Ops 頁五張 + changelog；本地 `mkdocs build --strict` 跑通 | ⏳ |
@@ -41,7 +41,15 @@
 
 Nav 與參考站對齊但分支不同：架構 / DB / UI / Ops + 變更紀錄。
 
-### M2 — pending
+### M2 — 架構頁
+
+落地三張：
+
+- `architecture/overview.md` — 系統地圖 mermaid + 三層分工 + 工作流線 + 兩條相關 repo
+- `architecture/medallion.md` — bronze / silver / gold 三層規則 + 邊界規則 + catalog 角色（catalog DuckDB 不存資料）
+- `architecture/dataflow.md` — 7 條資料流（TEJ daily、FinMind snapshot、TAIFEX、histdata、gold derive、QC、latency 概況）含 sequenceDiagram
+
+mermaid 用 `flowchart` + `sequenceDiagram` 混用，全部能被 pymdownx superfences 渲染。
 
 ### M3 — pending
 
