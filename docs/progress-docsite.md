@@ -25,7 +25,7 @@
 |---|---|---|
 | **M1** | scaffold：`mkdocs.yml` + `.github/workflows/docs.yml` + `docs-site/index.md` + 目錄 | ✅ |
 | **M2** | 架構頁三張（overview / medallion / dataflow） | ✅ |
-| **M3** | DB 頁五張（overview / views / schema / finmind / rs-rating） | ⏳ |
+| **M3** | DB 頁五張（overview / views / schema / finmind / rs-rating） | ✅ |
 | **M4** | UI 頁四張（overview / duckdb-ui / gap-dashboard / funnel） | ⏳ |
 | **M5** | Ops 頁五張 + changelog；本地 `mkdocs build --strict` 跑通 | ⏳ |
 
@@ -51,7 +51,15 @@ Nav 與參考站對齊但分支不同：架構 / DB / UI / Ops + 變更紀錄。
 
 mermaid 用 `flowchart` + `sequenceDiagram` 混用，全部能被 pymdownx superfences 渲染。
 
-### M3 — pending
+### M3 — DB / Catalog 頁
+
+5 張頁面：
+
+- `db/overview.md` — DuckDB 選型 rationale、單檔三種用法（CLI / Python / Web UI）、36 view 分類表、安全規則（read_only / 備份 / 寫鎖）
+- `db/views.md` — 11 段（bars / flows / fundamentals / futures / options / macro / events / gold / FinMind / QC / reference），每段表格列 view + rows + date range + 描述
+- `db/schema.md` — silver canonical schema 逐張表逐欄位（bars, inst_stock, margin, fundamentals_q, macro, symbol_map, contract_specs）+ 設計原則 + 加欄位流程
+- `db/finmind.md` — 為什麼接、如何接（sqlite_scan view-baked path）、8 個 view、QC 結果（100% bit-exact）、4 種典型查詢、deferred M8/M9 路線
+- `db/rs-rating.md` — RS rating IBD 公式、設計總覽、output schema、完整 DuckDB SQL skeleton、5 個 open question、implementation order、來源參考
 
 ### M4 — pending
 
