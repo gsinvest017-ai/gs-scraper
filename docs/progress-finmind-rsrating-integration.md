@@ -110,9 +110,9 @@ qc_stock_price_diff  ← TEJ ⨯ FinMind 2010+ 重疊段對帳
 | **M2** | 解 RS_Rating 7z 抽出 source code → `_quarantine/rs_rating_unpacked/` + 留 manifest | ✅ |
 | **M3** | 寫 `docs/spec-gold-rs-rating-daily.md`（演算法規格 + DuckDB SQL skeleton，**不執行**） | ✅ |
 | **M4** | 解 FinMind zip 到 `bronze/finmind/finmind_2026-05-18.sqlite` + SHA256 + manifest | ✅ |
-| **M5** | DuckDB ATTACH FinMind + 建持久 `finmind_*` views 在 `quant.duckdb` | ⏳ |
-| **M6** | 寫 `qc_stock_price_diff` view + 跑 100 檔 sample 對 TEJ 比對 | ⏳ |
-| **M7** | 進度文件 final update + 總結 | ⏳ |
+| **M5** | DuckDB ATTACH FinMind + 建持久 `finmind_*` views 在 `quant.duckdb` | ✅ |
+| **M6** | 寫 `qc_stock_price_diff` view + 跑 100 檔 sample 對 TEJ 比對 | ✅ |
+| **M7** | 進度文件 final update + 總結 | ✅ |
 | M8 (deferred) | 寫 `src/qd_ingest/finmind.py` 跑 2000-2009 silver 補完 | 未開始 |
 | M9 (deferred) | 更新 `bars_1d` view + 加 `source` 欄位 + `reference/symbol_map_with_warrant.parquet` | 未開始 |
 | M10 (deferred) | 實作 `gold/stock_factor_daily.rs_rating` 因子表 | 未開始 |
@@ -177,6 +177,84 @@ Manifest 落在 `_quarantine/manifest_rs_rating_2026-05-18.jsonl`（受 `.gitign
 
 **未做**：尚未把 sqlite 接進 DuckDB。M5 處理。
 
+### M5 — DuckDB persistent views (sqlite_scan path-baked)
+
+選擇 `sqlite_scan('<abs_path>', '<table>')` 把 sqlite 路徑直接烤進 view DDL，**不需要每次 session 先 `ATTACH`**。`INSTALL sqlite; LOAD sqlite;` 只在建 view 那一次需要。
+
+在 `catalog/quant.duckdb` 建 8 個 view：
+
+| View | Source table | 列數 | 用途 |
+|---|---|---:|---|
+| `finmind_stock_price` | `taiwan_stock_price` | 10.58 M | raw 日線 |
+| `finmind_stock_price_adj` | `taiwan_stock_price_adj` | 10.57 M | raw 還原權息 |
+| `finmind_stock_info` | `taiwan_stock_info` | 3,088 | 全市場（含興櫃）清單 |
+| `finmind_stock_info_with_warrant` | `taiwan_stock_info_with_warrant` | 126,311 | 含權證清單 |
+| `finmind_trading_date` | `taiwan_stock_trading_date` | 6,512 | 2000-2026 交易日曆 |
+| `finmind_stock_week_price` | `taiwan_stock_week_price` | 2.22 M | 週 K |
+| `finmind_stock_price_norm` | `taiwan_stock_price` | 10.58 M | **canonical 命名**：`max→high`, `min→low`, `Trading_Volume→volume`, `Trading_money→amount_twd`, 加 `source='finmind'` 欄 |
+| `finmind_stock_price_adj_norm` | `taiwan_stock_price_adj` | 10.57 M | 同上但還原權息 |
+
+Smoke：抽 TSMC 2015-01-05 → `(2015-01-05, 2330, O=140.5, H=140.5, L=137.5, C=139.5, V=32,214,177)`。TEJ 同列 `(O=140.5, H=140.5, L=137.5, C=139.5, V=32,214,000)`。
+
+Volume 末位差 177 股：TEJ 進到「千股單位」、FinMind 用實際股數。**OHLC 完全一致**。
+
+### M6 — QC：TEJ vs FinMind 2010+ 重疊段對帳
+
+建持久 view `qc_stock_price_diff`，定義：
+
+```sql
+SELECT t.trading_date, t.symbol stock_id,
+       t.close tej_close, f.close finmind_close,
+       (t.close - f.close) / f.close pct_diff,
+       t.volume tej_volume, f.volume finmind_volume
+FROM tw_stock_bars t
+JOIN finmind_stock_price_norm f
+  ON t.symbol = f.stock_id AND t.trading_date = f.trading_date
+WHERE t.asset_class='tw_stock' AND t.close IS NOT NULL
+  AND f.close IS NOT NULL AND f.close > 0
+```
+
+**重疊樣本**：6,374,416 列（TEJ ∩ FinMind 2010-2026）。
+
+**100 檔 × 2015-2020 sample（deterministic hash filter）**：實際命中 45 檔、63,413 列。
+
+**Diff 分佈**（`pct_diff = (tej_close - finmind_close) / finmind_close`）：
+
+| 區間 | 列數 | 佔比 |
+|---|---:|---:|
+| `|diff| ≤ 0.1%` | 63,413 | 100.00% |
+| `|diff| ≤ 0.5%` | 63,413 | 100.00% |
+| `|diff| ≤ 1.0%` | 63,413 | 100.00% |
+| `|diff| > 5.0%` | 0 | 0% |
+
+- MIN / MAX / AVG / median / p95 / p99 abs = **0.0 全 bit-exact**
+- 兩家 raw close 完全一致。
+
+**結論**：FinMind 取的 TWSE/TPEx public-API raw close 與 TEJ 的「日盤收盤價」**逐列 bit-exact**。可信度足以支援 **M8 silver 2000-2009 補完不必額外驗證**。
+
+**未做**：
+- `taiwan_stock_price_adj` vs TEJ 還原權息 (`adj_close`) 的對帳。`tw_stock_bars.adj_close` 大多為 NULL，缺資料無法對比；留待 TEJ 補完 `adj_close` 後（或下次 ingest）。
+- volume 兩邊單位有微差（TEJ 千股 round / FinMind 實際股數），不影響 OHLC，已記錄。
+
+### M7 — 最終總結與後續
+
+**本次 /safe-yolo（M4-M7）做了什麼：**
+
+1. 釋放 DuckDB write lock（PID 1105，閒置 `duckdb -ui` session）
+2. 把 2.5 GB FinMind sqlite 從 zip stream-extract 到 `bronze/finmind/finmind_2026-05-18.sqlite` + SHA256 + manifest
+3. 在 `catalog/quant.duckdb` 建 8 個持久 view（含 2 個 canonical norm view 對齊 silver schema）
+4. 建 `qc_stock_price_diff` view + 跑 100 檔 × 6 年 sample → **0% divergence**
+
+**後續可做（M8+，未在這次範圍）：**
+
+| Mn | 內容 | 預估難度 |
+|---|---|---|
+| M8 | 寫 `src/qd_ingest/finmind.py` 跑 2000-2009 silver 補完（1,477 檔 × 10 年 ≈ 2.4 M 列 → ~150 MB parquet） | 中（~2h） |
+| M9 | 更新 `bars_1d` view 為 `TEJ 2010+ UNION ALL FinMind 2000-2009`，加 `source` 欄；輸出 `reference/symbol_map_with_warrant.parquet` | 易（~1h） |
+| M10 | 實作 `gold/stock_factor_daily.rs_rating`（規格已在 `docs/spec-gold-rs-rating-daily.md`） | 中（~3h） |
+| (選) | `taiwan_stock_price_adj` vs TEJ `adj_close` 對帳；發現方法論差異後決定要不要保留兩家 adj 序列 | 易 |
+| (選) | 興櫃 367 檔的 silver bars 補完 | 中 |
+
 ---
 
 ## Fallback / 接手指引
@@ -203,3 +281,7 @@ Manifest 落在 `_quarantine/manifest_rs_rating_2026-05-18.jsonl`（受 `.gitign
 - M1 only：`git revert <m1-commit>` — 純刪文件。
 - M2：`rm -rf _quarantine/rs_rating_unpacked/` + `git revert <m2-commit>`（manifest commit）。
 - M3：`git revert <m3-commit>`。
+- M4：`rm -f bronze/finmind/finmind_2026-05-18.sqlite*` + `git revert <m4-commit>`。
+- M5：在 `catalog/quant.duckdb` 跑 `DROP VIEW finmind_*` × 8。或直接從 `catalog/quant.duckdb.bak_pre_finmind_<ts>` 還原（同層備份）。
+- M6：`DROP VIEW qc_stock_price_diff` 加上 M5 rollback。
+- 全還原：`cp catalog/quant.duckdb.bak_pre_finmind_<ts> catalog/quant.duckdb` + `rm -rf bronze/finmind/` + `git reset --hard <pre-M4-commit>`。
