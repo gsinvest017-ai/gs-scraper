@@ -44,6 +44,25 @@
 
 ## 進度日誌
 
+### M3 (code only) — P1 datasets schema + adapters
+
+`scripts/fetch_tej.py` 加 4 個新 logical table：
+
+| logical | TEJ 表 | silver 路徑 | schema |
+|---|---|---|---|
+| `chip_dist` | TWN/APISHRACTW | `silver/flows/tw_chip_dist_daily/` | 27 cols：集保庫存、6 級距 × (人數/張數/占比) + over_400 合計 |
+| `cash_dividend` | TWN/ADIV | `silver/fundamentals/cash_dividend_events/` | 21 cols：除息日 / 股利 / 股息總額 / 發放日 / 除息參考價 |
+| `stock_futures_corp_actions` | TWN/AFUTRSTK | `silver/flows/tw_stock_futures_corp_actions/` | 14 cols：契約調整因 / 每口折算股數 / cash adjust YN |
+| `inst_futures_full` | TWN/AFINST | `silver/flows/tw_inst_futures_full_daily/` | 24 cols：每身份×每商品 多空交易/未平倉 口數+金額（vs 既有 `tw_inst_futures_daily` 是 SUPPLEMENT scraper 來源、欄位較少） |
+
+`catalog.py`:
+- silver/flows 迴圈加 3 個新 view
+- silver/fundamentals 加 `cash_dividend_events`
+
+Dispatcher：`chip_dist` 用 60 天 chunk、`cash_dividend` 用 365 天 chunk、`stock_futures_corp_actions` 單 shot、`inst_futures_full` 用 60 天 chunk。
+
+驗證：syntax check 過、AFINST live 1-day fetch 114 raw → 114 silver rows，所有欄位映射正確（11=自營商 long_volume=179467 等）。
+
 ### M1 — resilient fetcher (timeout + backoff + chunked)
 
 新增 3 個 helper：

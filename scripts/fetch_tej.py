@@ -38,11 +38,12 @@ SILVER = REPO / "silver"
 # Logical tables exposed to the user.
 #   stock_daily / inst_stock / margin — write EW-format CSVs to RAW for the
 #       existing qd_ingest.sources.tej.* ingesters to consume.
-#   futures_daily / futures_large_trader / revenue_monthly — write Parquet
-#       directly to silver/ partitioned by year (no RAW intermediate).
+#   Everything else — write Parquet directly to silver/ partitioned by year.
 LOGICAL_TABLES = [
     "stock_daily", "inst_stock", "margin",
     "futures_daily", "futures_large_trader", "revenue_monthly",
+    # P1
+    "chip_dist", "cash_dividend", "stock_futures_corp_actions", "inst_futures_full",
 ]
 
 # Where the existing ingester reads from (must match qd_ingest.sources.tej rename maps)
@@ -686,6 +687,341 @@ def write_silver_revenue(out_df: "pd.DataFrame", *, mode: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P1: APISHRACTW (集保庫存 / 千張大戶分布)
+# ---------------------------------------------------------------------------
+
+def adapt_apishractw_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True)
+    td = pd.to_datetime(df["資料日"]).dt.tz_localize(None)
+    out = pd.DataFrame({
+        "stock_id":      df["證券名稱"].astype(str).values,
+        "trading_date":  td.dt.date.values,
+        "exchange":      df["市場別"].astype(str).values,
+        "publish_date_holdings": pd.to_datetime(df["公告日(集保庫存)"]).dt.tz_localize(None).dt.date.values,
+        "holdings_total_kshare": pd.array(pd.to_numeric(df["集保庫存股數(千股)"], errors="coerce"), dtype="Int64"),
+        "pledged_kshare":        pd.array(pd.to_numeric(df["設質股數(千股)"], errors="coerce"), dtype="Int64"),
+        "publish_date_dist":     pd.to_datetime(df["公告日(集保股權)"]).dt.tz_localize(None).dt.date.values,
+        "holders_under_400":     pd.array(pd.to_numeric(df["未滿400張集保人數"], errors="coerce"), dtype="Int64"),
+        "shares_under_400":      pd.array(pd.to_numeric(df["未滿400張集保張數"], errors="coerce"), dtype="Int64"),
+        "pct_under_400":         pd.to_numeric(df["未滿400張集保占比"], errors="coerce").values,
+        "holders_400_600":       pd.array(pd.to_numeric(df["400-600張集保人數"], errors="coerce"), dtype="Int64"),
+        "shares_400_600":        pd.array(pd.to_numeric(df["400-600張集保張數"], errors="coerce"), dtype="Int64"),
+        "pct_400_600":           pd.to_numeric(df["400-600張集保占比"], errors="coerce").values,
+        "holders_600_800":       pd.array(pd.to_numeric(df["600-800張集保人數"], errors="coerce"), dtype="Int64"),
+        "shares_600_800":        pd.array(pd.to_numeric(df["600-800張集保張數"], errors="coerce"), dtype="Int64"),
+        "pct_600_800":           pd.to_numeric(df["600-800張集保占比"], errors="coerce").values,
+        "holders_800_1000":      pd.array(pd.to_numeric(df["800-1000張集保人數"], errors="coerce"), dtype="Int64"),
+        "shares_800_1000":       pd.array(pd.to_numeric(df["800-1000張集保張數"], errors="coerce"), dtype="Int64"),
+        "pct_800_1000":          pd.to_numeric(df["800-1000張集保占比"], errors="coerce").values,
+        "holders_over_1000":     pd.array(pd.to_numeric(df["超過1000張集保人數"], errors="coerce"), dtype="Int64"),
+        "shares_over_1000":      pd.array(pd.to_numeric(df["超過1000張集保張數"], errors="coerce"), dtype="Int64"),
+        "pct_over_1000":         pd.to_numeric(df["超過1000張集保占比"], errors="coerce").values,
+        "holders_over_400":      pd.array(pd.to_numeric(df["超過400張集保人數"], errors="coerce"), dtype="Int64"),
+        "shares_over_400":       pd.array(pd.to_numeric(df["超過400張集保張數"], errors="coerce"), dtype="Int64"),
+        "pct_over_400":          pd.to_numeric(df["超過400張集保占比"], errors="coerce").values,
+        "source":       "tej_apishractw",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.to_datetime(out["trading_date"]).year.astype("int32") if hasattr(pd.to_datetime(out["trading_date"]), "year") else pd.DatetimeIndex(out["trading_date"]).year.astype("int32")
+    return out
+
+
+_CHIP_DIST_SCHEMA = _pa.schema([
+    ("stock_id",          _pa.string()),
+    ("trading_date",      _pa.date32()),
+    ("exchange",          _pa.string()),
+    ("publish_date_holdings", _pa.date32()),
+    ("holdings_total_kshare",  _pa.int64()),
+    ("pledged_kshare",     _pa.int64()),
+    ("publish_date_dist",  _pa.date32()),
+    ("holders_under_400",  _pa.int64()),
+    ("shares_under_400",   _pa.int64()),
+    ("pct_under_400",      _pa.float64()),
+    ("holders_400_600",    _pa.int64()),
+    ("shares_400_600",     _pa.int64()),
+    ("pct_400_600",        _pa.float64()),
+    ("holders_600_800",    _pa.int64()),
+    ("shares_600_800",     _pa.int64()),
+    ("pct_600_800",        _pa.float64()),
+    ("holders_800_1000",   _pa.int64()),
+    ("shares_800_1000",    _pa.int64()),
+    ("pct_800_1000",       _pa.float64()),
+    ("holders_over_1000",  _pa.int64()),
+    ("shares_over_1000",   _pa.int64()),
+    ("pct_over_1000",      _pa.float64()),
+    ("holders_over_400",   _pa.int64()),
+    ("shares_over_400",    _pa.int64()),
+    ("pct_over_400",       _pa.float64()),
+    ("source",       _pa.string()),
+    ("ingestion_ts", _pa.timestamp("ns", tz="UTC")),
+    ("year",         _pa.int32()),
+])
+
+
+def write_silver_chip_dist(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] chip_dist: nothing to write")
+        return
+    dest_root = SILVER / "flows" / "tw_chip_dist_daily"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _CHIP_DIST_SCHEMA]],
+            schema=_CHIP_DIST_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"apishractw_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] chip_dist: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
+# P1: ADIV (上市櫃現金股息)
+# ---------------------------------------------------------------------------
+
+def adapt_adiv_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True)
+    ex_date = pd.to_datetime(df["除息日"]).dt.tz_localize(None)
+    out = pd.DataFrame({
+        "stock_id":          df["公司"].astype(str).values,
+        "ex_date":           ex_date.dt.date.values,
+        "period_end":        pd.to_datetime(df["盈餘分派_迄日"]).dt.tz_localize(None).dt.date.values,
+        "period_start":      pd.to_datetime(df["盈餘分派_起日"]).dt.tz_localize(None).dt.date.values,
+        "dividend_type":     df["股息分配型態"].astype(str).values,
+        "cash_div_earnings": pd.to_numeric(df["現金股利(元)_盈餘"], errors="coerce").values,
+        "cash_div_reserve":  pd.to_numeric(df["現金股利(元)_公積"], errors="coerce").values,
+        "interest_value":    pd.to_numeric(df["息值(元)"], errors="coerce").values,
+        "special_dividend":  pd.to_numeric(df["特殊股利(元)"], errors="coerce").values,
+        "currency":          df["發放幣別"].astype(str).values,
+        "total_earnings_ktwd": pd.array(pd.to_numeric(df["股息總額-盈餘(千元)"], errors="coerce"), dtype="Int64"),
+        "total_reserve_ktwd":  pd.array(pd.to_numeric(df["股息總額-公積(千元)"], errors="coerce"), dtype="Int64"),
+        "total_special_ktwd":  pd.array(pd.to_numeric(df["股息總額-特殊(千元)"], errors="coerce"), dtype="Int64"),
+        "total_cash_div_ktwd": pd.array(pd.to_numeric(df["股息總額(千元)"], errors="coerce"), dtype="Int64"),
+        "pay_date":          pd.to_datetime(df["股息發放日"]).dt.tz_localize(None).dt.date.values,
+        "prev_close":        pd.to_numeric(df["前一日收盤價"], errors="coerce").values,
+        "ref_price":         pd.to_numeric(df["除息(權)參考價(元)"], errors="coerce").values,
+        "announce_date":     pd.to_datetime(df["除息公告日"]).dt.tz_localize(None).dt.date.values,
+        "source":       "tej_adiv",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.DatetimeIndex(out["ex_date"]).year.astype("int32")
+    return out
+
+
+_DIV_SCHEMA = _pa.schema([
+    ("stock_id",         _pa.string()),
+    ("ex_date",          _pa.date32()),
+    ("period_end",       _pa.date32()),
+    ("period_start",     _pa.date32()),
+    ("dividend_type",    _pa.string()),
+    ("cash_div_earnings", _pa.float64()),
+    ("cash_div_reserve",  _pa.float64()),
+    ("interest_value",    _pa.float64()),
+    ("special_dividend",  _pa.float64()),
+    ("currency",         _pa.string()),
+    ("total_earnings_ktwd", _pa.int64()),
+    ("total_reserve_ktwd",  _pa.int64()),
+    ("total_special_ktwd",  _pa.int64()),
+    ("total_cash_div_ktwd", _pa.int64()),
+    ("pay_date",         _pa.date32()),
+    ("prev_close",       _pa.float64()),
+    ("ref_price",        _pa.float64()),
+    ("announce_date",    _pa.date32()),
+    ("source",       _pa.string()),
+    ("ingestion_ts", _pa.timestamp("ns", tz="UTC")),
+    ("year",         _pa.int32()),
+])
+
+
+def write_silver_cash_dividend(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] cash_dividend: nothing to write")
+        return
+    dest_root = SILVER / "fundamentals" / "cash_dividend_events"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _DIV_SCHEMA]],
+            schema=_DIV_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"adiv_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] cash_dividend: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
+# P1: AFUTRSTK (個股期貨除權息 / 契約調整)
+# ---------------------------------------------------------------------------
+
+def adapt_afutrstk_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True)
+    td = pd.to_datetime(df["調整日"]).dt.tz_localize(None)
+    out = pd.DataFrame({
+        "futures_code":  df["期貨代碼"].astype(str).values,
+        "adjust_date":   td.dt.date.values,
+        "adjust_reason": df["契約調整因"].astype(str).values,
+        "stock_div_per_share": pd.to_numeric(df["每股股票股利(元)"], errors="coerce").values,
+        "cash_div_per_share":  pd.to_numeric(df["每股現金股利(元)"], errors="coerce").values,
+        "cash_adjusted_yn":    df["現金股利是否調整Y/N"].astype(str).values,
+        "shares_per_lot":      pd.to_numeric(df["每口折算股數(股)"], errors="coerce").values,
+        "cash_div_per_lot":    pd.to_numeric(df["每口折算現金股利(元)"], errors="coerce").values,
+        "equity_value_per_lot": pd.to_numeric(df["每口折算現增價值(元)"], errors="coerce").values,
+        "ref_price":           pd.to_numeric(df["調整日參考價(元)"], errors="coerce").values,
+        "contract_type":       df["加掛標準/調整契約"].astype(str).values,
+        "source":       "tej_afutrstk",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.DatetimeIndex(out["adjust_date"]).year.astype("int32")
+    return out
+
+
+_AFUTRSTK_SCHEMA = _pa.schema([
+    ("futures_code",  _pa.string()),
+    ("adjust_date",   _pa.date32()),
+    ("adjust_reason", _pa.string()),
+    ("stock_div_per_share",  _pa.float64()),
+    ("cash_div_per_share",   _pa.float64()),
+    ("cash_adjusted_yn",     _pa.string()),
+    ("shares_per_lot",       _pa.float64()),
+    ("cash_div_per_lot",     _pa.float64()),
+    ("equity_value_per_lot", _pa.float64()),
+    ("ref_price",            _pa.float64()),
+    ("contract_type",        _pa.string()),
+    ("source",       _pa.string()),
+    ("ingestion_ts", _pa.timestamp("ns", tz="UTC")),
+    ("year",         _pa.int32()),
+])
+
+
+def write_silver_sfut_corp_actions(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] stock_futures_corp_actions: nothing to write")
+        return
+    dest_root = SILVER / "flows" / "tw_stock_futures_corp_actions"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _AFUTRSTK_SCHEMA]],
+            schema=_AFUTRSTK_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"afutrstk_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] stock_futures_corp_actions: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
+# P1: AFINST (期交所三大法人完整版 — 含每身份×每商品的多空交易+未平倉口數金額)
+# ---------------------------------------------------------------------------
+
+def adapt_afinst_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True)
+    td = pd.to_datetime(df["年月日"]).dt.tz_localize(None)
+    ts_utc = (td + pd.Timedelta(hours=13, minutes=45)).dt.tz_localize("Asia/Taipei").dt.tz_convert("UTC")
+    out = pd.DataFrame({
+        "trading_date":  td.dt.date.values,
+        "ts_utc":        ts_utc.values,
+        "identity_code": df["名稱"].astype(str).values,
+        "identity_zh":   df["身份別名稱(中)"].astype(str).values,
+        "identity_en":   df["身份別名稱(英)"].astype(str).values,
+        "long_volume":         pd.array(pd.to_numeric(df["多方交易口數"], errors="coerce"), dtype="Int64"),
+        "long_value_ktwd":     pd.array(pd.to_numeric(df["多方交易契約金額"], errors="coerce"), dtype="Int64"),
+        "long_volume_pct":     pd.to_numeric(df["多方交易口數比重"], errors="coerce").values,
+        "short_volume":        pd.array(pd.to_numeric(df["空方交易口數"], errors="coerce"), dtype="Int64"),
+        "short_value_ktwd":    pd.array(pd.to_numeric(df["空方交易契約金額"], errors="coerce"), dtype="Int64"),
+        "short_volume_pct":    pd.to_numeric(df["空方交易口數比重"], errors="coerce").values,
+        "net_volume":          pd.array(pd.to_numeric(df["多空交易口數淨額"], errors="coerce"), dtype="Int64"),
+        "net_value_ktwd":      pd.array(pd.to_numeric(df["多空交易契約金額淨額"], errors="coerce"), dtype="Int64"),
+        "long_oi":             pd.array(pd.to_numeric(df["多方未平倉口數"], errors="coerce"), dtype="Int64"),
+        "long_oi_value_ktwd":  pd.array(pd.to_numeric(df["多方未平倉契約金額"], errors="coerce"), dtype="Int64"),
+        "long_oi_pct":         pd.to_numeric(df["多方未平倉口數持有比"], errors="coerce").values,
+        "short_oi":            pd.array(pd.to_numeric(df["空方未平倉口數"], errors="coerce"), dtype="Int64"),
+        "short_oi_value_ktwd": pd.array(pd.to_numeric(df["空方未平倉契約金額"], errors="coerce"), dtype="Int64"),
+        "short_oi_pct":        pd.to_numeric(df["空方未平倉口數持有比"], errors="coerce").values,
+        "net_oi":              pd.array(pd.to_numeric(df["多空未平倉口數淨額"], errors="coerce"), dtype="Int64"),
+        "net_oi_value_ktwd":   pd.array(pd.to_numeric(df["多空未平倉契約淨額"], errors="coerce"), dtype="Int64"),
+        "source":       "tej_afinst",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.DatetimeIndex(out["trading_date"]).year.astype("int32")
+    return out
+
+
+_AFINST_SCHEMA = _pa.schema([
+    ("trading_date",  _pa.date32()),
+    ("ts_utc",        _pa.timestamp("ns", tz="UTC")),
+    ("identity_code", _pa.string()),
+    ("identity_zh",   _pa.string()),
+    ("identity_en",   _pa.string()),
+    ("long_volume",      _pa.int64()),
+    ("long_value_ktwd",  _pa.int64()),
+    ("long_volume_pct",  _pa.float64()),
+    ("short_volume",     _pa.int64()),
+    ("short_value_ktwd", _pa.int64()),
+    ("short_volume_pct", _pa.float64()),
+    ("net_volume",       _pa.int64()),
+    ("net_value_ktwd",   _pa.int64()),
+    ("long_oi",          _pa.int64()),
+    ("long_oi_value_ktwd", _pa.int64()),
+    ("long_oi_pct",      _pa.float64()),
+    ("short_oi",         _pa.int64()),
+    ("short_oi_value_ktwd", _pa.int64()),
+    ("short_oi_pct",     _pa.float64()),
+    ("net_oi",           _pa.int64()),
+    ("net_oi_value_ktwd", _pa.int64()),
+    ("source",       _pa.string()),
+    ("ingestion_ts", _pa.timestamp("ns", tz="UTC")),
+    ("year",         _pa.int32()),
+])
+
+
+def write_silver_inst_futures_full(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] inst_futures_full: nothing to write")
+        return
+    dest_root = SILVER / "flows" / "tw_inst_futures_full_daily"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _AFINST_SCHEMA]],
+            schema=_AFINST_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"afinst_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] inst_futures_full: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
 # CSV merge
 # ---------------------------------------------------------------------------
 
@@ -772,6 +1108,38 @@ def fetch(tables: list[str], start: str, end: str, *, mode: str) -> None:
         print(f"  -> {len(apisale):,} rows", flush=True)
         out = adapt_apisale_to_silver(apisale)
         write_silver_revenue(out, mode=mode)
+
+    # --- P1 ---
+
+    if "chip_dist" in tables:
+        print(f"[fetch] TWN/APISHRACTW {start}..{end} (chunked, weekly per stock)", flush=True)
+        # 2K stocks × 52 weeks/year ≈ 100K rows/year — chunk by 90 days
+        df = _tej_get_chunked("TWN/APISHRACTW", start, end, chunk_days=60)
+        print(f"  -> {len(df):,} rows total", flush=True)
+        out = adapt_apishractw_to_silver(df)
+        write_silver_chip_dist(out, mode=mode)
+
+    if "cash_dividend" in tables:
+        print(f"[fetch] TWN/ADIV {start}..{end} (event-based, chunked yearly)", flush=True)
+        df = _tej_get_chunked("TWN/ADIV", start, end, chunk_days=365)
+        print(f"  -> {len(df):,} rows total", flush=True)
+        out = adapt_adiv_to_silver(df)
+        write_silver_cash_dividend(out, mode=mode)
+
+    if "stock_futures_corp_actions" in tables:
+        print(f"[fetch] TWN/AFUTRSTK {start}..{end} (event-based, small)", flush=True)
+        df = _tej_get_resilient("TWN/AFUTRSTK", mdate={"gte": start, "lte": end})
+        print(f"  -> {len(df):,} rows", flush=True)
+        out = adapt_afutrstk_to_silver(df)
+        write_silver_sfut_corp_actions(out, mode=mode)
+
+    if "inst_futures_full" in tables:
+        print(f"[fetch] TWN/AFINST {start}..{end} (chunked)", flush=True)
+        # ~114 rows/day × 250 days/year × 18 years ≈ 510K rows; chunk 60 days
+        df = _tej_get_chunked("TWN/AFINST", start, end, chunk_days=60)
+        print(f"  -> {len(df):,} rows total", flush=True)
+        out = adapt_afinst_to_silver(df)
+        write_silver_inst_futures_full(out, mode=mode)
 
 
 def main() -> None:
