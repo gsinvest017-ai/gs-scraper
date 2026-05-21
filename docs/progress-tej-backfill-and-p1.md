@@ -55,6 +55,32 @@
 
 Resilient fetcher 在 ~450 個 API 呼叫中無一次 hang / no retry triggered — 比之前 unchunked 模式穩健多了。
 
+### M5 — P2 fetches + catalog rebuild + smoke test PASS
+
+P2 fetch 全成功（無 rate-limit）：
+
+| dataset | rows | 範圍 |
+|---|---:|---|
+| `security_attrs` | 3,405 | per-stock metadata |
+| `stock_trading_attrs` | 3,154,720 | 2021-01-04 → 2026-05-21 |
+| `accounting_raw` | 177,549 | 2021-2026, 118 cols |
+
+Catalog rebuild 到 `catalog/quant_p2.duckdb` staging（DuckDB UI PID 26910 持鎖），27 個 view 全部出現。
+
+Smoke 抽樣：
+- TSMC 2026-05 trading attrs：is_twn50=Y、is_msci=Y ✓
+- TSMC 2025-Q1 accounting_raw：營業毛利率 58.79%、ROE 8.08%、EPS 13.95 ✓ 與 TSMC 真實 Q1 25 數據對應
+- TSMC 季配息：2026-09 Q1 配 7 元、2026-06 Q4 配 6 元 ✓
+
+使用者 swap：
+
+```bash
+kill 26910
+cd /home/kevin/gs-scraper/QUANTDATA
+mv catalog/quant.duckdb catalog/quant.duckdb.bak_pre_p2
+mv catalog/quant_p2.duckdb catalog/quant.duckdb
+```
+
 ### M4 (code only) — P2 datasets schema + adapters
 
 3 個新 logical table（EWISAMPLE 暫緩，需釐清 query 語意）：
