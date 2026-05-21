@@ -27,7 +27,7 @@
 | **M2** | 架構頁三張（overview / medallion / dataflow） | ✅ |
 | **M3** | DB 頁五張（overview / views / schema / finmind / rs-rating） | ✅ |
 | **M4** | UI 頁四張（overview / duckdb-ui / gap-dashboard / funnel） | ✅ |
-| **M5** | Ops 頁五張 + changelog；本地 `mkdocs build --strict` 跑通 | ⏳ |
+| **M5** | Ops 頁五張 + changelog；本地 `mkdocs build --strict` 跑通 | ✅ |
 
 每完成一個 milestone commit 一次。
 
@@ -70,7 +70,25 @@ mermaid 用 `flowchart` + `sequenceDiagram` 混用，全部能被 pymdownx super
 - `ui/gap-dashboard.md` — gap_report.py 用法 + 5 個 severity + classify SLA 邏輯 + 加新 view 步驟 + 自動化
 - `ui/funnel.md` — Tailscale Funnel WIP-blocked 紀錄（DuckDB UI 內建 token-auth funnel 不行）+ 三條替代方案（SSH / 靜態 funnel / FastAPI playground）+ 安全清單
 
-### M5 — pending
+### M5 — Ops 頁 + changelog + 驗證
+
+5 張 ops + changelog：
+
+- `ops/install.md` — 系統需求、venv、DuckDB CLI、TEJ key、第一次 ingest（含 FinMind 選項）、本地 mkdocs 預覽、煙霧測試、常見裝壞
+- `ops/daily-refresh.md` — daily_refresh.sh 流線 mermaid、exit codes、idempotent 保證、log 結構、手動觸發
+- `ops/manual-ingest.md` — fetch_tej.py flag 速查、qd-ingest subcommands、bulk import histdata / FinMind 範例、加新 dataset 流程、全量 backfill 腳本
+- `ops/cron.md` — install_cron.sh 用法、為什麼 17:30 CST、cron daemon WSL2 啟動、systemd timer 替代、TEJAPI_KEY 在 cron 環境取不到的三種解
+- `ops/troubleshooting.md` — 11 個常見症狀（DuckDB lock / cron daemon / mkdocs strict / FinMind sqlite / TEJ timeout / schema mismatch / zombie lock / disk full / ...），每個附「症狀→原因→解」
+
+`docs-site/changelog.md` — 6 段歷史紀錄（doc 上線、FinMind 整合、RS_Rating 規格、daily refresh、ngrok/funnel 嘗試、TEJ P0+P1+P2 全部接通、medallion 初始）
+
+驗證：
+
+- `.gitignore` 加 `site/` 進 ignore（mkdocs build 產出）
+- `.venv/bin/pip install mkdocs==1.6.1 mkdocs-material==9.7.6`
+- `.venv/bin/mkdocs build --strict` PASS（0.33s，18 個頁面 → 3.6 MB site/）
+
+CI workflow 第一次 push 後要去 GitHub Settings → Pages 設 Source = `gh-pages` branch（一次性手動）。
 
 ---
 

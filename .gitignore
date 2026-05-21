@@ -87,6 +87,9 @@ htmlcov/
 build/
 dist/
 
+# === MkDocs build output ===
+site/
+
 # === IDE / editor ===
 .vscode/
 .idea/
