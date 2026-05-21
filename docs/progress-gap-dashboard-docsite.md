@@ -26,7 +26,7 @@
 |---|---|---|
 | **M1** | 改 `scripts/gap_report.py` 加 mirror 寫入，regen 兩份 HTML | ✅ |
 | **M2** | 在 `docs-site/ui/gap-dashboard.md` + `docs-site/index.md` 加 live URL 連結；加 nav 條目；strict build PASS | ✅ |
-| **M3** | push + verify https://...github.io/gs-scraper/gap_dashboard.html HTTP 200 | ⏳ |
+| **M3** | push + verify https://...github.io/gs-scraper/gap_dashboard.html HTTP 200 | ✅ |
 
 ## 進度日誌
 
@@ -47,7 +47,30 @@ Verify：
 - `site/index.html` 含 3 個 `gap_dashboard.html` reference（nav）
 - `site/ui/gap-dashboard/index.html` 含 8 個 reference（admonition + nav + 內文）
 
-### M3 — pending
+### M3 — push + live verify
+
+`git push origin main` (`62f36db..9b44d12`) 觸發 `docs.yml` workflow run `26215198819`，~15s 完成 success。Pages 因為已啟用，重新 deploy 後立即可訪：
+
+| URL | HTTP |
+|---|---:|
+| <https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html> | **200** |
+| <https://gsinvest017-ai.github.io/gs-scraper/ui/gap-dashboard/> | **200** |
+
+內容驗證：`curl` 結果含 3 個 FinMind/QC INFO 列（finmind_stock_price_norm / finmind_stock_price_adj_norm / qc_stock_price_diff），跟本地完全一致。
+
+進入方式：
+- 從 docs-site 任何頁面點頂層 nav 的「Live Dashboard ↗」
+- 從 `ui/gap-dashboard` 頁開頭的 tip box `→ 開啟 gap_dashboard.html`
+- 直接 URL：上面那條
+
+## 後續
+
+每次 `.venv/bin/python scripts/gap_report.py --format html`（含 cron daily_refresh）會 mirror 到 docs-site/。`git push` 觸發 docs.yml 後 live URL 自動更新。
+
+兩個小擔憂：
+
+1. **dashboard 進版控有 churn**：每天 commit 一次 13 KB 的 HTML。可以接受（300/year × 13KB ≈ 4MB/年）。要改：未來把 docs.yml 改成 build 時自己跑 gap_report.py（需要把 DuckDB catalog 也 stage 上 CI，工作量大，先不做）。
+2. **本地 cron 沒 push，dashboard live URL 滯後**：要看最新一定要手動 `git push`。可以接受。
 
 ## Fallback
 
