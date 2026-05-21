@@ -51,15 +51,57 @@
 
 ### M2 — install_cron.sh
 
-完成項目：（待補）
+完成項目：
+
+- 新增 `scripts/install_cron.sh`，動作 4 種：`install`（預設）/ `--uninstall` / `--show` / `--hour HH --minute MM`。
+- 用 `BEGIN/END marker`（`# >>> quantdata-daily-refresh <<<` ... `# <<< quantdata-daily-refresh >>>`）包住自己的區塊，`awk` 在 crontab 文字流中 strip 舊區塊後重貼，**完全不會碰其他 crontab 區塊**（特別是既有的 `gs-claude-config night-shift`）。
+- 預設排程：`30 17 * * 1-5`（台股交易日 17:30 CST，收盤後 4 小時讓 TEJ EOD 落地）。
+- cron stderr/stdout 寫到 `meta/audit/daily_refresh_cron.log`（每次執行用 `>>` append），與 script 內部 log 分開以便偵錯 cron 環境問題。
+- 預覽 (`--show`)：
+
+  ```
+  # >>> quantdata-daily-refresh <<<
+  30 17 * * 1-5 /home/kevin/gs-scraper/QUANTDATA/scripts/daily_refresh.sh >> .../daily_refresh_cron.log 2>&1
+  # <<< quantdata-daily-refresh >>>
+  ```
 
 ### M3 — dry-run + cron 安裝
 
-完成項目：（待補）
+完成項目：
+
+- **新增 `--dry-run` 旗標到 `daily_refresh.sh`**：propagate 到 `fetch_tej --dry-run`，並 skip ingest+catalog 步驟；專供 cron 環境 smoke test。
+- **Smoke test：env -i 模擬 cron 環境**（無 fish、無 PATH 以外的 env）跑 `bash scripts/daily_refresh.sh --dry-run`：
+  - ✅ flock 取得成功
+  - ✅ TEJAPI_KEY 從 fish_variables 解出（KEY_LEN=30、TEJAPI_BASE 正確）
+  - ✅ 日誌寫到 `meta/audit/daily_refresh_2026-05-21.log`
+  - ✅ fetch_tej dry-run 印出 plan 後 exit 0
+  - ✅ 自動清理 lock file
+- **fetch_tej plan 顯示**：silver 各表已差 0-3 個交易日（stock_daily/inst_stock/margin 慢 3-6 天；futures 慢 1 天；revenue 慢 1 個月）→ 首次正式跑會補上。
+- **`install_cron.sh` 安裝**：
+  - 既有 `gs-claude-config night-shift` 區塊**完全未動**
+  - 新區塊 `quantdata-daily-refresh` 附加在底部
+  - 排程：`30 17 * * 1-5`（週一至週五 17:30 CST）
+  - 二次 re-run 驗證 idempotent（marker 仍為單一 BEGIN/END pair）
 
 ### M4 — Commit + 收尾
 
-完成項目：（待補）
+完成項目：
+
+- 兩個 commit：
+  - `f165406` — M1: daily_refresh.sh
+  - 接續 commit — M2+M3+M4: install_cron.sh + --dry-run 補強 + 進度檔終稿
+- crontab 已 live，下一次自動跑：本週五（或最近的 weekday）17:30 CST
+- 後續維運：
+  - 看單日 log → `tail meta/audit/daily_refresh_$(date +%Y-%m-%d).log`
+  - 看 cron 層 error → `tail meta/audit/daily_refresh_cron.log`
+  - 手動跑一次 → `bash scripts/daily_refresh.sh`
+  - 暫停排程 → `scripts/install_cron.sh --uninstall`
+
+## 日後改進方向
+
+- 排程目前是 weekday 17:30，假日 TEJ 沒新資料所以直接 skip 即可；可考慮加 `--skip-if-up-to-date` flag 提早結束以縮短 log
+- 失敗通知：目前只 log 落地，沒推 Slack/email；可考慮在 exit code != 0 時 `gh issue create`（與 gs-auto-fix 整合）
+- Log rotation：`daily_refresh_YYYY-MM-DD.log` 每天一檔，永遠累積；30 天後可以 `find meta/audit -name "daily_refresh_*.log" -mtime +30 -delete` cron 清掉
 
 ## Fallback 指引
 

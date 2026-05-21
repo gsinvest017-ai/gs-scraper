@@ -19,6 +19,15 @@
 set -u
 set -o pipefail
 
+DRY_RUN=0
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=1 ;;
+        -h|--help)
+            sed -n '2,18p' "$0"; exit 0 ;;
+    esac
+done
+
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 cd "$REPO"
 
@@ -87,14 +96,25 @@ if [[ ! -x "$VENV_PY" ]]; then
 fi
 
 # ---- 3. Fetch -------------------------------------------------------------
-log INFO "step 1/3: fetch_tej --table all --append-since-silver --mode merge"
+FETCH_EXTRA=()
+if [[ "$DRY_RUN" == "1" ]]; then
+    FETCH_EXTRA=("--dry-run")
+    log INFO "DRY_RUN=1: fetch will print plan only; ingest+catalog will be skipped"
+fi
+
+log INFO "step 1/3: fetch_tej --table all --append-since-silver --mode merge ${FETCH_EXTRA[*]:-}"
 if ! "$VENV_PY" "$REPO/scripts/fetch_tej.py" \
-        --table all --append-since-silver --mode merge \
+        --table all --append-since-silver --mode merge "${FETCH_EXTRA[@]}" \
         >> "$LOG" 2>&1; then
     log ERROR "fetch_tej.py failed (see $LOG)"
     exit 1
 fi
 log INFO "step 1/3 done"
+
+if [[ "$DRY_RUN" == "1" ]]; then
+    log INFO "==== daily_refresh DRY-RUN OK (skipped ingest + catalog) ===="
+    exit 0
+fi
 
 # ---- 4. Ingest CSV-backed tables ----------------------------------------
 RAW_DIR="${QUANTDATA_RAW:-$REPO/../RAW_SOURCES}/TEJ資料"
