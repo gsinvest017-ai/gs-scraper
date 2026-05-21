@@ -1,0 +1,94 @@
+site_name: QUANTDATA 文檔
+site_description: QUANTDATA — 台股 / 期 / 選 量化資料 medallion lakehouse 架構與操作說明
+site_url: ""
+docs_dir: docs-site
+site_dir: site
+
+theme:
+  name: material
+  language: zh-TW
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - navigation.instant
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: 切換到深色
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: 切換到淺色
+  icon:
+    repo: fontawesome/brands/git-alt
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+nav:
+  - 首頁: index.md
+  - 架構總覽:
+      - 系統地圖: architecture/overview.md
+      - Medallion 三層: architecture/medallion.md
+      - 資料流: architecture/dataflow.md
+  - DB / Catalog:
+      - 概覽: db/overview.md
+      - Catalog views: db/views.md
+      - Canonical schema: db/schema.md
+      - FinMind 整合: db/finmind.md
+      - RS_Rating gold 規格: db/rs-rating.md
+  - UI:
+      - 概覽: ui/overview.md
+      - DuckDB Web UI: ui/duckdb-ui.md
+      - Gap dashboard: ui/gap-dashboard.md
+      - Tailscale Funnel 遠端存取: ui/funnel.md
+  - 操作手冊:
+      - 安裝與環境: ops/install.md
+      - 日常維運（daily refresh）: ops/daily-refresh.md
+      - 手動 ingest: ops/manual-ingest.md
+      - Cron 排程: ops/cron.md
+      - 常見問題: ops/troubleshooting.md
+  - 變更紀錄: changelog.md
