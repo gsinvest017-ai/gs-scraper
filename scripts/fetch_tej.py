@@ -44,6 +44,8 @@ LOGICAL_TABLES = [
     "futures_daily", "futures_large_trader", "revenue_monthly",
     # P1
     "chip_dist", "cash_dividend", "stock_futures_corp_actions", "inst_futures_full",
+    # P2
+    "security_attrs", "stock_trading_attrs", "accounting_raw",
 ]
 
 # Where the existing ingester reads from (must match qd_ingest.sources.tej rename maps)
@@ -1022,6 +1024,222 @@ def write_silver_inst_futures_full(out_df: "pd.DataFrame", *, mode: str) -> None
 
 
 # ---------------------------------------------------------------------------
+# P2: APISTOCK (證券屬性資料表) — single row per stock, metadata
+# ---------------------------------------------------------------------------
+
+def adapt_apistock_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True)
+    out = pd.DataFrame({
+        "stock_id":     df["公司簡稱"].astype(str).values,
+        "current_status": df["目前狀態"].astype(str).values,
+        "name_zh":      df["證券名稱"].astype(str).values,
+        "name_full_zh": df["證券全稱"].astype(str).values,
+        "name_en":      df["英文簡稱"].astype(str).values,
+        "name_full_en": df["英文全稱"].astype(str).values,
+        "unified_no":   df["統一編號"].astype(str).values,
+        "list_date":            pd.to_datetime(df["最近一次上市日"], errors="coerce").dt.tz_localize(None).dt.date.values,
+        "tse_first_list_date":  pd.to_datetime(df["首次TSE上市日"],  errors="coerce").dt.tz_localize(None).dt.date.values,
+        "otc_first_list_date":  pd.to_datetime(df["首次OTC上市日"],  errors="coerce").dt.tz_localize(None).dt.date.values,
+        "reg_first_list_date":  pd.to_datetime(df["首次REG上市日"],  errors="coerce").dt.tz_localize(None).dt.date.values,
+        "delist_date":          pd.to_datetime(df["下市日"],         errors="coerce").dt.tz_localize(None).dt.date.values,
+        "main_industry_zh":     df["主產業別(中)"].astype(str).values,
+        "main_industry_en":     df["主產業別(英)"].astype(str).values,
+        "sub_industry_zh":      df["子產業別(中)"].astype(str).values,
+        "sub_industry_en":      df["子產業別(英)"].astype(str).values,
+        "source":       "tej_apistock",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    return out
+
+
+_APISTOCK_SCHEMA = _pa.schema([
+    ("stock_id",         _pa.string()),
+    ("current_status",   _pa.string()),
+    ("name_zh",          _pa.string()),
+    ("name_full_zh",     _pa.string()),
+    ("name_en",          _pa.string()),
+    ("name_full_en",     _pa.string()),
+    ("unified_no",       _pa.string()),
+    ("list_date",         _pa.date32()),
+    ("tse_first_list_date", _pa.date32()),
+    ("otc_first_list_date", _pa.date32()),
+    ("reg_first_list_date", _pa.date32()),
+    ("delist_date",       _pa.date32()),
+    ("main_industry_zh", _pa.string()),
+    ("main_industry_en", _pa.string()),
+    ("sub_industry_zh",  _pa.string()),
+    ("sub_industry_en",  _pa.string()),
+    ("source",       _pa.string()),
+    ("ingestion_ts", _pa.timestamp("ns", tz="UTC")),
+])
+
+
+def write_silver_security_attrs(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] security_attrs: nothing to write")
+        return
+    dest_root = SILVER / "reference" / "security_attrs"
+    if mode == "overwrite" and dest_root.exists():
+        _shutil.rmtree(dest_root)
+    dest_root.mkdir(parents=True, exist_ok=True)
+    tbl = _pa.Table.from_pandas(
+        out_df[[f.name for f in _APISTOCK_SCHEMA]],
+        schema=_APISTOCK_SCHEMA, preserve_index=False,
+    )
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    fp = dest_root / f"apistock_{ts}.parquet"
+    _pq.write_table(tbl, fp, compression="zstd")
+    print(f"[silver] security_attrs: wrote {len(out_df):,} rows -> {fp}")
+
+
+# ---------------------------------------------------------------------------
+# P2: APISTKATTR (個股日交易註記資訊) — daily flags
+# ---------------------------------------------------------------------------
+
+def adapt_apistkattr_to_silver(df) -> "pd.DataFrame":
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True)
+    td = pd.to_datetime(df["資料日"]).dt.tz_localize(None)
+    out = pd.DataFrame({
+        "stock_id":      df["證券名稱"].astype(str).values,
+        "trading_date":  td.dt.date.values,
+        "stock_type_zh": df["證券種類(中)"].astype(str).values,
+        "stock_type_en": df["證券種類(英)"].astype(str).values,
+        "market":        df["市場別"].astype(str).values,
+        "board_zh":      df["板塊別(中)"].astype(str).values,
+        "board_en":      df["板塊別(英)"].astype(str).values,
+        "main_industry_zh": df["主產業別(中)"].astype(str).values,
+        "main_industry_en": df["主產業別(英)"].astype(str).values,
+        "sub_industry_zh":  df["子產業別(中)"].astype(str).values,
+        "sub_industry_en":  df["子產業別(英)"].astype(str).values,
+        "is_attention":    df["是否為注意股票"].astype(str).values,
+        "is_disposition":  df["是否為處置股票"].astype(str).values,
+        "match_interval_sec": pd.to_numeric(df["分盤間隔時間"], errors="coerce").values,
+        "is_suspended":    df["是否暫停交易"].astype(str).values,
+        "is_full_settle":  df["是否全額交割"].astype(str).values,
+        "limit_flag":      df["漲跌停註記"].astype(str).values,
+        "limit_open_flag": df["是否開盤即漲跌停"].astype(str).values,
+        "no_daytrade_buy_first":  df["暫停當沖先買後賣註記"].astype(str).values,
+        "no_daytrade_sell_first": df["暫停當沖先賣後買註記"].astype(str).values,
+        "is_twn50":        df["是否為臺灣50成分股"].astype(str).values,
+        "is_msci":         df["是否為MSCI成分股"].astype(str).values,
+        "is_otc50":        df["是否為富櫃50成分股"].astype(str).values,
+        "is_otc200":       df["是否為富櫃200成分股"].astype(str).values,
+        "is_hdiv":         df["是否為高股息指數成分"].astype(str).values,
+        "is_mcap":         df["是否為中型100成分股"].astype(str).values,
+        "source":       "tej_apistkattr",
+        "ingestion_ts": pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.DatetimeIndex(out["trading_date"]).year.astype("int32")
+    return out
+
+
+_APISTKATTR_SCHEMA = _pa.schema([
+    ("stock_id",        _pa.string()),
+    ("trading_date",    _pa.date32()),
+    ("stock_type_zh",   _pa.string()),
+    ("stock_type_en",   _pa.string()),
+    ("market",          _pa.string()),
+    ("board_zh",        _pa.string()),
+    ("board_en",        _pa.string()),
+    ("main_industry_zh", _pa.string()),
+    ("main_industry_en", _pa.string()),
+    ("sub_industry_zh", _pa.string()),
+    ("sub_industry_en", _pa.string()),
+    ("is_attention",    _pa.string()),
+    ("is_disposition",  _pa.string()),
+    ("match_interval_sec", _pa.float64()),
+    ("is_suspended",    _pa.string()),
+    ("is_full_settle",  _pa.string()),
+    ("limit_flag",      _pa.string()),
+    ("limit_open_flag", _pa.string()),
+    ("no_daytrade_buy_first",  _pa.string()),
+    ("no_daytrade_sell_first", _pa.string()),
+    ("is_twn50",        _pa.string()),
+    ("is_msci",         _pa.string()),
+    ("is_otc50",        _pa.string()),
+    ("is_otc200",       _pa.string()),
+    ("is_hdiv",         _pa.string()),
+    ("is_mcap",         _pa.string()),
+    ("source",       _pa.string()),
+    ("ingestion_ts", _pa.timestamp("ns", tz="UTC")),
+    ("year",         _pa.int32()),
+])
+
+
+def write_silver_stock_trading_attrs(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] stock_trading_attrs: nothing to write")
+        return
+    dest_root = SILVER / "flows" / "tw_stock_trading_attrs_daily"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _APISTKATTR_SCHEMA]],
+            schema=_APISTKATTR_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"apistkattr_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] stock_trading_attrs: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
+# P2: AINVFINB (118 個會計簽證科目) — wide table, keep all Chinese cols
+# ---------------------------------------------------------------------------
+
+def adapt_ainvfinb_to_silver(df) -> "pd.DataFrame":
+    """AINVFINB is 118 columns of raw accounting numbers + pre-computed ratios.
+    Keep all original Chinese column names (we don't try to remap — strategies
+    that need specific accounts can select by name). Only normalize the key
+    cols + add partitioning column."""
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True).copy()
+    # Normalize key cols, rename to canonical English for primary key + year partition
+    df["stock_id"]     = df["公司"].astype(str)
+    df["fiscal_month"] = pd.to_datetime(df["年/月"]).dt.tz_localize(None).dt.date
+    df["publish_date"] = pd.to_datetime(df["公告日"], errors="coerce").dt.tz_localize(None)
+    df["period_type"]  = df["期間別(A/Q/TTM)"].astype(str)
+    df["fiscal_quarter"] = pd.to_numeric(df["季別"], errors="coerce").astype("Int64")
+    df["source"]       = "tej_ainvfinb"
+    df["ingestion_ts"] = pd.Timestamp.now(tz="UTC")
+    df["year"] = pd.DatetimeIndex(df["fiscal_month"]).year.astype("int32")
+    return df
+
+
+def write_silver_accounting_raw(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] accounting_raw: nothing to write")
+        return
+    dest_root = SILVER / "fundamentals" / "accounting_raw"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        # Let pyarrow infer schema — 118 wide cols with Chinese names is hard to
+        # type explicitly. Drop the original 公司/年/月/公告日/期間別/季別 redundancy.
+        drop_cols = ["公司", "年/月", "公告日", "期間別(A/Q/TTM)", "季別"]
+        slim = group.drop(columns=[c for c in drop_cols if c in group.columns])
+        tbl = _pa.Table.from_pandas(slim, preserve_index=False)
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"ainvfinb_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] accounting_raw: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
 # CSV merge
 # ---------------------------------------------------------------------------
 
@@ -1140,6 +1358,33 @@ def fetch(tables: list[str], start: str, end: str, *, mode: str) -> None:
         print(f"  -> {len(df):,} rows total", flush=True)
         out = adapt_afinst_to_silver(df)
         write_silver_inst_futures_full(out, mode=mode)
+
+    # --- P2 ---
+
+    if "security_attrs" in tables:
+        print(f"[fetch] TWN/APISTOCK (1 row per stock, single shot)", flush=True)
+        # APISTOCK is per-coid metadata; no date range, just fetch the full table
+        df = _tej_get_resilient("TWN/APISTOCK")
+        print(f"  -> {len(df):,} rows", flush=True)
+        out = adapt_apistock_to_silver(df)
+        write_silver_security_attrs(out, mode=mode)
+
+    if "stock_trading_attrs" in tables:
+        print(f"[fetch] TWN/APISTKATTR {start}..{end} (chunked, daily per stock)", flush=True)
+        # ~2K stocks × ~250 days/year → 500K rows/year — chunk by 30 days
+        df = _tej_get_chunked("TWN/APISTKATTR", start, end, chunk_days=30)
+        print(f"  -> {len(df):,} rows total", flush=True)
+        out = adapt_apistkattr_to_silver(df)
+        write_silver_stock_trading_attrs(out, mode=mode)
+
+    if "accounting_raw" in tables:
+        print(f"[fetch] TWN/AINVFINB {start}..{end} (chunked yearly, wide 118-col)", flush=True)
+        # ~2K stocks × 4 quarters × wide = ~10K rows/year, but each row has 118
+        # cols so per-call size is large; chunk yearly to be safe
+        df = _tej_get_chunked("TWN/AINVFINB", start, end, chunk_days=365)
+        print(f"  -> {len(df):,} rows total", flush=True)
+        out = adapt_ainvfinb_to_silver(df)
+        write_silver_accounting_raw(out, mode=mode)
 
 
 def main() -> None:

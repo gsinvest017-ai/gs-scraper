@@ -55,6 +55,22 @@
 
 Resilient fetcher 在 ~450 個 API 呼叫中無一次 hang / no retry triggered — 比之前 unchunked 模式穩健多了。
 
+### M4 (code only) — P2 datasets schema + adapters
+
+3 個新 logical table（EWISAMPLE 暫緩，需釐清 query 語意）：
+
+| logical | TEJ 表 | silver 路徑 | schema |
+|---|---|---|---|
+| `security_attrs` | TWN/APISTOCK | `silver/reference/security_attrs/` | 17 cols：證券中英名 / 上市日 / 主子產業別 |
+| `stock_trading_attrs` | TWN/APISTKATTR | `silver/flows/tw_stock_trading_attrs_daily/` | 28 cols：注意/處置/全額交割 flag + 漲跌停註記 + 各指數成分股 flag |
+| `accounting_raw` | TWN/AINVFINB | `silver/fundamentals/accounting_raw/` | **118 cols**（保留 Chinese 欄名，downstream 自選需要的） |
+
+catalog.py 加 3 個 view：`security_attrs`, `tw_stock_trading_attrs_daily`, `accounting_raw`。
+
+dispatcher：APISTOCK 單 shot（small static table）、APISTKATTR 30 天 chunk、AINVFINB 365 天 chunk（118 cols 寬表）。
+
+EWISAMPLE 試打 0050 + 2026-01 返回 0 rows — 該表 API 需特定 `idx_id` 或不接受 coid filter，留 P3 探索。
+
 ### M3 (code only) — P1 datasets schema + adapters
 
 `scripts/fetch_tej.py` 加 4 個新 logical table：
