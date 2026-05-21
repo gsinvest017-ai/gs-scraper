@@ -44,6 +44,17 @@
 
 ## 進度日誌
 
+### M2 — AFUTR + AFUTRHU backfill (resilient fetcher 實戰驗證)
+
+| 表 | before | after | 細節 |
+|---|---|---|---|
+| AFUTR (bars_1d tw_futures) | 55,628 rows / 57 sym / 2020 only | **449,736 rows / 120 sym / 2020-2026** | 220 chunks × 10 天，30 分鐘完成、無 hang |
+| AFUTRHU | 29,940 rows / 2026-04 → 05 | **32,016 rows / ~2024-04 onwards** | 228 chunks × 30 天，11 分鐘完成 |
+
+**重大發現**：AFUTRHU 在 TEJ 上**只有 2024 後才有資料**。chunks 1-200 (covering 2008-2024) 全部 0 rows，到 chunk 224 (2026-04) 才開始有 14K rows。subscription user info 雖然標 `dataStartYear=2005`，實際上 TEJ 對外只暴露最近兩年。已知限制，無解。
+
+Resilient fetcher 在 ~450 個 API 呼叫中無一次 hang / no retry triggered — 比之前 unchunked 模式穩健多了。
+
 ### M3 (code only) — P1 datasets schema + adapters
 
 `scripts/fetch_tej.py` 加 4 個新 logical table：
