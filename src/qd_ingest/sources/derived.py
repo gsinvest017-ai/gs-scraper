@@ -232,12 +232,188 @@ def build_inst_flow_factors() -> dict:
     return info
 
 
+def build_margin_factors() -> dict:
+    """Margin / short-sale time-series factors from tw_margin_daily.
+
+    Output: gold/features/margin_factors.parquet  (keyed by trading_date, stock_id)
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_margin_daily" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "trading_date", "stock_id",
+        "margin_balance_lot", "short_balance_lot",
+        "margin_util_pct", "short_to_margin_pct",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.sort(["stock_id", "trading_date"])
+
+    # rolling mean + std for z-score
+    mean60 = pl.col("margin_util_pct").rolling_mean(window_size=60).over("stock_id")
+    std60  = pl.col("margin_util_pct").rolling_std(window_size=60).over("stock_id")
+
+    out = df.with_columns([
+        (pl.col("margin_balance_lot")
+            - pl.col("margin_balance_lot").shift(5).over("stock_id")).alias("margin_balance_chg_5d"),
+        (pl.col("margin_balance_lot")
+            - pl.col("margin_balance_lot").shift(20).over("stock_id")).alias("margin_balance_chg_20d"),
+        (pl.col("short_balance_lot")
+            - pl.col("short_balance_lot").shift(5).over("stock_id")).alias("short_balance_chg_5d"),
+        (pl.col("short_balance_lot")
+            - pl.col("short_balance_lot").shift(20).over("stock_id")).alias("short_balance_chg_20d"),
+        ((pl.col("margin_util_pct") - mean60) / std60).alias("margin_util_zscore_60d"),
+        (pl.col("short_to_margin_pct")
+            - pl.col("short_to_margin_pct").shift(20).over("stock_id")).alias("short_to_margin_chg_20d"),
+    ]).select([
+        "trading_date", "stock_id",
+        "margin_balance_chg_5d", "margin_balance_chg_20d",
+        "short_balance_chg_5d", "short_balance_chg_20d",
+        "margin_util_zscore_60d", "short_to_margin_chg_20d",
+    ]).with_columns([
+        pl.lit("qd_gold_margin_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "margin_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "stocks": out["stock_id"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/margin_factors",
+        bronze_file="silver/flows/tw_margin_daily",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[margin_factors] {info}")
+    return info
+
+
+def build_fundamentals_pit() -> dict:
+    """Point-in-time fundamentals panel from fundamentals_q.
+
+    Filter to consolidated quarterly reports; key by publish_date (the actually
+    knowable-from date). Add TTM EPS / revenue, YoY net income / revenue,
+    rolling-4 ROE.
+
+    Output: gold/features/fundamentals_pit.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "fundamentals" / "fin_q" / "**" / "*.parquet")
+    df = pl.scan_parquet(glob).filter(
+        (pl.col("period_type") == "Q") & (pl.col("consolidated") == True)
+    ).select([
+        "stock_id", "fiscal_period", "publish_date",
+        "eps", "roe_post", "revenue", "net_income", "ni_to_parent",
+    ]).collect()
+    if df.schema["publish_date"] != pl.Date:
+        df = df.with_columns(pl.col("publish_date").cast(pl.Date))
+    df = df.sort(["stock_id", "publish_date"])
+
+    out = df.with_columns([
+        pl.col("eps").rolling_sum(window_size=4).over("stock_id").alias("eps_ttm"),
+        pl.col("revenue").rolling_sum(window_size=4).over("stock_id").alias("revenue_ttm"),
+        pl.col("roe_post").rolling_mean(window_size=4).over("stock_id").alias("roe_ttm_avg"),
+        ((pl.col("net_income") / pl.col("net_income").shift(4).over("stock_id") - 1) * 100)
+            .alias("ni_yoy_chg_pct"),
+        ((pl.col("revenue") / pl.col("revenue").shift(4).over("stock_id") - 1) * 100)
+            .alias("revenue_yoy_chg_pct"),
+    ]).select([
+        "publish_date", "stock_id", "fiscal_period",
+        "eps", "roe_post", "revenue", "net_income",
+        "eps_ttm", "revenue_ttm", "roe_ttm_avg",
+        "ni_yoy_chg_pct", "revenue_yoy_chg_pct",
+    ]).rename({"publish_date": "trading_date"}).with_columns([
+        pl.lit("qd_gold_fundamentals_pit_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "fundamentals_pit.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "stocks": out["stock_id"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/fundamentals_pit",
+        bronze_file="silver/fundamentals/fin_q",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[fundamentals_pit] {info}")
+    return info
+
+
+def build_futures_large_trader_factors() -> dict:
+    """Large-trader concentration factors from tw_futures_large_trader_daily.
+
+    Output: gold/features/futures_large_trader_factors.parquet
+              (keyed by trading_date, product, expiry_month)
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_futures_large_trader_daily" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "trading_date", "product", "expiry_month",
+        "total_oi",
+        "top5_buy_traders_pct", "top5_sell_traders_pct",
+        "top10_buy_traders_pct", "top10_sell_traders_pct",
+        "top10_buy_institutional_pct", "top10_sell_institutional_pct",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.sort(["product", "expiry_month", "trading_date"])
+
+    out = df.with_columns([
+        (pl.col("top10_buy_traders_pct") - pl.col("top10_sell_traders_pct"))
+            .alias("top10_net_pct"),
+        (pl.col("top10_buy_institutional_pct") - pl.col("top10_sell_institutional_pct"))
+            .alias("top10_institutional_net_pct"),
+        ((pl.col("top5_buy_traders_pct") + pl.col("top5_sell_traders_pct")) / 2.0)
+            .alias("top5_concentration_avg"),
+        (pl.col("total_oi") - pl.col("total_oi").shift(5).over(["product", "expiry_month"]))
+            .alias("oi_chg_5d"),
+        (pl.col("total_oi") - pl.col("total_oi").shift(20).over(["product", "expiry_month"]))
+            .alias("oi_chg_20d"),
+    ]).select([
+        "trading_date", "product", "expiry_month",
+        "total_oi",
+        "top10_net_pct", "top10_institutional_net_pct", "top5_concentration_avg",
+        "oi_chg_5d", "oi_chg_20d",
+    ]).with_columns([
+        pl.lit("qd_gold_futures_large_trader_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "futures_large_trader_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height,
+            "contracts": out.select(["product", "expiry_month"]).n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/futures_large_trader_factors",
+        bronze_file="silver/flows/tw_futures_large_trader_daily",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[futures_large_trader_factors] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": copy_txo_daily_features(),
         "cross_market": copy_cross_market_features(),
         "stock_factor": build_stock_factor_daily(),
         "inst_flow": build_inst_flow_factors(),
+        "margin": build_margin_factors(),
+        "fundamentals_pit": build_fundamentals_pit(),
+        "futures_large_trader": build_futures_large_trader_factors(),
     }
     return summary
 

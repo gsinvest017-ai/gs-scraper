@@ -72,11 +72,49 @@ Filter `period_type='quarterly' AND consolidated=TRUE`，按 (stock_id, publish_
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 本進度檔（含因子設計） | ⏳ |
-| **M2** | 3 個新 gold builder（margin / fundamentals_pit / futures_large_trader）寫進 `derived.py` + 跑 build_all | ⏳ |
-| **M3** | DATASETS registry：2 個 backlink + 3 個新 view 條目；catalog.py 註冊新 view | ⏳ |
-| **M4** | qd-ingest build-catalog + restore_finmind_views + regen dashboard + push | ⏳ |
+| **M2** | 3 個新 gold builder（margin / fundamentals_pit / futures_large_trader）寫進 `derived.py` + 跑 build_all | ✅ |
+| **M3** | DATASETS registry：2 個 backlink + 3 個新 view 條目；catalog.py 註冊新 view | ✅ |
+| **M4** | qd-ingest build-catalog + restore_finmind_views + regen dashboard + push | ✅ |
 
 ## Fallback
 
 - 寫壞了：`git revert <commit>` → gold parquet 還在但 catalog view 不見了，下次 rebuild 重生
 - factor 公式跑錯：直接修 `derived.py` 對應函式，重跑
+
+
+---
+
+## 完成日誌
+
+### M2 — 3 個新 gold builder
+
+加進 `src/qd_ingest/sources/derived.py`：
+
+- **`build_margin_factors`** → `gold/features/margin_factors.parquet` — **3,713,424 列 / 2,507 stocks / 0.9s**
+- **`build_fundamentals_pit`** → `gold/features/fundamentals_pit.parquet` — **93,525 列 / 1,936 stocks / 0.1s**（filter `period_type='Q'` 而非 `'quarterly'`，silver 用 `Q`/`YTD` 兩值）
+- **`build_futures_large_trader_factors`** → `gold/features/futures_large_trader_factors.parquet` — **99,162 列 / 2,350 contracts / 0.1s**
+
+全列入 `build_all()`，cron / daily_refresh 整批 rebuild 可一次到位。
+
+### M3 — backlinks + registry
+
+- `tw_stock_bars.gold_paths` += `gold/features/stock_factor_daily.parquet`
+- `tw_inst_stock_daily.gold_paths` += `gold/features/inst_flow_factors.parquet`
+- `tw_margin_daily.gold_paths` += `gold/features/margin_factors.parquet`
+- `tw_futures_large_trader_daily.gold_paths` += `gold/features/futures_large_trader_factors.parquet`
+- `fundamentals_q.gold_paths` += `gold/features/fundamentals_pit.parquet`
+- 加 3 個新 Dataset 條目（margin_factors / fundamentals_pit / futures_large_trader_factors）
+- `catalog.py` 註冊 3 個新 view
+
+### M4 — catalog + dashboard
+
+`qd-ingest build-catalog` 40 views（含 3 新 gold）；`restore_finmind_views.py` 補 finmind/qc。Dashboard summary：`OK=15 → 17`（+margin_factors, +futures_large_trader_factors 都 0d/OK；fundamentals_pit max 3/31，category=derived，~52d 變 INFO）。
+
+剩下沒處理的 silver：
+- `tw_inst_futures_full_daily`（per-identity 較複雜，留 backlog）
+- `tw_stock_trading_attrs_daily`、`cash_dividend_events`、`tw_stock_futures_corp_actions`（lookup/event 性質，無 derive 價值）
+- `bars_1d` 期貨 OI 衍生（留 backlog；continuous 已有）
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>
