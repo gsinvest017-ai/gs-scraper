@@ -93,5 +93,6 @@ nav:
       - 手動 ingest: ops/manual-ingest.md
       - Cron 排程: ops/cron.md
       - 自動化 (Agents & /update-doc): ops/automation.md
+      - Goldify routine (silver→gold): ops/goldify-routine.md
       - 常見問題: ops/troubleshooting.md
   - 變更紀錄: changelog.md

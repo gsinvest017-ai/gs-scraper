@@ -33,10 +33,10 @@
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + 設計 | ⏳ |
-| **M2** | `scripts/goldify_audit.py` | ⏳ |
-| **M3** | `.claude/agents/goldify-100pct.md` | ⏳ |
-| **M4** | `docs-site/ops/goldify-routine.md` + nav + strict build + commit + push | ⏳ |
+| **M1** | 本進度檔 + 設計 | ✅ |
+| **M2** | `scripts/goldify_audit.py` | ✅ |
+| **M3** | `.claude/agents/goldify-100pct.md` | ✅ |
+| **M4** | `docs-site/ops/goldify-routine.md` + nav + strict build + commit + push | ✅ |
 
 ## Fallback
 
@@ -65,4 +65,64 @@ audit 提案 + 人類拍板比「黑箱自動生」更穩。
 
 ## 完成日誌
 
-（待 M2-M4 完成後追加）
+### M2 — `scripts/goldify_audit.py`
+
+178 行純 Python。功能：
+
+1. `load_registry()` 用 `importlib.util` import `gap_report.py` 的 `DATASETS`（先把 module 放進 `sys.modules` 才能跑 dataclass introspection）
+2. `load_completeness()` 跑 `gap_report.py --format json` 寫 `meta/audit/gap_report.json` 後讀回。gap_report 對 STALE view 會 exit 2，所以**不能** `check=True`
+3. `_proxy_completeness()` 用 `severity=OK` 或 `INFO + abs(lag)<=1` 當成 100%（JSON 不直接帶 completeness_pct，是 HTML 渲染端算的）
+4. `suggest_template()` 依 silver schema 對 9 個 factor template 做 best-match
+5. 三種輸出：text (stdout) / `--json` / `--markdown`
+
+驗證：
+- 正常呼叫（catalog 已 fully goldified）→ ✅ 0 candidates 訊息
+- 注入合成 missing gold（patch `gold_paths=()` for tw_stock_bars）→ 正確抓出 1 candidate + 建議 `time_series_bar` template
+
+### M3 — `.claude/agents/goldify-100pct.md`
+
+148 行 markdown，frontmatter `name + description + tools: Bash/Read/Edit/Write/Grep`。沿用 `incremental-crawler.md` 的風格但題目換成 silver→gold。
+
+不變式：
+1. 必先跑 audit；0 candidate 直接回報，不動檔
+2. 4 milestone 必獨立 commit（M1=plan, M2=builder, M3=registry+catalog, M4=rebuild+dashboard+push）
+3. silver multi-ingest dedup 是 builder 責任
+4. progress doc 不可省
+
+對應表把 9 個 template 對到既有 builder，未來新人不用挖代碼也能找到該仿哪支：
+
+| template | 樣板 |
+|---|---|
+| time_series_bar | build_stock_factor_daily |
+| flow_rolling | build_inst_flow_factors |
+| balance_zscore | build_margin_factors |
+| per_entity_oi | build_futures_inst_factors |
+| event_panel | build_dividend_calendar |
+| boolean_panel | build_stock_attrs_status |
+| pit_fundamentals | build_fundamentals_pit |
+| view_materialize | materialize_qc_snapshot |
+| left_join_merge | materialize_finmind_canonical |
+
+### M4 — `docs-site/ops/goldify-routine.md` + nav + push
+
+`docs-site/ops/goldify-routine.md` 解釋給人類看：
+- 「ripe candidate」定義
+- audit + agent 使用方式
+- 9 個 template 對應表
+- 與 incremental-crawler / `/update-doc` 的分工 mermaid
+
+`mkdocs.yml` nav 加 `操作手冊 → Goldify routine (silver→gold)`。
+
+`docs-site/ops/automation.md` 從 2 個自動化資產更新為 3 個。
+
+Strict build PASS（mkdocs-material 內建 MkDocs 2.0 警告無關）。
+
+## 後續
+
+- 下次有 silver 新 view 滿格時，跑 `.venv/bin/python scripts/goldify_audit.py` 應該會看到該 view 列為 candidate
+- agent 觸發語：「跑 goldify routine」 / 「audit 一下有沒有沒 goldify 的」
+- 可考慮加進 `daily_refresh.sh`（爬完 → ingest → catalog → restore finmind → gap_report → **audit goldify candidates，0 則跳過 / 非 0 則 notify**）
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/ops/goldify-routine/>
