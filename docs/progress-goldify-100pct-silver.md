@@ -38,9 +38,9 @@
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 本進度檔 + assessment | ⏳ |
-| **M2** | `python -m qd_ingest.sources.derived` 重建 stock_factor_daily / cross_market_features / txo_daily_features | ⏳ |
-| **M3** | 新 gold table `gold/features/inst_flow_factors.parquet`（個股法人流量因子）+ Dataset registry 條目 | ⏳ |
-| **M4** | qd-ingest build-catalog + restore_finmind_views + regen dashboard + push | ⏳ |
+| **M2** | `python -m qd_ingest.sources.derived` 重建 stock_factor_daily / cross_market_features / txo_daily_features | ✅ |
+| **M3** | 新 gold table `gold/features/inst_flow_factors.parquet`（個股法人流量因子）+ Dataset registry 條目 | ✅ |
+| **M4** | qd-ingest build-catalog + restore_finmind_views + regen dashboard + push | ✅ |
 
 ## 因子設計（M3）
 
@@ -62,3 +62,42 @@ Output: `gold/features/inst_flow_factors.parquet`，主鍵 `(trading_date, stock
 
 - M2 build_stock_factor_daily 跑太久（>5 min）→ commit WIP，document
 - M3 寫壞了 → `rm gold/features/inst_flow_factors.parquet`，從 silver 重跑
+
+
+---
+
+## 完成日誌
+
+### M2 — 3 個 existing gold 表 refresh
+
+`PYTHONPATH=src python -m qd_ingest.sources.derived` 跑出：
+
+- `stock_factor_daily`: **6,597,986 rows / 2,911 stocks**（was 6,356,541 / 2,925），1.4s 內衍生完
+- `cross_market_features`: **2,080 rows / 27 cols**（was EMPTY），1ms copy
+- `txo_daily_features`: 1,481 rows, 2020-03-02 ~ 2026-04-01
+
+### M3 — NEW `inst_flow_factors` 表
+
+從 `silver/flows/tw_inst_stock_daily` (6.5M rows / 2,615 stocks / 2010-2026) 衍生 9 個因子：
+
+| 因子 | 含義 |
+|---|---|
+| `foreign_net_5d / 20d / 60d` | 外資淨買賣超滾動累積 |
+| `sitc_net_5d / 20d` | 投信淨買賣超 |
+| `dealer_net_5d / 20d` | 自營商淨買賣超 |
+| `foreign_hold_pct_chg_20d` | 外資持股率 20 日變化 |
+| `inst_net_persistence_20d` | 三大法人總淨流入正天數佔比 20 日 |
+
+寫到 `gold/features/inst_flow_factors.parquet` — 6,567,005 rows / 2615 stocks / 69.3 MB zstd / 1.4s build。
+
+實作存進 `src/qd_ingest/sources/derived.py` `build_inst_flow_factors()` 並列入 `build_all()`，未來 cron / daily_refresh 整批 rebuild 可一次到位。
+
+### M4 — catalog rebuild + dashboard regen
+
+`qd-ingest build-catalog`（kill 一個 stale `duckdb -ui` PID 326750 取得寫鎖）→ 36 views，含新增 `inst_flow_factors` view。`restore_finmind_views.py` 補回 finmind/qc views（兩 catalog 都做）。
+
+Dashboard：summary `OK=13 → OK=15`、`INFO=3 → 2`。新 view 與 `stock_factor_daily` 都 0d / OK。
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>

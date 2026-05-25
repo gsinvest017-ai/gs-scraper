@@ -158,11 +158,86 @@ def build_stock_factor_daily() -> dict:
     return info
 
 
+def build_inst_flow_factors() -> dict:
+    """Institutional flow factors derived from silver/flows/tw_inst_stock_daily.
+
+    Factors (keyed by trading_date, stock_id):
+      - foreign_net_5d / _20d / _60d : rolling sum of foreign net lots
+      - sitc_net_5d / _20d           : rolling sum of investment-trust net lots
+      - dealer_net_5d / _20d         : rolling sum of dealer net lots
+      - foreign_hold_pct_chg_20d     : 20d change in foreign ownership %
+      - inst_net_persistence_20d     : fraction of 20-day window with positive total inst net
+
+    Output: gold/features/inst_flow_factors.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_inst_stock_daily" / "year=*" / "*.parquet")
+
+    df = pl.scan_parquet(glob).select([
+        "trading_date", "stock_id",
+        "foreign_net_lot", "sitc_net_lot", "dealer_net_lot", "total_net_lot",
+        "foreign_hold_pct",
+    ]).collect()
+
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.sort(["stock_id", "trading_date"])
+
+    df = df.with_columns([
+        pl.col("foreign_net_lot").rolling_sum(window_size=5).over("stock_id").alias("foreign_net_5d"),
+        pl.col("foreign_net_lot").rolling_sum(window_size=20).over("stock_id").alias("foreign_net_20d"),
+        pl.col("foreign_net_lot").rolling_sum(window_size=60).over("stock_id").alias("foreign_net_60d"),
+        pl.col("sitc_net_lot").rolling_sum(window_size=5).over("stock_id").alias("sitc_net_5d"),
+        pl.col("sitc_net_lot").rolling_sum(window_size=20).over("stock_id").alias("sitc_net_20d"),
+        pl.col("dealer_net_lot").rolling_sum(window_size=5).over("stock_id").alias("dealer_net_5d"),
+        pl.col("dealer_net_lot").rolling_sum(window_size=20).over("stock_id").alias("dealer_net_20d"),
+        (pl.col("foreign_hold_pct")
+           - pl.col("foreign_hold_pct").shift(20).over("stock_id")).alias("foreign_hold_pct_chg_20d"),
+        (pl.col("total_net_lot") > 0).cast(pl.Float64)
+            .rolling_mean(window_size=20).over("stock_id").alias("inst_net_persistence_20d"),
+    ])
+
+    out = df.select([
+        "trading_date", "stock_id",
+        "foreign_net_5d", "foreign_net_20d", "foreign_net_60d",
+        "sitc_net_5d", "sitc_net_20d",
+        "dealer_net_5d", "dealer_net_20d",
+        "foreign_hold_pct_chg_20d",
+        "inst_net_persistence_20d",
+    ]).with_columns([
+        pl.lit("qd_gold_inst_flow_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "inst_flow_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+
+    info = {
+        "rows": out.height,
+        "stocks": out["stock_id"].n_unique(),
+        "elapsed_sec": round(time.time() - t0, 1),
+    }
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/inst_flow_factors",
+        bronze_file="silver/flows/tw_inst_stock_daily",
+        rows_in=out.height, rows_out=out.height, sha256="",
+        status="ok",
+        started_at=started,
+        ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[inst_flow_factors] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": copy_txo_daily_features(),
         "cross_market": copy_cross_market_features(),
         "stock_factor": build_stock_factor_daily(),
+        "inst_flow": build_inst_flow_factors(),
     }
     return summary
 
