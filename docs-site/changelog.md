@@ -4,7 +4,14 @@
 
 ---
 
-## 2026-05-25 — 自動化 + 大量 STALE 補完
+## 2026-05-25 (PM) — Dashboard 三大改進
+
+- **完整度排序**：gap_dashboard 預設按 `clamp(1 − lag/90, 0, 1)` 完整度 DESC 排（同分 P0 優先），補進 lag-bar 顯示「填滿 = 完整」。新增「完整度」百分比欄
+- **Trading-day-aware lag**：`daily-trading` category 對齊到 `expected_latest_trading_day`（calendar_xtai + Mon-Fri fallback + 15:00 TPE EOD cutoff），週末與盤中時段不再誤判 lag。effect: OK=4 → OK=12
+- **Storage layer columns**：每筆 row 新增 5 個欄（📦 Raw / 🥉 Bronze / 🥈 Silver / 🥇 Gold / 📊 Catalog rows）含 size·file-count + path tooltip；頂部 4 個 layer-total pill 用 pattern union 去重計總；可作為資料遷移 checklist
+- **架構頁 cleaning-criteria.md**：新增 raw → bronze / bronze → silver / silver → gold 三段 transition 的完整規則 + checklist + 失敗模式速查表
+
+## 2026-05-25 (AM) — 自動化 + 大量 STALE 補完
 
 - **新增 `incremental-crawler` repo agent**（`.claude/agents/incremental-crawler.md`）：每次跑增量爬蟲都強制 regen gap_dashboard 並 commit
 - **新增 `/update-doc` 全域 skill**（`~/.claude/skills/update-doc/`）：任何 repo 都能用，根據 git log 提案 doc 更新

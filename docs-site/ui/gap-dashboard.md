@@ -78,6 +78,49 @@ def classify(lag_days, category):
     return "STALE"
 ```
 
+## 排序與完整度（completeness）
+
+預設排序按「**完整度從高到低**」，同分時 P0 在前、再按 view name。這讓「最完整 / 最新」的資料浮到表格頂端，反之最 stale 沉底。
+
+完整度公式（單調映射 lag → [0, 1]）：
+
+```python
+def completeness(lag_days):
+    if lag_days is None:            return 0.0  # EMPTY → 0%
+    if lag_days <= 0:               return 1.0  # 已涵蓋未來日期 → 100%
+    if lag_days >= 90:              return 0.0  # 太 stale → 0%
+    return 1.0 - lag_days / 90
+```
+
+表中「**完整度**」column 顯示 `{pct:.0f}%`；右側 progress bar 填滿 = 100%、空 = 0%。
+
+## Trading-day-aware lag
+
+`daily-trading` category 的 lag **不**用 calendar day 直接減，而是錨定到「上一個應已落地 EOD 的台股交易日」(`expected_latest_trading_day`)：
+
+- 若今日是 TW 交易日 (`calendar_xtai` ∪ Mon–Fri fallback) 且本地時刻 ≥ **15:00 TPE** (EOD cutoff)：expected = 今日
+- 否則回推到上一個交易日
+
+這樣**週末**與**今日 EOD 前**不會誤判 lag。實際案例：週一上午 11 點，`tw_stock_bars max=2026-05-22` (Fri)，effective lag = 0d 而非 calendar 的 3d。
+
+其他 category (`monthly` / `quarterly` / `event` / `snapshot` / `derived`) 維持 raw calendar lag。
+
+## Storage layer 欄位（migration checklist）
+
+每筆 row 額外列出 5 個 storage layer 的概況，讓人類在資料遷移時能快速估算：
+
+| Column | 內容 |
+|---|---|
+| 📦 **Raw** | RAW_SOURCES 內原檔大小 · 檔案數（hover 看 sample paths） |
+| 🥉 **Bronze** | bronze/ 不可變層大小（FinMind sqlite 等） |
+| 🥈 **Silver** | silver/ canonical parquet 大小 |
+| 🥇 **Gold** | gold/ derived parquet 大小（continuous / factors） |
+| 📊 **Catalog rows** | 透過 view 可查到的列數（K/M 縮寫；hover 看精確值） |
+
+表格上方有 4 個 layer total pill，使用 `pattern union` 全 dataset 去重後計總（共用的 FinMind sqlite 只算一次）。
+
+實作見 `Dataset.{raw,bronze,silver,gold}_paths` glob tuples 與 `_measure_layer()` helper（`scripts/gap_report.py`）。對應 [架構 / 資料清洗準則](../architecture/cleaning-criteria.md) 的「raw → bronze → silver → gold」分層規則。
+
 ## 加新 view 進 dashboard
 
 編輯 `scripts/gap_report.py` 的 `DATASETS` registry：
@@ -101,6 +144,10 @@ DATASETS = [
 | `fetch_cmd` | 顯示給人看的「stale 時去跑什麼」 |
 | `description` | view 的中文人話描述 |
 | `tier` | `P0` / `P1` / `P2` priority |
+| `raw_paths` | (optional) RAW_SOURCES 內的 glob patterns（給 migration size 估算） |
+| `bronze_paths` | (optional) `bronze/**/*.{sqlite,parquet,csv}` patterns |
+| `silver_paths` | (optional) `silver/**/*.parquet` patterns（通常含 `**` recursive） |
+| `gold_paths` | (optional) `gold/**/*.parquet` patterns |
 
 存檔後重跑 `--format all` 就會出現在 dashboard。
 
