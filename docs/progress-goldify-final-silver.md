@@ -93,9 +93,9 @@ Forward-looking event panel。`ex_date` 是 partition key（未來 ex_date 是 a
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 本進度檔（含因子設計） | ✅ |
-| **M2** | 4 個新 gold builder 寫進 `derived.py` + 跑 build_all | ⏳ |
-| **M3** | DATASETS registry：4 個 backlink + 4 個新 view 條目；`catalog.py` 註冊 | ⏳ |
-| **M4** | `qd-ingest build-catalog` + `restore_finmind_views` + dashboard regen + docs sync + push | ⏳ |
+| **M2** | 4 個新 gold builder 寫進 `derived.py` + 跑 build_all | ✅ |
+| **M3** | DATASETS registry：4 個 backlink + 4 個新 view 條目；`catalog.py` 註冊 | ✅ |
+| **M4** | `qd-ingest build-catalog` + `restore_finmind_views` + dashboard regen + docs sync + push | ✅ |
 
 ## Fallback
 
@@ -105,4 +105,57 @@ Forward-looking event panel。`ex_date` 是 partition key（未來 ex_date 是 a
 
 ## 完成日誌
 
-（待 M2-M4 完成後追加）
+### M2 — 4 個新 gold builder
+
+加進 `src/qd_ingest/sources/derived.py`，全在 1.5 秒內跑完：
+
+| Gold parquet | 列數 | 主鍵唯一性 | size | 來源 silver dedup |
+|---|---|---|---|---|
+| `gold/features/futures_inst_factors.parquet`     | 466,047    | 162 identity_codes × 4781 days | 10.7 MB | 496K → 466K (−30K 重覆) |
+| `gold/features/stock_attrs_status.parquet`       | 3,160,185  | 2864 stocks × ~1100 days       | 1.0 MB  | 3.88M → 3.16M (−720K 重覆，~19%！) |
+| `gold/features/dividend_calendar.parquet`        | 10,458     | 2269 stocks × multiple ex_dates | 346 KB | 12.5K → 10.5K (−2K 重覆) |
+| `gold/features/stock_futures_adjustments.parquet`| 56,049     | 40,487 futures_codes           | 405 KB  | 61K → 56K (−5K 重覆) |
+
+**重要副產品**：silver layer 有大量 multi-ingest duplicates（trading_attrs 19%！），這次 goldify 順手把 dedup 邏輯內建到 builder 裡。每個 builder 都按 `ingestion_ts` keep last。
+
+2330 抽查 dividend_calendar：2026-09-16 Q1 7.0/股、TTM=24.0、YoY=+16.67%；2026-03-17 Q3 6.0/股、div_yield=0.33%。數值合理。
+
+### M3 — backlinks + registry
+
+`scripts/gap_report.py`：
+- `tw_inst_futures_full_daily.gold_paths` += `gold/features/futures_inst_factors.parquet`
+- `tw_stock_trading_attrs_daily.gold_paths` += `gold/features/stock_attrs_status.parquet`
+- `cash_dividend_events.gold_paths` += `gold/features/dividend_calendar.parquet`
+- `tw_stock_futures_corp_actions.gold_paths` += `gold/features/stock_futures_adjustments.parquet`
+- 加 4 個新 Dataset 條目：`futures_inst_factors`, `stock_attrs_status`, `dividend_calendar`, `stock_futures_adjustments`
+
+`src/qd_ingest/common/catalog.py`：4 個新 gold view 加進註冊清單，`build()` 後 catalog 列出 **49 views**（含 finmind 還原）。
+
+### M4 — catalog + dashboard
+
+```
+.venv/bin/python -m qd_ingest.common.catalog
+.venv/bin/python scripts/restore_finmind_views.py       # 補 9 個 finmind/qc view
+.venv/bin/python scripts/gap_report.py --format html ...
+.venv/bin/mkdocs build --strict                          # PASS
+```
+
+Dashboard summary 變化：
+
+| 指標 | M2 前 | M2 後 |
+|---|---|---|
+| 總 datasets | 30 | **34** (+4 新 gold) |
+| OK | 17 | **21** (+4) |
+| INFO | 3 | 3 |
+| WARN | 1 | 1 |
+| STALE | 8 | 8 |
+| EMPTY | 1 | 1 |
+| 🥇 Gold 總 size | 427.4 MB | ~440 MB |
+
+**全 100% 完整度的 silver-only views 都消失了**——本輪是收尾。
+
+剩下 EMPTY/STALE 的都是 **完整度本來就 < 100%** 的（macro_daily 83% / chip_dist 92% / inst_futures_daily 84% / revenue_monthly 40% 等），歸 STALE category 而非 silver→gold 缺口問題。
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>
