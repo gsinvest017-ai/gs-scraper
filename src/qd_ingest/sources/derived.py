@@ -405,6 +405,289 @@ def build_futures_large_trader_factors() -> dict:
     return info
 
 
+def build_futures_inst_factors() -> dict:
+    """Per-identity institutional positioning factors from tw_inst_futures_full_daily.
+
+    The silver view carries 162 identity_codes (3 institutions × {TX/MTX/TE/TXO/...}).
+    Output is a per (trading_date, identity_code) panel useful for cross-identity
+    regime comparisons (e.g. FINI net_oi vs Dealer net_oi spread).
+
+    Output: gold/features/futures_inst_factors.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_inst_futures_full_daily" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "trading_date", "identity_code", "identity_zh",
+        "long_volume", "short_volume", "net_volume",
+        "long_volume_pct", "short_volume_pct",
+        "long_oi", "short_oi", "net_oi",
+        "ingestion_ts",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    # dedup silver multi-ingest by keeping latest per (trading_date, identity_code)
+    df = df.sort(["identity_code", "trading_date", "ingestion_ts"]).unique(
+        subset=["identity_code", "trading_date"], keep="last"
+    ).drop("ingestion_ts").sort(["identity_code", "trading_date"])
+
+    mean60 = pl.col("net_volume").rolling_mean(window_size=60).over("identity_code")
+    std60  = pl.col("net_volume").rolling_std(window_size=60).over("identity_code")
+
+    out = df.with_columns([
+        (pl.col("net_oi")
+            - pl.col("net_oi").shift(5).over("identity_code")).alias("net_oi_chg_5d"),
+        (pl.col("net_oi")
+            - pl.col("net_oi").shift(20).over("identity_code")).alias("net_oi_chg_20d"),
+        ((pl.col("net_volume") - mean60) / std60).alias("net_volume_zscore_60d"),
+        (pl.col("long_oi").cast(pl.Float64)
+            / pl.when(pl.col("short_oi") == 0).then(None).otherwise(pl.col("short_oi"))
+        ).alias("long_short_oi_ratio"),
+        ((pl.col("long_volume") + pl.col("short_volume")).cast(pl.Float64)
+            / pl.when((pl.col("long_oi") + pl.col("short_oi")) == 0).then(None)
+              .otherwise(pl.col("long_oi") + pl.col("short_oi"))
+        ).alias("volume_to_oi_ratio"),
+    ]).select([
+        "trading_date", "identity_code", "identity_zh",
+        "long_oi", "short_oi", "net_oi",
+        "long_volume_pct", "short_volume_pct",
+        "net_oi_chg_5d", "net_oi_chg_20d",
+        "net_volume_zscore_60d",
+        "long_short_oi_ratio", "volume_to_oi_ratio",
+    ]).with_columns([
+        pl.lit("qd_gold_futures_inst_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "futures_inst_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "identities": out["identity_code"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/futures_inst_factors",
+        bronze_file="silver/flows/tw_inst_futures_full_daily",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[futures_inst_factors] {info}")
+    return info
+
+
+def build_stock_attrs_status() -> dict:
+    """Binary attribute panel from tw_stock_trading_attrs_daily.
+
+    Converts the 11 'Y'/'' varchar flags into clean booleans and adds 30-day
+    rolling counts for transient flags (attention / disposition). Keeps static
+    classifier columns (industry / board / market) at the daily grain so
+    downstream filters can use latest.
+
+    Output: gold/features/stock_attrs_status.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_stock_trading_attrs_daily" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "trading_date", "stock_id",
+        "market", "board_zh", "main_industry_zh", "sub_industry_zh",
+        "is_attention", "is_disposition", "is_suspended", "is_full_settle",
+        "no_daytrade_buy_first", "no_daytrade_sell_first",
+        "is_twn50", "is_msci", "is_otc50", "is_otc200", "is_hdiv", "is_mcap",
+        "ingestion_ts",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.sort(["stock_id", "trading_date", "ingestion_ts"]).unique(
+        subset=["stock_id", "trading_date"], keep="last"
+    ).drop("ingestion_ts").sort(["stock_id", "trading_date"])
+
+    def yflag(col: str) -> pl.Expr:
+        return (pl.col(col).fill_null("") == "Y")
+
+    out = df.with_columns([
+        yflag("is_attention").alias("is_attention_bool"),
+        yflag("is_disposition").alias("is_disposition_bool"),
+        yflag("is_suspended").alias("is_suspended_bool"),
+        yflag("is_full_settle").alias("is_full_settle_bool"),
+        (yflag("no_daytrade_buy_first") | yflag("no_daytrade_sell_first"))
+            .alias("is_no_daytrade_bool"),
+        yflag("is_twn50").alias("is_twn50_bool"),
+        yflag("is_msci").alias("is_msci_bool"),
+        yflag("is_otc50").alias("is_otc50_bool"),
+        yflag("is_otc200").alias("is_otc200_bool"),
+        yflag("is_hdiv").alias("is_hdiv_bool"),
+        yflag("is_mcap").alias("is_mcap_bool"),
+    ]).with_columns([
+        pl.col("is_attention_bool").cast(pl.Int8)
+            .rolling_sum(window_size=30).over("stock_id").alias("attention_count_30d"),
+        pl.col("is_disposition_bool").cast(pl.Int8)
+            .rolling_sum(window_size=30).over("stock_id").alias("disposition_count_30d"),
+    ]).select([
+        "trading_date", "stock_id",
+        "market", "board_zh", "main_industry_zh", "sub_industry_zh",
+        "is_attention_bool", "is_disposition_bool", "is_suspended_bool",
+        "is_full_settle_bool", "is_no_daytrade_bool",
+        "is_twn50_bool", "is_msci_bool", "is_otc50_bool", "is_otc200_bool",
+        "is_hdiv_bool", "is_mcap_bool",
+        "attention_count_30d", "disposition_count_30d",
+    ]).with_columns([
+        pl.lit("qd_gold_stock_attrs_status_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "stock_attrs_status.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "stocks": out["stock_id"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/stock_attrs_status",
+        bronze_file="silver/flows/tw_stock_trading_attrs_daily",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[stock_attrs_status] {info}")
+    return info
+
+
+def build_dividend_calendar() -> dict:
+    """Forward-looking dividend event panel from cash_dividend_events.
+
+    Output keyed by (ex_date, stock_id). Adds per-share dividend, naive yield
+    vs prev_close, TTM dividend (365-day rolling sum), and YoY growth.
+
+    Output: gold/features/dividend_calendar.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "fundamentals" / "cash_dividend_events" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "stock_id", "ex_date", "period_end", "period_start", "dividend_type",
+        "cash_div_earnings", "cash_div_reserve", "special_dividend",
+        "prev_close", "ref_price", "pay_date", "announce_date",
+        "total_cash_div_ktwd", "ingestion_ts",
+    ]).collect()
+    if df.schema["ex_date"] != pl.Date:
+        df = df.with_columns(pl.col("ex_date").cast(pl.Date))
+    # silver carries multiple ingest snapshots per (stock_id, ex_date); keep latest.
+    df = df.sort(["stock_id", "ex_date", "ingestion_ts"]).unique(
+        subset=["stock_id", "ex_date", "dividend_type"], keep="last"
+    ).drop("ingestion_ts").sort(["stock_id", "ex_date"])
+
+    df = df.with_columns([
+        (pl.col("cash_div_earnings").fill_null(0.0)
+         + pl.col("cash_div_reserve").fill_null(0.0)
+         + pl.col("special_dividend").fill_null(0.0)).alias("cash_div_per_share"),
+    ])
+
+    # TTM: rolling sum over previous 365 days. Polars does this via rolling_*_by.
+    out = df.with_columns([
+        pl.col("cash_div_per_share").rolling_sum_by(
+            by="ex_date", window_size="365d"
+        ).over("stock_id").alias("ttm_cash_div_per_share"),
+        (pl.col("cash_div_per_share") /
+            pl.when(pl.col("prev_close") == 0).then(None).otherwise(pl.col("prev_close"))
+            * 100.0).alias("div_yield_pct"),
+        (pl.col("ex_date") - pl.col("announce_date")).dt.total_days()
+            .alias("days_announce_to_ex"),
+        ((pl.col("cash_div_per_share")
+            / pl.col("cash_div_per_share").shift(1).over("stock_id")) - 1.0
+            ).alias("yoy_growth_ratio"),
+    ]).with_columns([
+        (pl.col("yoy_growth_ratio") * 100.0).alias("yoy_growth_pct"),
+    ]).select([
+        "ex_date", "stock_id", "period_end", "period_start", "dividend_type",
+        "cash_div_per_share", "div_yield_pct",
+        "prev_close", "ref_price", "pay_date", "announce_date",
+        "ttm_cash_div_per_share", "yoy_growth_pct",
+        "days_announce_to_ex", "total_cash_div_ktwd",
+    ]).with_columns([
+        pl.lit("qd_gold_dividend_calendar_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "dividend_calendar.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "stocks": out["stock_id"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/dividend_calendar",
+        bronze_file="silver/fundamentals/cash_dividend_events",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[dividend_calendar] {info}")
+    return info
+
+
+def build_stock_futures_adjustments() -> dict:
+    """Per-futures_code adjustment panel from tw_stock_futures_corp_actions.
+
+    Adds running totals (cum_cash_div_per_share, cum_stock_div_per_share,
+    cum_equity_value_per_lot), prev adjust date and gap (days_since_prev_adj),
+    and adj_seq_no per futures_code.
+
+    Output: gold/features/stock_futures_adjustments.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_stock_futures_corp_actions" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "futures_code", "adjust_date", "adjust_reason", "contract_type",
+        "stock_div_per_share", "cash_div_per_share", "cash_adjusted_yn",
+        "shares_per_lot", "cash_div_per_lot", "equity_value_per_lot", "ref_price",
+        "ingestion_ts",
+    ]).collect()
+    if df.schema["adjust_date"] != pl.Date:
+        df = df.with_columns(pl.col("adjust_date").cast(pl.Date))
+    df = df.sort(["futures_code", "adjust_date", "ingestion_ts"]).unique(
+        subset=["futures_code", "adjust_date"], keep="last"
+    ).drop("ingestion_ts").sort(["futures_code", "adjust_date"])
+
+    out = df.with_columns([
+        pl.col("cash_div_per_share").fill_null(0.0).cum_sum().over("futures_code")
+            .alias("cum_cash_div_per_share"),
+        pl.col("stock_div_per_share").fill_null(0.0).cum_sum().over("futures_code")
+            .alias("cum_stock_div_per_share"),
+        pl.col("equity_value_per_lot").fill_null(0.0).cum_sum().over("futures_code")
+            .alias("cum_equity_value_per_lot"),
+        pl.col("adjust_date").shift(1).over("futures_code").alias("prev_adjust_date"),
+        pl.col("adjust_date").cum_count().over("futures_code").alias("adj_seq_no"),
+    ]).with_columns([
+        (pl.col("adjust_date") - pl.col("prev_adjust_date")).dt.total_days()
+            .alias("days_since_prev_adj"),
+    ]).select([
+        "adjust_date", "futures_code", "adjust_reason", "contract_type",
+        "cash_div_per_share", "stock_div_per_share", "cash_adjusted_yn",
+        "shares_per_lot", "cash_div_per_lot", "equity_value_per_lot", "ref_price",
+        "cum_cash_div_per_share", "cum_stock_div_per_share",
+        "cum_equity_value_per_lot",
+        "prev_adjust_date", "days_since_prev_adj", "adj_seq_no",
+    ]).with_columns([
+        pl.lit("qd_gold_stock_futures_adjustments_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "stock_futures_adjustments.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "futures_codes": out["futures_code"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/stock_futures_adjustments",
+        bronze_file="silver/flows/tw_stock_futures_corp_actions",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[stock_futures_adjustments] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": copy_txo_daily_features(),
@@ -414,6 +697,10 @@ def build_all() -> dict:
         "margin": build_margin_factors(),
         "fundamentals_pit": build_fundamentals_pit(),
         "futures_large_trader": build_futures_large_trader_factors(),
+        "futures_inst": build_futures_inst_factors(),
+        "stock_attrs": build_stock_attrs_status(),
+        "dividend_calendar": build_dividend_calendar(),
+        "stock_futures_adjustments": build_stock_futures_adjustments(),
     }
     return summary
 
