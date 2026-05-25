@@ -71,7 +71,7 @@ sqlite 本檔仍在：`bronze/finmind/finmind_2026-05-18.sqlite` (2.5 GB, sha256
 | **M1** | 寫此 doc + 起始 snapshot | ✅ |
 | **M2** | 🥇 價格：fetch_tej `stock_daily` + `futures_daily` | ✅ |
 | **M3** | 🥉 籌碼：fetch_tej `inst_stock` + `margin` + `chip_dist` + `inst_futures_full` + `futures_large_trader` | ✅ |
-| **M4** | 其他 TEJ STALE（revenue_monthly P0! / accounting_raw / stock_trading_attrs / cash_dividend / stock_futures_corp_actions / security_attrs）+ catalog rebuild + 還原 finmind_* + qc view | ⏳ |
+| **M4** | 其他 TEJ STALE（revenue_monthly P0! / accounting_raw / stock_trading_attrs / cash_dividend / stock_futures_corp_actions / security_attrs）+ catalog rebuild + 還原 finmind_* + qc view | ✅ |
 | **M5** | tick 盤點與後續路徑 + gap_report 重生 + push | ⏳ |
 
 每個 milestone 一個 commit。
@@ -109,7 +109,31 @@ fetch_tej.py --table futures_daily --append-since-silver
 | `futures_large_trader` | 0 | 同 inst_stock |
 
 合計新進 silver: **54,346 列**。M4 之後跑 build-catalog，view 才會看到新數。
-### M4 — pending
+### M4 — 其他 TEJ STALE + catalog rebuild + 還原 finmind
+
+**TEJ fetches:**
+
+| table | rows | 備註 |
+|---|---:|---|
+| `revenue_monthly` | 0 | API 沒回 5 月份新月營收（公告窗 5/10 過後才應出，後續 retry） |
+| `accounting_raw` | 6,290 | 季報後續會計簽證 catch-up |
+| `stock_trading_attrs` | 244,557 | 個股交易屬性大批 catch-up |
+| `cash_dividend` | 698 | 預計除息事件 |
+| `stock_futures_corp_actions` | 1,865 | 個股期調整事件 |
+| `security_attrs` | 3,405 | snapshot 重新 |
+
+**CSV ingest（補對 silver/bars + flows）:**
+
+- `qd-ingest tej-stock`: 6,598,300 列、partitions 2010-2026
+- `qd-ingest tej-inst-stock`: 6,567,005 列、partitions 2010-2026
+- `qd-ingest tej-margin`: 3,713,424 列、partitions 2010-2026
+
+**Catalog rebuild + 還原 finmind**：
+
+- `qd-ingest build-catalog` 重建 27 個 view，但會把 finmind_* + qc 砍掉
+- 新增 `scripts/restore_finmind_views.py`：自動 glob `bronze/finmind/finmind_*.sqlite` 最新一份，重建 8 個 finmind_* view + qc_stock_price_diff
+- 接入 `daily_refresh.sh` step 3.5（在 build-catalog 後、gap_report 前自動跑）；未來 cron 不再每天砍 finmind 9 個 view
+- 也對 `catalog/quant_public.duckdb` 跑一次，公開 mirror 也回來
 ### M5 — pending
 
 ---

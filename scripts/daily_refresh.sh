@@ -176,6 +176,13 @@ else
     log INFO "catalog swapped: $CATALOG"
 fi
 
+# ---- 5.5 Restore bronze-snapshot views build-catalog drops --------------
+# build-catalog rewrites the catalog from a fixed view set; FinMind sqlite
+# views + qc reconciliation view are not in that set, so re-create them.
+log INFO "step 3.5: restore finmind / qc views"
+"$VENV_PY" "$REPO/scripts/restore_finmind_views.py" >> "$LOG" 2>&1 || \
+    log WARN "restore_finmind_views.py failed (rc=$?) — non-fatal"
+
 # ---- 6. Regenerate gap dashboard ----------------------------------------
 log INFO "step 4/4: regenerate gap dashboard"
 # gap_report.py exits 2 if any STALE — we treat that as informational, not a
