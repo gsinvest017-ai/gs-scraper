@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-25 (late PM) — Goldify 100% silver + trading-day-aware lag v2
+
+- **Goldify**：重新整批跑 `python -m qd_ingest.sources.derived`：
+  - `stock_factor_daily` 從 142d 過時 → 6.6M 列 / 2,911 stocks / max 2026-05-22
+  - `cross_market_features` 從 EMPTY → 2,080 列 / 27 cols
+  - 新增 `gold/features/inst_flow_factors.parquet`（6.57M 列，2,615 stocks，2010-2026，9 個法人流量因子）；builder 列入 `build_all()`
+- **Trading-day-aware lag v2**：
+  - `TRADING_DAY_CATEGORIES` 加入 `snapshot` + `derived` — 修正 `finmind_*_norm` / `qc_stock_price_diff` / `stock_factor_daily` 等 view 在週末 / 盤中時誤判 lag 的 bug
+  - `EOD_CUTOFF_HOUR_TPE` 從 15:00 推到 **18:00**（對齊 cron 17:30 + buffer）— 13:30-17:30 之間不會誤標今日為 expected
+- **FinMind 2026-05-25 snapshot** 上 bronze：`finmind_stock_price_norm` / `*_adj_norm` max 從 5/15 / 5/13 推到 **5/22**
+- Dashboard summary：`OK=4 WARN=9 STALE=8 INFO=4 → OK=15 WARN=1 STALE=8 INFO=2`
+
 ## 2026-05-25 (PM) — Dashboard 三大改進
 
 - **完整度排序**：gap_dashboard 預設按 `clamp(1 − lag/90, 0, 1)` 完整度 DESC 排（同分 P0 優先），補進 lag-bar 顯示「填滿 = 完整」。新增「完整度」百分比欄

@@ -100,7 +100,17 @@ year            INTEGER  -- partition key
 
 | view | rows | date range | 描述 |
 |---|---:|---|---|
-| `stock_factor_daily` | 6,356,541 | 2010-01-04 ~ 2025-12-31 | 漲跌幅 / RSI / ADX 等技術因子 |
+| `stock_factor_daily` | 6,597,986 | 2010-01-04 ~ 2026-05-22 | 個股技術因子：`ret_1d/5d/20d/60d/120d`, `mom_12_1`, `vol_20d/60d`, `turnover_20d` |
+| `inst_flow_factors` | 6,567,005 | 2010-01-04 ~ 2026-05-22 | 個股法人流量因子（9 個）：`foreign_net_5d/20d/60d`, `sitc_net_5d/20d`, `dealer_net_5d/20d`, `foreign_hold_pct_chg_20d`, `inst_net_persistence_20d` |
+| `cross_market_features` | 2,080 | (date 欄為 NULL) | 跨市場 derived（vol-corr 等） |
+
+Builders 都在 `src/qd_ingest/sources/derived.py`。重生整批：
+
+```bash
+PYTHONPATH=src .venv/bin/python -m qd_ingest.sources.derived
+```
+
+執行 `build_all()`：txo_daily_features (copy)、cross_market_features (copy + 修 index)、stock_factor_daily (polars 衍生)、inst_flow_factors (polars 衍生)。整批 < 5s。
 
 ## 9. FinMind bronze（snapshot 2026-05-18）
 
