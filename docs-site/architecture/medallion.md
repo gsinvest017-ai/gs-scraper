@@ -2,6 +2,10 @@
 
 QUANTDATA 採 **bronze → silver → gold** 三層架構。每層**只能**讀取上游、寫入本層、被下游讀取；不允許跨層直寫或環狀依賴。
 
+!!! tip "搭配閱讀"
+
+    本頁定義「每層放什麼」。要寫新 adapter 或做 code review 前，去看 [資料清洗準則](cleaning-criteria.md) — 那頁定義「promote 到下一層**之前**必須做完什麼」。
+
 ```mermaid
 flowchart LR
     R[RAW_SOURCES/<br/>原檔] -->|extract| B[(bronze/<br/>immutable)]

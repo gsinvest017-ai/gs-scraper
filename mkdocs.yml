@@ -73,6 +73,7 @@ nav:
   - 架構總覽:
       - 系統地圖: architecture/overview.md
       - Medallion 三層: architecture/medallion.md
+      - 資料清洗準則: architecture/cleaning-criteria.md
       - 資料流: architecture/dataflow.md
   - DB / Catalog:
       - 概覽: db/overview.md
