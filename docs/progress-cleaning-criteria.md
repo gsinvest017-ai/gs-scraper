@@ -19,7 +19,7 @@
 |---|---|---|
 | **M1** | 本進度檔 + outline | ✅ |
 | **M2** | `docs-site/architecture/cleaning-criteria.md` 完整內容 | ✅ |
-| **M3** | nav 加進去 + medallion.md 連結 + mkdocs strict + push | ⏳ |
+| **M3** | nav 加進去 + medallion.md 連結 + mkdocs strict + push | ✅ |
 
 ## Outline（M2 內容預計）
 
