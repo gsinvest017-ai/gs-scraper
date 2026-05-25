@@ -19,7 +19,7 @@
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | `.claude/agents/incremental-crawler.md`（QUANTDATA-scoped agent spec）+ 本進度檔 | ✅ |
-| **M2** | `~/.claude/skills/update-doc/SKILL.md` + `~/.claude/commands/update-doc.md`（global） | ⏳ |
+| **M2** | `~/.claude/skills/update-doc/SKILL.md` + `~/.claude/commands/update-doc.md`（global） | ✅ |
 | **M3** | docs-site/ops/ 補一頁說明這兩個自動化 + 在 README 連到；commit + push | ⏳ |
 
 ---
@@ -34,7 +34,21 @@
 
 設計思路：補上人類常忘記的「regen gap_dashboard」這個尾段，把「爬 → regen → commit」變成原子單元。
 
-### M2 — pending
+### M2 — global update-doc skill
+
+落兩個檔到 `~/.claude/`：
+
+- `~/.claude/skills/update-doc/SKILL.md`（~150 行）— 完整工作流：偵測框架（MkDocs/Docusaurus/VitePress/Jekyll）→ 找上次 doc commit → strict build → 提案要改的頁 → regen dashboard → changelog → commit
+- `~/.claude/commands/update-doc.md`（~40 行）— slim 入口，frontmatter `description`，body `$ARGUMENTS`，重點摘要 + 安全規則
+
+驗證：harness 自動 register skill；下一輪 system-reminder 已列出 `update-doc` 在 available skill list 第一條，trigger 描述完整。
+
+設計重點：
+- **框架不可知**：四種主流 doc framework 都支援，build command 不同但流程一致
+- **看 git diff 提案**：不亂改頁面，先列哪幾頁該改 + 為什麼
+- **不主動 push**：除非使用者明確要求
+- **尊重 repo-scoped agent**：若 repo 有 `.claude/agents/<doc-*>.md`，本 skill 是 fallback
+- **scaffold 路線**：repo 沒 doc-site 也能起手
 
 ### M3 — pending
 
