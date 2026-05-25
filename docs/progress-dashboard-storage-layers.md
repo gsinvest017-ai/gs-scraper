@@ -62,9 +62,37 @@ Rows：
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 本進度檔（含映射表） | ✅ |
-| **M2** | extend `Dataset` dataclass + 填 raw/bronze/silver/gold tuple + `_measure_layer()` helper | ⏳ |
-| **M3** | render 新欄位（5 個 layer cell）+ regen 兩份 HTML + JSON | ⏳ |
+| **M2** | extend `Dataset` dataclass + 填 raw/bronze/silver/gold tuple + `_measure_layer()` helper | ✅ |
+| **M3** | render 新欄位（5 個 layer cell）+ regen 兩份 HTML + JSON | ✅ |
 | **M4** | push live | ⏳ |
+
+## 進度日誌
+
+### M2 — Dataset extended + measure_layer
+
+加入 `raw_paths / bronze_paths / silver_paths / gold_paths` 為 `tuple[str, ...]` 預設空。`field(default_factory=tuple)` 給 dataclass 默認。25 個 dataset 全部填好 path glob patterns（含 brace-expansion 的 `{NQ,ES,GC}_1min_*.zip` 跟 `**/*.parquet` 遞迴）。
+
+`_measure_layer(patterns)` helper：手寫 brace expansion（單一 `{a,b,c}`）+ `glob.iglob(recursive=True)` + `os.walk` 累計 file size。dedupe 用 `seen` set 避免單一 layer 內重複。回傳 `{file_count, size_bytes, examples (up to 3)}`。
+
+`_fmt_bytes(n)` 把 bytes → `2.5 GB / 766.1 MB / 443.0 KB` 樣式。
+
+`probe()` 每筆 dataset 都計 4 個 layer，塞進 `row["layers"]`。JSON 自動 include。
+
+### M3 — HTML 渲染新欄位
+
+HTML_TEMPLATE：
+
+- 加 4 個 layer total pill（📦 Raw 2.5 GB / 🥉 Bronze 2.3 GB / 🥈 Silver 698 MB / 🥇 Gold 294 MB）在 severity summary 下方
+- 表格 header 多 5 欄：`📦 Raw / 🥉 Bronze / 🥈 Silver / 🥇 Gold / 📊 Catalog rows`
+- CSS 給 `.layer` class 小字 + tabular-nums + tooltip 顯示 examples
+
+`render_html`：
+
+- 新 `layer_cell(info)` 印 `{size}<span class="files">·{n}</span>`；title attr = sample paths
+- 新 `catalog_rows_cell(r)` 印 `6.6M / 12.5K / —` style；title = exact count
+- **總計 dedupe**：用 `layer_pattern_union` 把所有 dataset 的 patterns 合進 set 再 `_measure_layer` 一次，避免共用 FinMind sqlite 被算兩次（修正後 Bronze 從 4.7 GB → 2.3 GB）
+
+`mkdocs build --strict` PASS。
 
 ## Fallback
 

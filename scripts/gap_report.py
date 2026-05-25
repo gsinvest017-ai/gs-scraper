@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import glob
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -65,91 +67,138 @@ class Dataset:
     fetch_cmd: str
     description: str
     tier: str = "P1"
+    # Storage-layer glob patterns (relative to REPO). Used by the dashboard to
+    # show per-layer paths/size for migration checklists. Empty tuple = "no
+    # data in this layer for this dataset" (e.g. TEJ ingest skips bronze).
+    raw_paths: tuple[str, ...] = field(default_factory=tuple)
+    bronze_paths: tuple[str, ...] = field(default_factory=tuple)
+    silver_paths: tuple[str, ...] = field(default_factory=tuple)
+    gold_paths: tuple[str, ...] = field(default_factory=tuple)
 
 
 DATASETS = [
     # --- TEJ stock daily price + flows (P0, CSV-backed via fetch_tej.py) ---
     Dataset("tw_stock_bars",           "trading_date", "daily-trading",
             "fetch_tej.py --table stock_daily --append-since-silver",
-            "TEJ 個股日 K (OHLCV + 除權息調整)", "P0"),
+            "TEJ 個股日 K (OHLCV + 除權息調整)", "P0",
+            raw_paths=("../RAW_SOURCES/TEJ資料/TWN_EWPRCD_股價.csv",),
+            silver_paths=("silver/bars/bars_1d/asset_class=tw_stock/**/*.parquet",)),
     Dataset("tw_inst_stock_daily",     "trading_date", "daily-trading",
             "fetch_tej.py --table inst_stock --append-since-silver",
-            "個股三大法人買賣超", "P0"),
+            "個股三大法人買賣超", "P0",
+            raw_paths=("../RAW_SOURCES/TEJ資料/TWN_EWTINST1_三大法人.csv",),
+            silver_paths=("silver/flows/tw_inst_stock_daily/**/*.parquet",)),
     Dataset("tw_margin_daily",         "trading_date", "daily-trading",
             "fetch_tej.py --table margin --append-since-silver",
-            "融資融券餘額", "P0"),
+            "融資融券餘額", "P0",
+            raw_paths=("../RAW_SOURCES/TEJ資料/TWN_EWGIN_融資融券.csv",),
+            silver_paths=("silver/flows/tw_margin_daily/**/*.parquet",)),
 
     # --- TAIFEX / TEJ 期貨 (P0, direct silver-parquet) ---
     Dataset("tw_inst_futures_daily",   "trading_date", "daily-trading",
             "(TAIFEX scraper — currently no auto-refresh)",
-            "期貨三大法人（TAIFEX 直抓）", "P0"),
+            "期貨三大法人（TAIFEX 直抓）", "P0",
+            raw_paths=("../RAW_SOURCES/三大法人買賣超/**/*",),
+            silver_paths=("silver/flows/tw_inst_futures_daily/**/*.parquet",)),
     Dataset("tw_inst_futures_full_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table inst_futures_full --append-since-silver",
-            "期貨三大法人完整版（含選擇權）", "P1"),
+            "期貨三大法人完整版（含選擇權）", "P1",
+            silver_paths=("silver/flows/tw_inst_futures_full_daily/**/*.parquet",)),
     Dataset("tw_futures_large_trader_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table futures_large_trader --append-since-silver",
-            "期貨大額交易人未沖銷部位", "P0"),
+            "期貨大額交易人未沖銷部位", "P0",
+            silver_paths=("silver/flows/tw_futures_large_trader_daily/**/*.parquet",)),
     Dataset("bars_1d",                 "trading_date", "daily-trading",
             "fetch_tej.py --table futures_daily --append-since-silver",
-            "所有期貨日 K（含 MXF/TXF/個股期）", "P0"),
+            "所有期貨日 K（含 MXF/TXF/個股期）", "P0",
+            silver_paths=("silver/bars/bars_1d/**/*.parquet",)),
     Dataset("tx_continuous_d",         "trading_date", "daily-trading",
             "(TX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)",
-            "TX 連續期", "P1"),
+            "TX 連續期", "P1",
+            raw_paths=("../RAW_SOURCES/日k 期貨tquant lab/TX_continuous_*.parquet",),
+            gold_paths=("gold/continuous/tx_continuous_d.parquet",)),
     Dataset("mtx_continuous_d",        "trading_date", "daily-trading",
             "(MTX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)",
-            "MTX 連續期", "P1"),
+            "MTX 連續期", "P1",
+            raw_paths=("../RAW_SOURCES/日k 期貨tquant lab/MTX_continuous_*.parquet",),
+            gold_paths=("gold/continuous/mtx_continuous_d.parquet",)),
     Dataset("stock_futures_continuous_d", "trading_date", "daily-trading",
             "(個股期連續 — 來自 RAW_SOURCES/股票期貨/，無自動 refresh)",
-            "個股期連續近月", "P2"),
+            "個股期連續近月", "P2",
+            raw_paths=("../RAW_SOURCES/股票期貨/continuous_near_month.parquet",
+                       "../RAW_SOURCES/股票期貨/stock_futures_daily.parquet"),
+            gold_paths=("gold/continuous/stock_futures_continuous_d.parquet",)),
 
     # --- 1-minute bars (manual MXF parquet ingest) ---
     Dataset("bars_1m",                 "trading_date", "daily-trading",
             "(MXF 1m — 來自 RAW_SOURCES/MXF_1m_clean_all/，需手動更新)",
-            "1 分鐘 K 線 (MXF)", "P2"),
+            "1 分鐘 K 線 (MXF)", "P2",
+            raw_paths=("../RAW_SOURCES/MXF_1m_clean_all.parquet",
+                       "../RAW_SOURCES/{NQ,ES,GC}_1min_*.zip",
+                       "../RAW_SOURCES/{NQ,ES,GC}/**/*.parquet"),
+            silver_paths=("silver/bars/bars_1m/**/*.parquet",)),
 
     # --- TEJ chip / attrs / dividends (P1/P2) ---
     Dataset("tw_chip_dist_daily",      "trading_date", "daily-trading",
             "fetch_tej.py --table chip_dist --append-since-silver",
-            "TEJ 集保戶股權分散表", "P1"),
+            "TEJ 集保戶股權分散表", "P1",
+            silver_paths=("silver/flows/tw_chip_dist_daily/**/*.parquet",)),
     Dataset("tw_stock_trading_attrs_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table stock_trading_attrs --append-since-silver",
-            "個股交易屬性（注意/處置/全額交割）", "P2"),
+            "個股交易屬性（注意/處置/全額交割）", "P2",
+            silver_paths=("silver/flows/tw_stock_trading_attrs_daily/**/*.parquet",)),
 
     # --- 月營收 / 季報 / 會計 ---
     Dataset("revenue_monthly",         "fiscal_month", "monthly",
             "fetch_tej.py --table revenue_monthly --append-since-silver",
-            "月營收（每月 10 日前後公告）", "P0"),
+            "月營收（每月 10 日前後公告）", "P0",
+            silver_paths=("silver/fundamentals/revenue_monthly/**/*.parquet",)),
     Dataset("fundamentals_q",          "publish_date", "quarterly",
             "(TWN_EWIFINQ CSV — 來自 TEJ 訂閱包，無 API auto-refresh)",
-            "季報（單季 + 累季財報）", "P1"),
+            "季報（單季 + 累季財報）", "P1",
+            raw_paths=("../RAW_SOURCES/TEJ資料/TWN_EWIFINQ_單季財報.csv",
+                       "../RAW_SOURCES/TEJ資料/TWN_EWIFINA_累季財報.csv"),
+            silver_paths=("silver/fundamentals/fin_q/**/*.parquet",)),
     Dataset("accounting_raw",          "fiscal_month", "quarterly",
             "fetch_tej.py --table accounting_raw --append-since-silver",
-            "原始會計簽證科目（AINVFINB 118 欄）", "P2"),
+            "原始會計簽證科目（AINVFINB 118 欄）", "P2",
+            silver_paths=("silver/fundamentals/accounting_raw/**/*.parquet",)),
 
     # --- 衍生 (downstream of stock_bars etc.) ---
     Dataset("stock_factor_daily",      "trading_date", "derived",
             "qd-ingest rebuild-stock-factors  (依 tw_stock_bars 衍生)",
-            "個股技術因子（漲跌幅、RSI、ADX 等）", "P1"),
+            "個股技術因子（漲跌幅、RSI、ADX 等）", "P1",
+            gold_paths=("gold/features/stock_factor_daily.parquet",)),
     Dataset("macro_daily",             "trading_date", "daily-trading",
             "yfinance scraper for VIX/USDTWD/...  (no auto job yet)",
-            "總體變數日資料 (VIX, USDTWD, ...)", "P1"),
+            "總體變數日資料 (VIX, USDTWD, ...)", "P1",
+            silver_paths=("silver/macro/**/*.parquet",)),
     Dataset("txo_daily_features",      "date",         "daily-trading",
             "(TXO daily features — 來自選擇權日盤逐筆，無 auto-refresh)",
-            "選擇權 TXO 日特徵", "P2"),
+            "選擇權 TXO 日特徵", "P2",
+            raw_paths=("../RAW_SOURCES/選擇權日盤逐筆原始資料_TXO.parquet/**/*",
+                       "../RAW_SOURCES/TXO_1min_merged_*.parquet/**/*"),
+            silver_paths=("silver/options/**/*.parquet",)),
     Dataset("cross_market_features",   "date",         "derived",
             "(cross-market features — derived from VIX/SPY/macro; rebuild after macro_daily refresh)",
-            "跨市場特徵（VIX-vol、SPY-corr 等）", "P2"),
+            "跨市場特徵（VIX-vol、SPY-corr 等）", "P2",
+            gold_paths=("gold/features/cross_market_features.parquet",)),
     Dataset("tw_inst_market_daily",    "trading_date", "daily-trading",
             "(市場層級三大法人 — 上游應由 tw_inst_stock_daily aggregated 而來)",
-            "市場層級三大法人彙總", "P2"),
+            "市場層級三大法人彙總", "P2",
+            silver_paths=("silver/flows/tw_inst_market_daily/**/*.parquet",)),
 
     # --- FinMind bronze snapshot (one-shot dump 2026-05-18, not auto-refreshed) ---
     Dataset("finmind_stock_price_norm",     "trading_date", "snapshot",
             "(re-sync bronze/finmind/finmind_*.sqlite when FinMind crawler produces a new snapshot)",
-            "FinMind 個股日 K (canonical 命名 + 2000-2026 完整)", "P1"),
+            "FinMind 個股日 K (canonical 命名 + 2000-2026 完整)", "P1",
+            raw_paths=("../RAW_SOURCES/FINMIND資料集.zip",),
+            bronze_paths=("bronze/finmind/finmind_*.sqlite",)),
     Dataset("finmind_stock_price_adj_norm", "trading_date", "snapshot",
             "(re-sync bronze/finmind/finmind_*.sqlite for fresh adj series)",
-            "FinMind 還原權息日 K (TEJ adj_close 對帳用)", "P2"),
+            "FinMind 還原權息日 K (TEJ adj_close 對帳用)", "P2",
+            raw_paths=("../RAW_SOURCES/FINMIND資料集.zip",),
+            bronze_paths=("bronze/finmind/finmind_*.sqlite",)),
     Dataset("qc_stock_price_diff",          "trading_date", "derived",
             "(rebuild after either tw_stock_bars or finmind_stock_price_norm updates)",
             "TEJ vs FinMind 對帳 view（2010+ 重疊段）", "P2"),
@@ -157,10 +206,12 @@ DATASETS = [
     # --- Event-driven (future-dated rows; check MAX vs today) ---
     Dataset("cash_dividend_events",    "ex_date",      "event",
             "fetch_tej.py --table cash_dividend --append-since-silver",
-            "現金股利除息事件（forward-looking）", "P1"),
+            "現金股利除息事件（forward-looking）", "P1",
+            silver_paths=("silver/fundamentals/cash_dividend_events/**/*.parquet",)),
     Dataset("tw_stock_futures_corp_actions", "adjust_date", "event",
             "fetch_tej.py --table stock_futures_corp_actions --append-since-silver",
-            "個股期調整事件", "P2"),
+            "個股期調整事件", "P2",
+            silver_paths=("silver/flows/tw_stock_futures_corp_actions/**/*.parquet",)),
 ]
 
 
@@ -259,6 +310,72 @@ def expected_latest_trading_day(
     return candidate  # safety net (shouldn't hit)
 
 
+# --- Storage layer measurement ---------------------------------------------
+
+def _measure_layer(patterns: tuple[str, ...]) -> dict:
+    """Resolve glob patterns under REPO and return total size + file count.
+
+    Patterns are repo-relative (we glob from REPO as cwd). Supports recursive
+    `**` and brace expansion via two-pass (we expand `{a,b}` manually since
+    `glob` lacks built-in brace expansion).
+    """
+    if not patterns:
+        return {"file_count": 0, "size_bytes": 0, "examples": []}
+
+    def expand_braces(p: str) -> list[str]:
+        # very small brace-expander; only one {a,b,c} per pattern.
+        if "{" not in p:
+            return [p]
+        lhs, rest = p.split("{", 1)
+        if "}" not in rest:
+            return [p]
+        body, rhs = rest.split("}", 1)
+        return [f"{lhs}{tok}{rhs}" for tok in body.split(",")]
+
+    cwd = str(REPO)
+    total_bytes = 0
+    total_files = 0
+    examples: list[str] = []
+    seen = set()
+    for raw_pat in patterns:
+        for pat in expand_braces(raw_pat):
+            # Make absolute for glob; resolve symlinks lazily
+            abs_pat = os.path.join(cwd, pat)
+            for path in glob.iglob(abs_pat, recursive=True):
+                if path in seen:
+                    continue
+                seen.add(path)
+                if os.path.isfile(path):
+                    total_bytes += os.path.getsize(path)
+                    total_files += 1
+                    if len(examples) < 3:
+                        examples.append(os.path.relpath(path, cwd))
+                elif os.path.isdir(path):
+                    for root, _, files in os.walk(path):
+                        for f in files:
+                            fp = os.path.join(root, f)
+                            if fp in seen:
+                                continue
+                            seen.add(fp)
+                            try:
+                                total_bytes += os.path.getsize(fp)
+                                total_files += 1
+                            except OSError:
+                                pass
+                    if len(examples) < 3:
+                        examples.append(os.path.relpath(path, cwd))
+    return {"file_count": total_files, "size_bytes": total_bytes, "examples": examples}
+
+
+def _fmt_bytes(n: int) -> str:
+    if n <= 0:
+        return "—"
+    for unit, threshold in (("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10)):
+        if n >= threshold:
+            return f"{n / threshold:.1f} {unit}"
+    return f"{n} B"
+
+
 # --- Probe -----------------------------------------------------------------
 
 def probe(catalog_path: Path) -> list[dict]:
@@ -293,6 +410,12 @@ def probe(catalog_path: Path) -> list[dict]:
                     else:
                         lag = (today - max_date).days
                     severity = classify(lag, d.category)
+                layers = {
+                    "raw":    _measure_layer(d.raw_paths),
+                    "bronze": _measure_layer(d.bronze_paths),
+                    "silver": _measure_layer(d.silver_paths),
+                    "gold":   _measure_layer(d.gold_paths),
+                }
                 rows.append({
                     "view": d.view,
                     "description": d.description,
@@ -304,6 +427,7 @@ def probe(catalog_path: Path) -> list[dict]:
                     "lag_days": lag,
                     "severity": severity,
                     "fetch_cmd": d.fetch_cmd,
+                    "layers": layers,
                 })
             except Exception as e:
                 rows.append({
@@ -311,6 +435,12 @@ def probe(catalog_path: Path) -> list[dict]:
                     "category": d.category, "tier": d.tier,
                     "date_col": d.date_col, "max_date": None,
                     "row_count": None, "lag_days": None,
+                    "layers": {
+                        "raw":    _measure_layer(d.raw_paths),
+                        "bronze": _measure_layer(d.bronze_paths),
+                        "silver": _measure_layer(d.silver_paths),
+                        "gold":   _measure_layer(d.gold_paths),
+                    },
                     "severity": "EMPTY", "fetch_cmd": d.fetch_cmd,
                     "error": str(e),
                 })
@@ -391,6 +521,14 @@ HTML_TEMPLATE = """<!doctype html>
   tr.INFO  {{ background: #eff6ff; }}
   .lag {{ font-variant-numeric: tabular-nums; text-align: right; }}
   .pct {{ font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }}
+  .layer {{ font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap;
+            font-size: 11.5px; color: #4b5563; }}
+  .layer.has-data {{ color: #111827; font-weight: 500; }}
+  .layer.empty {{ color: #9ca3af; }}
+  .layer .files {{ color: #6b7280; font-size: 10.5px; margin-left: 4px; }}
+  .layer-totals {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 22px 0; font-size: 12px; }}
+  .layer-totals .ltot {{ background: #f3f4f6; padding: 6px 12px; border-radius: 6px; }}
+  .layer-totals .ltot b {{ color: #111827; }}
   .bar {{ position: relative; display: inline-block; height: 10px; background: #f3f4f6; border-radius: 4px; vertical-align: middle; border: 1px solid #e5e7eb; }}
   .bar > span {{ position: absolute; left: 0; top: 0; height: 100%; border-radius: 4px; }}
   .bar > span.OK    {{ background: #10b981; }}
@@ -417,6 +555,13 @@ HTML_TEMPLATE = """<!doctype html>
   <div class="pill OK">✅ OK<br><b>{count_OK}</b></div>
 </div>
 
+<div class="layer-totals">
+  <div class="ltot">📦 Raw 總大小 <b>{layer_total_raw}</b></div>
+  <div class="ltot">🥉 Bronze <b>{layer_total_bronze}</b></div>
+  <div class="ltot">🥈 Silver <b>{layer_total_silver}</b></div>
+  <div class="ltot">🥇 Gold <b>{layer_total_gold}</b></div>
+</div>
+
 <table>
 <thead>
 <tr>
@@ -429,6 +574,11 @@ HTML_TEMPLATE = """<!doctype html>
   <th class="lag">Lag</th>
   <th class="pct">完整度</th>
   <th>Completeness</th>
+  <th class="layer">📦 Raw</th>
+  <th class="layer">🥉 Bronze</th>
+  <th class="layer">🥈 Silver</th>
+  <th class="layer">🥇 Gold</th>
+  <th class="layer">📊 Catalog rows</th>
   <th>Suggested action</th>
 </tr>
 </thead>
@@ -500,6 +650,46 @@ def render_html(rows: list[dict], today: dt.date) -> str:
     counts = {sev: 0 for sev in SEVERITY}
     for r in rows: counts[r["severity"]] += 1
 
+    # Aggregate per-layer totals for the migration sizing block.
+    # Re-run _measure_layer on the union of all patterns so shared paths
+    # (e.g. one FinMind sqlite covering 2 datasets) are counted ONCE.
+    layer_pattern_union: dict[str, set[str]] = {"raw": set(), "bronze": set(), "silver": set(), "gold": set()}
+    for d in DATASETS:
+        layer_pattern_union["raw"].update(d.raw_paths)
+        layer_pattern_union["bronze"].update(d.bronze_paths)
+        layer_pattern_union["silver"].update(d.silver_paths)
+        layer_pattern_union["gold"].update(d.gold_paths)
+    layer_totals_bytes = {
+        lname: _measure_layer(tuple(sorted(pats)))["size_bytes"]
+        for lname, pats in layer_pattern_union.items()
+    }
+
+    def layer_cell(layer_info: dict) -> str:
+        n = layer_info.get("file_count", 0) if layer_info else 0
+        b = layer_info.get("size_bytes", 0) if layer_info else 0
+        if n == 0:
+            return '<td class="layer empty">—</td>'
+        examples = (layer_info or {}).get("examples") or []
+        title = " · ".join(examples).replace('"', "&quot;")
+        return (
+            f'<td class="layer has-data" title="{title}">'
+            f'{_fmt_bytes(b)}<span class="files">·{n}</span>'
+            f'</td>'
+        )
+
+    def catalog_rows_cell(r: dict) -> str:
+        n = r.get("row_count")
+        if n is None:
+            return '<td class="layer empty">—</td>'
+        # human-readable: 6,587,436 → 6.6M, 1,234 → 1.2K
+        if n >= 1_000_000:
+            label = f"{n/1_000_000:.1f}M"
+        elif n >= 1000:
+            label = f"{n/1000:.1f}K"
+        else:
+            label = str(n)
+        return f'<td class="layer has-data" title="exact: {n:,d} rows">{label}</td>'
+
     rows_html = []
     for r in rows_sorted:
         meta = SEVERITY[r["severity"]]
@@ -507,6 +697,7 @@ def render_html(rows: list[dict], today: dt.date) -> str:
         c = _completeness(r["lag_days"])
         pct_str = f"{c * 100:.0f}%"
         action_html = f'<code>{r["fetch_cmd"]}</code>' if r["severity"] != "OK" else ""
+        layers = r.get("layers", {}) or {}
         rows_html.append(
             f'<tr class="{r["severity"]}">'
             f'<td>{meta["emoji"]} {r["severity"]}</td>'
@@ -518,6 +709,11 @@ def render_html(rows: list[dict], today: dt.date) -> str:
             f'<td class="lag">{lag_str}</td>'
             f'<td class="pct">{pct_str}</td>'
             f'<td>{bar_html(r)}</td>'
+            f'{layer_cell(layers.get("raw"))}'
+            f'{layer_cell(layers.get("bronze"))}'
+            f'{layer_cell(layers.get("silver"))}'
+            f'{layer_cell(layers.get("gold"))}'
+            f'{catalog_rows_cell(r)}'
             f'<td>{action_html}</td>'
             f'</tr>'
         )
@@ -526,6 +722,10 @@ def render_html(rows: list[dict], today: dt.date) -> str:
         generated_at=dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         total=len(rows),
         rows_html="\n".join(rows_html),
+        layer_total_raw=_fmt_bytes(layer_totals_bytes["raw"]),
+        layer_total_bronze=_fmt_bytes(layer_totals_bytes["bronze"]),
+        layer_total_silver=_fmt_bytes(layer_totals_bytes["silver"]),
+        layer_total_gold=_fmt_bytes(layer_totals_bytes["gold"]),
         **{f"count_{k}": v for k, v in counts.items()},
     )
 
