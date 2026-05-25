@@ -28,11 +28,21 @@ import sys
 import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import duckdb
 
 REPO = Path(__file__).resolve().parents[1]
 CATALOG = REPO / "catalog" / "quant.duckdb"
+
+# --- Trading-day-aware lag config -----------------------------------------
+TPE_TZ = ZoneInfo("Asia/Taipei")
+# TW market closes 13:30 TPE; TEJ EOD usually lands by ~14:00. Be conservative
+# and treat today's data as "expected to be available" only after 15:00 TPE.
+EOD_CUTOFF_HOUR_TPE = 15
+# Categories whose lag is measured in trading days (not calendar days).
+# Other categories (monthly/quarterly/event/derived/snapshot) keep raw lag.
+TRADING_DAY_CATEGORIES = frozenset({"daily-trading"})
 
 
 # --- Dataset registry ------------------------------------------------------
@@ -198,6 +208,57 @@ def classify(lag_days: int | None, category: str) -> str:
     return "STALE"
 
 
+# --- Trading-day-aware lag -------------------------------------------------
+
+def _load_trading_days(con: duckdb.DuckDBPyConnection) -> set[dt.date]:
+    """Load the set of TW trading days from calendar_xtai. Empty set if view
+    missing or any error — caller should then fall back to weekday heuristic."""
+    try:
+        rows = con.execute(
+            "SELECT trading_date FROM main.calendar_xtai WHERE is_trading = TRUE"
+        ).fetchall()
+        return {r[0] for r in rows if r[0] is not None}
+    except Exception:
+        return set()
+
+
+def _is_trading_day(d: dt.date, calendar_days: set[dt.date]) -> bool:
+    """True if d is a TW trading day.
+
+    Authoritative source = `calendar_xtai`. For dates past the calendar's
+    coverage (currently 2025-12-31), fall back to weekday Mon-Fri. This will
+    over-count holidays like 春節 / 端午 / 國慶 — accepted trade-off until
+    calendar gets refreshed."""
+    if calendar_days:
+        cal_max = max(calendar_days)
+        cal_min = min(calendar_days)
+        if cal_min <= d <= cal_max:
+            return d in calendar_days
+    # Fallback for dates outside calendar coverage
+    return d.weekday() < 5  # Mon-Fri
+
+
+def expected_latest_trading_day(
+    now_tpe: dt.datetime,
+    calendar_days: set[dt.date],
+    eod_cutoff_hour: int = EOD_CUTOFF_HOUR_TPE,
+) -> dt.date:
+    """Latest TW trading day for which EOD data is expected to have landed.
+
+    - If today is a trading day AND now_tpe.hour >= eod_cutoff_hour → today
+    - Else step back day-by-day until the next trading day is found
+      (≤ 30 days backstop)"""
+    today = now_tpe.date()
+    if _is_trading_day(today, calendar_days) and now_tpe.hour >= eod_cutoff_hour:
+        return today
+    candidate = today - dt.timedelta(days=1)
+    for _ in range(30):
+        if _is_trading_day(candidate, calendar_days):
+            return candidate
+        candidate -= dt.timedelta(days=1)
+    return candidate  # safety net (shouldn't hit)
+
+
 # --- Probe -----------------------------------------------------------------
 
 def probe(catalog_path: Path) -> list[dict]:
@@ -206,9 +267,12 @@ def probe(catalog_path: Path) -> list[dict]:
     snap = tmp_dir / "snap.duckdb"
     shutil.copy(catalog_path, snap)
     today = dt.date.today()
+    now_tpe = dt.datetime.now(TPE_TZ)
     try:
         con = duckdb.connect(str(snap), read_only=True)
         con.execute(f"SET file_search_path='{REPO}'")
+        trading_days = _load_trading_days(con)
+        expected_td = expected_latest_trading_day(now_tpe, trading_days)
         rows = []
         for d in DATASETS:
             try:
@@ -222,7 +286,12 @@ def probe(catalog_path: Path) -> list[dict]:
                 else:
                     if hasattr(max_date, "date"):
                         max_date = max_date.date()
-                    lag = (today - max_date).days
+                    # For daily-trading: lag measured against expected_latest_trading_day
+                    # so weekends + pre-EOD today never inflate the lag count.
+                    if d.category in TRADING_DAY_CATEGORIES:
+                        lag = max(0, (expected_td - max_date).days)
+                    else:
+                        lag = (today - max_date).days
                     severity = classify(lag, d.category)
                 rows.append({
                     "view": d.view,
@@ -372,6 +441,7 @@ HTML_TEMPLATE = """<!doctype html>
   預設排序：完整度 (Completeness) 從高到低；同分時 tier P0 在上。
   Completeness = clamp(1 − lag_days / 90, 0, 1) × 100% — 涵蓋未來日期 (negative lag) 視為 100%，無資料 (EMPTY) 視為 0%。
   Bar 視覺：填滿 = 完整。
+  Daily-trading 類別的 lag 為 <b>trading-day-aware</b>：對齊到「上一個應已有 EOD 的台股交易日」(weekend 與每日 15:00 TPE EOD 前的 today 不計入 lag)。
   Severity rules — daily-trading: 0-1d=OK / 2-5d=WARN / &gt;5d=STALE.
   Monthly: 0-15d=OK / 15-45d=WARN / &gt;45d=STALE.
   Quarterly: 0-60d=OK / 60-120d=WARN / &gt;120d=STALE.

@@ -30,7 +30,7 @@
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 寫此進度檔 | ✅ |
-| **M2** | gap_report.py 加 trading-day calendar loader + expected_latest_trading_day + 套用到 daily-trading probe；regen | ⏳ |
+| **M2** | gap_report.py 加 trading-day calendar loader + expected_latest_trading_day + 套用到 daily-trading probe；regen | ✅ |
 | **M3** | strict build + push live | ⏳ |
 
 ## 進度日誌
@@ -39,7 +39,30 @@
 
 選擇「calendar_xtai 主 + weekday fallback」混合，EOD cutoff 15:00 TPE，scope 限 `daily-trading` category。
 calendar_xtai 目前只到 2025-12-31，所以 2026 全部走 weekday fallback。後續若 calendar 補完 2026，自動切回 view 為主。
-### M2 — pending
+### M2 — gap_report.py 改寫
+
+新增 module-level：
+- `TPE_TZ = ZoneInfo("Asia/Taipei")`
+- `EOD_CUTOFF_HOUR_TPE = 15`
+- `TRADING_DAY_CATEGORIES = frozenset({"daily-trading"})`
+
+新增三個 helper：
+- `_load_trading_days(con)`：從 `calendar_xtai` view 抓 `is_trading=True` 的 set；view 缺則回 empty set
+- `_is_trading_day(d, calendar_days)`：calendar 覆蓋範圍內 = look up；範圍外 fallback 到 weekday Mon-Fri
+- `expected_latest_trading_day(now_tpe, calendar_days, eod_cutoff_hour=15)`：今日是交易日且 now_tpe.hour ≥ 15 就回 today；否則回推到上一個 trading day（30 days backstop）
+
+`probe()` 內：
+- `now_tpe = datetime.now(TPE_TZ)`
+- `expected_td = expected_latest_trading_day(now_tpe, _load_trading_days(con))`
+- 對 `category in TRADING_DAY_CATEGORIES` 改用 `lag = max(0, (expected_td - max_date).days)`；其他 category 維持 `(today - max_date).days`
+
+Legend 補一行說明「Daily-trading 類別的 lag 為 trading-day-aware」。
+
+驗證：
+- 之前 WARN 9 → 1（8 個 daily-trading 從 calendar 3d 變 trading-day 0d）
+- OK 4 → 12（補回那 8 個 + tx/mtx_continuous）
+- STALE 8 → 8（真 stale 維持 STALE，chip_dist 仍 7d、tw_inst_futures_daily 仍 14d）
+- INFO 4、EMPTY 1 不變
 ### M3 — pending
 
 ## Fallback
