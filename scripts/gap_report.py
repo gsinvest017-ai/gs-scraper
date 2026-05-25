@@ -124,7 +124,14 @@ DATASETS = [
     Dataset("bars_1d",                 "trading_date", "daily-trading",
             "fetch_tej.py --table futures_daily --append-since-silver",
             "所有期貨日 K（含 MXF/TXF/個股期）", "P0",
-            silver_paths=("silver/bars/bars_1d/**/*.parquet",)),
+            silver_paths=("silver/bars/bars_1d/**/*.parquet",),
+            gold_paths=(
+                "gold/features/stock_factor_daily.parquet",
+                "gold/features/futures_bar_factors.parquet",
+                "gold/continuous/tx_continuous_d.parquet",
+                "gold/continuous/mtx_continuous_d.parquet",
+                "gold/continuous/stock_futures_continuous_d.parquet",
+            )),
     Dataset("tx_continuous_d",         "trading_date", "daily-trading",
             "(TX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)",
             "TX 連續期", "P1",
@@ -224,15 +231,21 @@ DATASETS = [
             "(re-sync bronze/finmind/finmind_*.sqlite when FinMind crawler produces a new snapshot)",
             "FinMind 個股日 K (canonical 命名 + 2000-2026 完整)", "P1",
             raw_paths=("../RAW_SOURCES/FINMIND資料集.zip",),
-            bronze_paths=("bronze/finmind/finmind_*.sqlite",)),
+            bronze_paths=("bronze/finmind/finmind_*.sqlite",),
+            gold_paths=("gold/features/finmind_price_canonical.parquet",)),
     Dataset("finmind_stock_price_adj_norm", "trading_date", "snapshot",
             "(re-sync bronze/finmind/finmind_*.sqlite for fresh adj series)",
             "FinMind 還原權息日 K (TEJ adj_close 對帳用)", "P2",
             raw_paths=("../RAW_SOURCES/FINMIND資料集.zip",),
-            bronze_paths=("bronze/finmind/finmind_*.sqlite",)),
+            bronze_paths=("bronze/finmind/finmind_*.sqlite",),
+            gold_paths=("gold/features/finmind_price_canonical.parquet",)),
     Dataset("qc_stock_price_diff",          "trading_date", "derived",
             "(rebuild after either tw_stock_bars or finmind_stock_price_norm updates)",
-            "TEJ vs FinMind 對帳 view（2010+ 重疊段）", "P2"),
+            "TEJ vs FinMind 對帳 view（2010+ 重疊段）", "P2",
+            gold_paths=(
+                "gold/features/qc_stock_price_diff_snapshot.parquet",
+                "gold/features/qc_stock_price_diff_yearly.parquet",
+            )),
 
     # --- Event-driven (future-dated rows; check MAX vs today) ---
     Dataset("cash_dividend_events",    "ex_date",      "event",
@@ -263,6 +276,23 @@ DATASETS = [
             "python -m qd_ingest.sources.derived  (build_stock_futures_adjustments)",
             "個股期調整累計表（cum cash/stock div、間隔、序號）", "P2",
             gold_paths=("gold/features/stock_futures_adjustments.parquet",)),
+
+    # --- New derived (this round): goldify last 100% complete views ---
+    Dataset("futures_bar_factors",     "trading_date", "derived",
+            "python -m qd_ingest.sources.derived  (build_futures_bar_factors)",
+            "期貨日 K 衍生因子（mom 5/20/60d, vol 20/60d, ATR14, turnover, OI Δ）", "P1",
+            gold_paths=("gold/features/futures_bar_factors.parquet",)),
+    Dataset("qc_stock_price_diff_snapshot", "trading_date", "derived",
+            "python -m qd_ingest.sources.derived  (materialize_qc_snapshot)",
+            "TEJ vs FinMind 對帳 parquet 持久化（含 yearly aggregate 副產物）", "P2",
+            gold_paths=(
+                "gold/features/qc_stock_price_diff_snapshot.parquet",
+                "gold/features/qc_stock_price_diff_yearly.parquet",
+            )),
+    Dataset("finmind_price_canonical", "trading_date", "derived",
+            "python -m qd_ingest.sources.derived  (materialize_finmind_canonical)",
+            "FinMind raw + adj OHLC 合併（parquet 取代 sqlite 查詢）", "P1",
+            gold_paths=("gold/features/finmind_price_canonical.parquet",)),
 ]
 
 

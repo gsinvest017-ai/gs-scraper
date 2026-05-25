@@ -147,6 +147,10 @@ def build(*, db_path=None) -> None:
         ("stock_attrs_status",         GOLD / "features" / "stock_attrs_status.parquet"),
         ("dividend_calendar",          GOLD / "features" / "dividend_calendar.parquet"),
         ("stock_futures_adjustments",  GOLD / "features" / "stock_futures_adjustments.parquet"),
+        ("futures_bar_factors",        GOLD / "features" / "futures_bar_factors.parquet"),
+        ("qc_stock_price_diff_snapshot", GOLD / "features" / "qc_stock_price_diff_snapshot.parquet"),
+        ("qc_stock_price_diff_yearly", GOLD / "features" / "qc_stock_price_diff_yearly.parquet"),
+        ("finmind_price_canonical",    GOLD / "features" / "finmind_price_canonical.parquet"),
     ]:
         if fp.exists():
             con.execute(f"""
