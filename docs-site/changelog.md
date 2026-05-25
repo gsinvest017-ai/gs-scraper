@@ -4,6 +4,41 @@
 
 ---
 
+## 2026-05-25 (evening) — Goldify 全部 100% 完整度 view（3 輪收尾）
+
+把 dashboard 上 **所有 100% 完整度但沒有 gold artifact 的 view** 全部 goldify，分 3 輪推進；最終 dashboard `OK=17 → 24`、總 datasets `30 → 37`、Gold 總量 `~140 MB → ~830 MB`、catalog `36 views → 49 views`。
+
+**Round 1**（commits `a8b6c55..6b71e93`）— 第一批 100% silver：補 5 個 silver→gold backlink + 1 個新 gold
+
+**Round 2**（commits `1bcfce6..0c27ffa`）— 剩下 4 個 silver-only 加 gold builder：
+
+| 新 gold view | 來源 silver | rows | 主要因子 |
+|---|---|---:|---|
+| `margin_factors` | `tw_margin_daily` | 3.7M | 6 個融資融券時序因子 |
+| `fundamentals_pit` | `fundamentals_q` (Q+consolidated) | 93K | PIT panel + TTM/YoY |
+| `futures_large_trader_factors` | `tw_futures_large_trader_daily` | 99K | top10 net, OI Δ |
+| `futures_inst_factors` | `tw_inst_futures_full_daily` | 466K | per-identity net_oi, L/S ratio |
+| `stock_attrs_status` | `tw_stock_trading_attrs_daily` | 3.16M | 11 個 bool flag + 30d 計數 |
+| `dividend_calendar` | `cash_dividend_events` | 10.5K | per-share + yield + TTM + YoY |
+| `stock_futures_adjustments` | `tw_stock_futures_corp_actions` | 56K | cum cash/stock div + seq |
+
+**Round 3**（commits `e936402..80e2f7e`）— view 層級剩下 4 個 100% 但無 gold 的 view：
+
+| 新 gold view | 來源 | rows | 用途 |
+|---|---|---:|---|
+| `futures_bar_factors` | `bars_1d` (tw_futures+tw_stock_futures) | 1.74M | 期貨/個股期日 K 衍生（mom/vol/ATR/OI Δ），補齊 stock_factor_daily 期貨對應 |
+| `qc_stock_price_diff_snapshot` | `qc_stock_price_diff` view | 6.4M | TEJ vs FinMind 對帳結果 parquet 持久化 |
+| `qc_stock_price_diff_yearly` | 同上 | 17 | 逐年 mean/max abs diff（2011+ 完全 zero diff，確認對帳一致）|
+| `finmind_price_canonical` | `finmind_stock_price_norm` + `*_adj_norm` | 10.6M | raw OHLCV + adj OHLC merged，下游不需 sqlite |
+
+**Backlink 大整理**：所有有 derived 對應的 silver/view 都新增 `gold_paths` 條目，`bars_1d` 一次掛 5 個 backlink（stock_factor + futures_bar + tx/mtx/sf continuous）。
+
+**Silver dedup 副產品**：本輪 builder 順手把 silver multi-ingest 重覆列在 gold 層去重（trading_attrs 19%、其他 6-8%）。每個 builder 統一 `unique(subset=key, keep='last' by ingestion_ts)`，所以 gold rows 通常 < silver rows，這是 feature 不是 bug。
+
+剩下的 dashboard STALE/WARN/EMPTY 都是**上游完整度本身 < 100%** 的 dataset（macro/chip_dist/revenue_monthly/tw_inst_futures_daily 等），非 silver→gold 結構性缺口。
+
+進度文件：[`docs/progress-goldify-remaining-silver.md`](https://github.com/gsinvest017-ai/gs-scraper/blob/main/docs/progress-goldify-remaining-silver.md) / [`progress-goldify-final-silver.md`](https://github.com/gsinvest017-ai/gs-scraper/blob/main/docs/progress-goldify-final-silver.md) / [`progress-goldify-bars-qc-finmind.md`](https://github.com/gsinvest017-ai/gs-scraper/blob/main/docs/progress-goldify-bars-qc-finmind.md)
+
 ## 2026-05-25 (late PM) — Goldify 100% silver + trading-day-aware lag v2
 
 - **Goldify**：重新整批跑 `python -m qd_ingest.sources.derived`：

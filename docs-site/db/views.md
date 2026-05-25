@@ -1,6 +1,6 @@
 # Catalog views
 
-`catalog/quant.duckdb` 在 2026-05-21 快照含 **36 個 view**。本頁逐一列出 row count、date range、底層儲存。
+`catalog/quant.duckdb` 在 2026-05-25 快照含 **49 個 view / macro**（含 9 個 FinMind / QC 還原 view 與 9 個新 gold derived view）。本頁逐一列出 row count、date range、底層儲存。
 
 > 自動更新：要重新生這張清單，跑：
 >
@@ -102,6 +102,14 @@ year            INTEGER  -- partition key
 |---|---:|---|---|
 | `stock_factor_daily` | 6,597,986 | 2010-01-04 ~ 2026-05-22 | 個股技術因子：`ret_1d/5d/20d/60d/120d`, `mom_12_1`, `vol_20d/60d`, `turnover_20d` |
 | `inst_flow_factors` | 6,567,005 | 2010-01-04 ~ 2026-05-22 | 個股法人流量因子（9 個）：`foreign_net_5d/20d/60d`, `sitc_net_5d/20d`, `dealer_net_5d/20d`, `foreign_hold_pct_chg_20d`, `inst_net_persistence_20d` |
+| `margin_factors` | 3,713,424 | 2010-01-04 ~ 2026-05-22 | 融資融券時序因子（6 個）：`margin_balance_chg_5d/20d`, `short_balance_chg_5d/20d`, `margin_util_zscore_60d`, `short_to_margin_chg_20d` |
+| `fundamentals_pit` | 93,525 | 2010-05-15 ~ 2026-03-31 | PIT 財務 panel（依 publish_date 對齊）：`eps`, `roe_post`, `eps_ttm`, `revenue_ttm`, `roe_ttm_avg`, `ni_yoy_chg_pct`, `revenue_yoy_chg_pct` |
+| `futures_large_trader_factors` | 99,162 | 2017-08-21 ~ 2026-05-22 | 期貨大額交易人因子：`top10_net_pct`, `top10_institutional_net_pct`, `top5_concentration_avg`, `oi_chg_5d/20d` |
+| `futures_inst_factors` | 466,047 | 2008-01-02 ~ 2026-05-22 | 期貨三大法人因子（162 identities × 5 factors）：`net_oi_chg_5d/20d`, `net_volume_zscore_60d`, `long_short_oi_ratio`, `volume_to_oi_ratio` |
+| `stock_attrs_status` | 3,160,185 | 2021-01-04 ~ 2026-05-25 | 個股交易屬性 boolean panel：`is_attention_bool`, `is_disposition_bool`, ..., `is_twn50_bool`, `is_hdiv_bool` 等 + `attention_count_30d` / `disposition_count_30d` |
+| `dividend_calendar` | 10,458 | 2022-01-03 ~ 2026-10-15 | 除權息 event panel：`cash_div_per_share`, `div_yield_pct`, `ttm_cash_div_per_share`, `yoy_growth_pct`, `days_announce_to_ex` |
+| `stock_futures_adjustments` | 56,049 | 2013-01-17 ~ 2026-09-16 | 個股期累計調整：`cum_cash_div_per_share`, `cum_stock_div_per_share`, `cum_equity_value_per_lot`, `prev_adjust_date`, `days_since_prev_adj`, `adj_seq_no` |
+| `futures_bar_factors` | 1,741,051 | 2010-01-04 ~ 2026-05-22 | 期貨日 K 衍生（tw_futures + tw_stock_futures, 378 symbols）：`ret_5d/20d/60d`, `vol_20d/60d`, `atr_14`, `turnover_20d`, `oi_chg_5d/20d` |
 | `cross_market_features` | 2,080 | (date 欄為 NULL) | 跨市場 derived（vol-corr 等） |
 
 Builders 都在 `src/qd_ingest/sources/derived.py`。重生整批：
@@ -110,7 +118,11 @@ Builders 都在 `src/qd_ingest/sources/derived.py`。重生整批：
 PYTHONPATH=src .venv/bin/python -m qd_ingest.sources.derived
 ```
 
-執行 `build_all()`：txo_daily_features (copy)、cross_market_features (copy + 修 index)、stock_factor_daily (polars 衍生)、inst_flow_factors (polars 衍生)。整批 < 5s。
+執行 `build_all()`：txo_daily_features (copy)、cross_market_features (copy + 修 index)、stock_factor_daily / inst_flow_factors / margin_factors / fundamentals_pit / futures_large_trader_factors / futures_inst_factors / stock_attrs_status / dividend_calendar / stock_futures_adjustments / futures_bar_factors (polars 衍生)、qc_snapshot / finmind_canonical (DuckDB SQL 物化)。整批 < 60s。
+
+!!! note "Silver dedup 副產品"
+
+    `tw_stock_trading_attrs_daily` / `tw_inst_futures_full_daily` / `cash_dividend_events` / `tw_stock_futures_corp_actions` silver 因多次 ingest 而有 6–19% 重覆列。本批 builder 統一以 `unique(keep='last' by ingestion_ts)` 在 gold 層去重，所以 gold rows 通常 < silver rows，這是 feature 不是 bug。
 
 ## 9. FinMind bronze（snapshot 2026-05-18）
 
@@ -127,11 +139,21 @@ PYTHONPATH=src .venv/bin/python -m qd_ingest.sources.derived
 | `finmind_trading_date` | 6,512 | 2000-01-04 ~ 2026-05-14 | 2000-2026 交易日曆 |
 | `finmind_stock_week_price` | 2,225,018 | 2000-01-03 ~ 2026-05-11 | 週 K |
 
+## 9b. FinMind canonical gold
+
+| view | rows | date range | 描述 |
+|---|---:|---|---|
+| `finmind_price_canonical` | 10,592,556 | 2000-01-04 ~ 2026-05-22 | FinMind `raw OHLCV + adj OHLC` LEFT JOIN，parquet 持久化（取代 sqlite 查詢） |
+
+> Source: `finmind_stock_price_norm`（10.6M）LEFT JOIN `finmind_stock_price_adj_norm`（10.6M）on (trading_date, stock_id)。輸出含 `open/high/low/close + adj_open/adj_high/adj_low/adj_close + volume/amount_twd/spread/turnover`。
+
 ## 10. QC
 
 | view | rows | date range | 描述 |
 |---|---:|---|---|
-| `qc_stock_price_diff` | 6,374,416 | 2010-01-04 ~ 2026-05-15 | TEJ vs FinMind 2010+ 重疊段（目前差 > 0.1% 僅 2 列） |
+| `qc_stock_price_diff` | 6,386,130 | 2010-01-04 ~ 2026-05-22 | TEJ vs FinMind 2010+ 重疊段（純 view，computed only） |
+| `qc_stock_price_diff_snapshot` | 6,386,130 | 2010-01-04 ~ 2026-05-22 | 同上但物化為 parquet（gold/features/qc_stock_price_diff_snapshot.parquet） |
+| `qc_stock_price_diff_yearly` | 17 | 2010 ~ 2026 | 逐年彙總：`mean_abs_pct_diff`, `max_abs_pct_diff`, `rows_diff_gt_1pct`, `mean_vol_rel_diff`，2011+ TEJ/FinMind close 完全一致 |
 
 ## 11. Reference
 
