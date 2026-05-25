@@ -114,7 +114,8 @@ DATASETS = [
     Dataset("tw_inst_futures_full_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table inst_futures_full --append-since-silver",
             "期貨三大法人完整版（含選擇權）", "P1",
-            silver_paths=("silver/flows/tw_inst_futures_full_daily/**/*.parquet",)),
+            silver_paths=("silver/flows/tw_inst_futures_full_daily/**/*.parquet",),
+            gold_paths=("gold/features/futures_inst_factors.parquet",)),
     Dataset("tw_futures_large_trader_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table futures_large_trader --append-since-silver",
             "期貨大額交易人未沖銷部位", "P0",
@@ -158,7 +159,8 @@ DATASETS = [
     Dataset("tw_stock_trading_attrs_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table stock_trading_attrs --append-since-silver",
             "個股交易屬性（注意/處置/全額交割）", "P2",
-            silver_paths=("silver/flows/tw_stock_trading_attrs_daily/**/*.parquet",)),
+            silver_paths=("silver/flows/tw_stock_trading_attrs_daily/**/*.parquet",),
+            gold_paths=("gold/features/stock_attrs_status.parquet",)),
 
     # --- 月營收 / 季報 / 會計 ---
     Dataset("revenue_monthly",         "fiscal_month", "monthly",
@@ -236,11 +238,31 @@ DATASETS = [
     Dataset("cash_dividend_events",    "ex_date",      "event",
             "fetch_tej.py --table cash_dividend --append-since-silver",
             "現金股利除息事件（forward-looking）", "P1",
-            silver_paths=("silver/fundamentals/cash_dividend_events/**/*.parquet",)),
+            silver_paths=("silver/fundamentals/cash_dividend_events/**/*.parquet",),
+            gold_paths=("gold/features/dividend_calendar.parquet",)),
     Dataset("tw_stock_futures_corp_actions", "adjust_date", "event",
             "fetch_tej.py --table stock_futures_corp_actions --append-since-silver",
             "個股期調整事件", "P2",
-            silver_paths=("silver/flows/tw_stock_futures_corp_actions/**/*.parquet",)),
+            silver_paths=("silver/flows/tw_stock_futures_corp_actions/**/*.parquet",),
+            gold_paths=("gold/features/stock_futures_adjustments.parquet",)),
+
+    # --- New derived (M2 of this round): one per goldified silver-only view ---
+    Dataset("futures_inst_factors",    "trading_date", "derived",
+            "python -m qd_ingest.sources.derived  (build_futures_inst_factors)",
+            "期貨三大法人因子（net_oi 變化、long_short OI ratio、vol/oi）", "P1",
+            gold_paths=("gold/features/futures_inst_factors.parquet",)),
+    Dataset("stock_attrs_status",      "trading_date", "derived",
+            "python -m qd_ingest.sources.derived  (build_stock_attrs_status)",
+            "個股交易屬性 bool panel（attention/disposition + 30d 計數 + index 成員）", "P2",
+            gold_paths=("gold/features/stock_attrs_status.parquet",)),
+    Dataset("dividend_calendar",       "ex_date",      "event",
+            "python -m qd_ingest.sources.derived  (build_dividend_calendar)",
+            "除權息事件 panel（per-share + yield + TTM + YoY）", "P1",
+            gold_paths=("gold/features/dividend_calendar.parquet",)),
+    Dataset("stock_futures_adjustments", "adjust_date", "event",
+            "python -m qd_ingest.sources.derived  (build_stock_futures_adjustments)",
+            "個股期調整累計表（cum cash/stock div、間隔、序號）", "P2",
+            gold_paths=("gold/features/stock_futures_adjustments.parquet",)),
 ]
 
 
