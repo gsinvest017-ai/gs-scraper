@@ -321,12 +321,14 @@ HTML_TEMPLATE = """<!doctype html>
   tr.EMPTY {{ background: #faf5ff; }}
   tr.INFO  {{ background: #eff6ff; }}
   .lag {{ font-variant-numeric: tabular-nums; text-align: right; }}
-  .bar {{ position: relative; display: inline-block; height: 10px; background: #d1d5db; border-radius: 4px; vertical-align: middle; }}
+  .pct {{ font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }}
+  .bar {{ position: relative; display: inline-block; height: 10px; background: #f3f4f6; border-radius: 4px; vertical-align: middle; border: 1px solid #e5e7eb; }}
   .bar > span {{ position: absolute; left: 0; top: 0; height: 100%; border-radius: 4px; }}
   .bar > span.OK    {{ background: #10b981; }}
   .bar > span.WARN  {{ background: #f59e0b; }}
   .bar > span.STALE {{ background: #ef4444; }}
   .bar > span.INFO  {{ background: #3b82f6; }}
+  .bar > span.EMPTY {{ background: #9ca3af; }}
   code {{ background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px;
           font-family: "JetBrains Mono", "Menlo", monospace; }}
   .tier-P0 {{ font-weight: 700; }}
@@ -356,7 +358,8 @@ HTML_TEMPLATE = """<!doctype html>
   <th>Category</th>
   <th>Max date</th>
   <th class="lag">Lag</th>
-  <th>Lag visual</th>
+  <th class="pct">完整度</th>
+  <th>Completeness</th>
   <th>Suggested action</th>
 </tr>
 </thead>
@@ -366,6 +369,9 @@ HTML_TEMPLATE = """<!doctype html>
 </table>
 
 <div class="legend">
+  預設排序：完整度 (Completeness) 從高到低；同分時 tier P0 在上。
+  Completeness = clamp(1 − lag_days / 90, 0, 1) × 100% — 涵蓋未來日期 (negative lag) 視為 100%，無資料 (EMPTY) 視為 0%。
+  Bar 視覺：填滿 = 完整。
   Severity rules — daily-trading: 0-1d=OK / 2-5d=WARN / &gt;5d=STALE.
   Monthly: 0-15d=OK / 15-45d=WARN / &gt;45d=STALE.
   Quarterly: 0-60d=OK / 60-120d=WARN / &gt;120d=STALE.
@@ -377,20 +383,49 @@ HTML_TEMPLATE = """<!doctype html>
 """
 
 
+_COMPLETENESS_CAP_DAYS = 90  # lag >= cap → 0% complete; lag <= 0 → 100%
+
+
+def _completeness(lag_days: int | None) -> float | None:
+    """Map lag_days to a 0.0–1.0 completeness score.
+
+    Conventions:
+      lag is None (EMPTY view, no rows)  → 0.0  (sorts to bottom)
+      lag <= 0                            → 1.0  (data covers up to / past today)
+      0 < lag < cap                       → linear interpolation
+      lag >= cap                          → 0.0
+    """
+    if lag_days is None:
+        return 0.0
+    if lag_days <= 0:
+        return 1.0
+    if lag_days >= _COMPLETENESS_CAP_DAYS:
+        return 0.0
+    return 1.0 - (lag_days / _COMPLETENESS_CAP_DAYS)
+
+
 def render_html(rows: list[dict], today: dt.date) -> str:
-    sev_order = {"STALE": 0, "WARN": 1, "EMPTY": 2, "INFO": 3, "OK": 4}
+    # Default sort: completeness DESC (most complete on top), then tier asc
+    # (P0 before P1/P2 at same completeness), then view name asc for stable order.
     rows_sorted = sorted(rows, key=lambda r: (
-        sev_order.get(r["severity"], 99),
-        r["tier"],
-        -(r["lag_days"] or 0),
+        -_completeness(r["lag_days"]),       # highest completeness first
+        r["tier"],                           # P0 < P1 < P2 lexicographically
+        r["view"],
     ))
 
-    # Bar visual: cap at 90 days for scale. Lag 0 = 0px, 90+ = 180px.
+    # Bar visual: 'completeness fill' — bar fully filled = 100% complete,
+    # empty bar = 0% complete (severely stale or no data).
+    BAR_WIDTH = 180
     def bar_html(r):
-        if r["lag_days"] is None: return ""
-        lag = max(0, r["lag_days"])
-        width = min(int(lag * 2), 180)
-        return f'<span class="bar" style="width:180px"><span class="{r["severity"]}" style="width:{width}px"></span></span>'
+        c = _completeness(r["lag_days"])
+        # Choose fill color: prefer severity, but EMPTY needs its own grey shade.
+        fill_class = r["severity"] if r["severity"] in ("OK", "WARN", "STALE", "INFO") else "EMPTY"
+        fill_px = int(round(c * BAR_WIDTH))
+        return (
+            f'<span class="bar" style="width:{BAR_WIDTH}px">'
+            f'<span class="{fill_class}" style="width:{fill_px}px"></span>'
+            f'</span>'
+        )
 
     counts = {sev: 0 for sev in SEVERITY}
     for r in rows: counts[r["severity"]] += 1
@@ -399,6 +434,8 @@ def render_html(rows: list[dict], today: dt.date) -> str:
     for r in rows_sorted:
         meta = SEVERITY[r["severity"]]
         lag_str = f"{r['lag_days']}d" if r["lag_days"] is not None else "—"
+        c = _completeness(r["lag_days"])
+        pct_str = f"{c * 100:.0f}%"
         action_html = f'<code>{r["fetch_cmd"]}</code>' if r["severity"] != "OK" else ""
         rows_html.append(
             f'<tr class="{r["severity"]}">'
@@ -409,6 +446,7 @@ def render_html(rows: list[dict], today: dt.date) -> str:
             f'<td>{r["category"]}</td>'
             f'<td>{r["max_date"] or "—"}</td>'
             f'<td class="lag">{lag_str}</td>'
+            f'<td class="pct">{pct_str}</td>'
             f'<td>{bar_html(r)}</td>'
             f'<td>{action_html}</td>'
             f'</tr>'
