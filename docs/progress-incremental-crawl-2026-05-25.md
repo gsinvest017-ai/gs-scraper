@@ -72,7 +72,7 @@ sqlite 本檔仍在：`bronze/finmind/finmind_2026-05-18.sqlite` (2.5 GB, sha256
 | **M2** | 🥇 價格：fetch_tej `stock_daily` + `futures_daily` | ✅ |
 | **M3** | 🥉 籌碼：fetch_tej `inst_stock` + `margin` + `chip_dist` + `inst_futures_full` + `futures_large_trader` | ✅ |
 | **M4** | 其他 TEJ STALE（revenue_monthly P0! / accounting_raw / stock_trading_attrs / cash_dividend / stock_futures_corp_actions / security_attrs）+ catalog rebuild + 還原 finmind_* + qc view | ✅ |
-| **M5** | tick 盤點與後續路徑 + gap_report 重生 + push | ⏳ |
+| **M5** | tick 盤點與後續路徑 + gap_report 重生 + push | ✅ |
 
 每個 milestone 一個 commit。
 
@@ -134,7 +134,65 @@ fetch_tej.py --table futures_daily --append-since-silver
 - 新增 `scripts/restore_finmind_views.py`：自動 glob `bronze/finmind/finmind_*.sqlite` 最新一份，重建 8 個 finmind_* view + qc_stock_price_diff
 - 接入 `daily_refresh.sh` step 3.5（在 build-catalog 後、gap_report 前自動跑）；未來 cron 不再每天砍 finmind 9 個 view
 - 也對 `catalog/quant_public.duckdb` 跑一次，公開 mirror 也回來
-### M5 — pending
+### M5 — tick crawler 起飛 + dashboard regen
+
+**FinMind tick crawler 安裝 + 啟動：**
+
+QUANTDATA 沒有 tick crawler，但 `RAW_SOURCES/FINMIND資料集.zip` 自帶完整的 FinMind crawler（含 sponsor-tier token, rate 1500/hr）。
+
+1. 把 zip 內 source（不含 logs/data/pyc）解到 `/home/kevin/gs-scraper/FINMIND資料集/`（15 個檔，~80 KB）
+2. `cp bronze/finmind/finmind_2026-05-18.sqlite /home/kevin/gs-scraper/FINMIND資料集/data/finmind.sqlite`（reflink 0.78s；bronze 保持 immutable）
+3. `python3 -m venv .venv && pip install httpx python-dotenv`（requirements.txt 兩行）
+4. 連線測試：`PYTHONPATH=src .venv/bin/python -m finmind_dump test` → TaiwanStockInfo OK 4112 列
+5. 單檔 smoke：`high-freq --dataset TaiwanStockPriceTick --stocks 2330 --start 2026-05-22 --end 2026-05-22` → 6,371 ticks (09:00:11 ~ 13:30:00) 1 秒完成
+6. **launch 全量背景**：
+
+   ```bash
+   PYTHONPATH=src nohup .venv/bin/python -m finmind_dump high-freq \
+     --dataset TaiwanStockPriceTick \
+     --start 2026-05-15 --end 2026-05-22 \
+     > logs/tick_<ts>.log 2>&1 &
+   ```
+
+   8 calendar day × 3,088 檔 = 24,704 calls / 1500 hr → ETA **~16 hours**
+   PID 寫到 `/home/kevin/gs-scraper/FINMIND資料集/tick.pid`
+
+7. **驗證進行中**：30 秒後再查 sqlite，列數從 385,304 → **609,948** (+224,644)、distinct_stocks 從 297 → **431** (+134)、max_date = 2026-05-22。確認 idempotent + 持續寫入。
+
+**監控指令：**
+
+```bash
+# 看 PID 是否還在
+ps -p $(cat /home/kevin/gs-scraper/FINMIND資料集/tick.pid)
+
+# 看 log
+tail -f /home/kevin/gs-scraper/FINMIND資料集/logs/tick_*.log
+
+# 列數即時 delta
+python3 -c "
+import sqlite3
+c = sqlite3.connect('/home/kevin/gs-scraper/FINMIND資料集/data/finmind.sqlite')
+print(c.execute('SELECT COUNT(*), COUNT(DISTINCT stock_id), COUNT(DISTINCT date), MAX(date) FROM taiwan_stock_price_tick').fetchone())
+"
+
+# 停止
+kill $(cat /home/kevin/gs-scraper/FINMIND資料集/tick.pid)
+```
+
+完成後（或階段性完成後）把該 sqlite snapshot 到 bronze：
+
+```bash
+cp /home/kevin/gs-scraper/FINMIND資料集/data/finmind.sqlite \
+   /home/kevin/gs-scraper/QUANTDATA/bronze/finmind/finmind_<YYYY-MM-DD>.sqlite
+sha256sum bronze/finmind/finmind_<YYYY-MM-DD>.sqlite > bronze/finmind/finmind_<YYYY-MM-DD>.sqlite.sha256
+.venv/bin/python scripts/restore_finmind_views.py  # view 自動 glob 最新 sqlite
+```
+
+**TXO tick 補述：** `RAW_SOURCES/選擇權日盤逐筆原始資料_TXO.parquet/` 靜態檔覆蓋 2020-03-02 ~ 2026-04-01 (38 MB)；要往後延伸需要訂閱 TEJ 或 TAIFEX intraday tick API。本次不處理。
+
+**Dashboard regen：** `scripts/gap_report.py --format all` 把 27 個 view 的最新 lag 寫到 `docs/gap_dashboard.html` 與 `docs-site/gap_dashboard.html`（mirror）。`chip_dist` 仍標 STALE 10d 因為 TEJ APISHRACTW 集保表本就是週級發布（最新 2026-05-15），是資料源 cadence 非空洞。
+
+**最後 push** 觸發 docs.yml workflow，live URL `https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html` 自動更新。
 
 ---
 
