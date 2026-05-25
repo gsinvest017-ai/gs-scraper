@@ -131,6 +131,18 @@ flowchart LR
 
 FinMind crawler 是獨立專案（不在本 repo），輸出 sqlite。預期 cadence：每週日重抓一次，rsync 到 `bronze/finmind/finmind_<YYYY-MM-DD>.sqlite`，bronze 保留最近 4 份 rolling。每次新 snapshot 觸發：
 
-1. 更新 view DDL 把路徑指到新 sqlite
+1. 跑 `scripts/restore_finmind_views.py` — 它 glob 最新 `bronze/finmind/finmind_*.sqlite` 並自動 rebind 全部 view DDL
 2. （若已做 M8/M9）跑 silver delta
 3. `gap_report.py --format all` 重畫 dashboard
+
+!!! tip "自動還原 view"
+
+    `scripts/restore_finmind_views.py` 是 idempotent helper。`qd-ingest build-catalog` 每次都會砍 finmind_* + qc_stock_price_diff（它從固定 DDL set 重建 catalog），所以 daily_refresh.sh 的 step 3.5 自動呼叫一次。手動跑也可以：
+
+    ```bash
+    .venv/bin/python scripts/restore_finmind_views.py
+    .venv/bin/python scripts/restore_finmind_views.py --catalog catalog/quant_public.duckdb
+    .venv/bin/python scripts/restore_finmind_views.py --sqlite bronze/finmind/finmind_2026-06-15.sqlite
+    ```
+
+    Exit 0 = restored / nothing to restore；Exit 1 = catalog 不存在；Exit 2 = sqlite 不存在。

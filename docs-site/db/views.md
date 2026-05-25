@@ -64,9 +64,15 @@ year            INTEGER  -- partition key
 
 | view | rows | date range | 描述 |
 |---|---:|---|---|
-| `tx_continuous_d` | 2,518 | 2016-01-04 ~ 2026-05-08 | TX 連續期 |
-| `mtx_continuous_d` | 2,518 | 2016-01-04 ~ 2026-05-08 | MTX 連續期 |
-| `stock_futures_continuous_d` | 539,992 | 2015-01-05 ~ 2026-04-10 | 個股期連續近月 |
+| `tx_continuous_d` | 2,528 | 2016-01-04 ~ 2026-05-22 | TX 連續期（**2026-05-09 後**從 bars_1d 衍生） |
+| `mtx_continuous_d` | 2,528 | 2016-01-04 ~ 2026-05-22 | MTX 連續期（同上） |
+| `stock_futures_continuous_d` | 539,992 | 2015-01-05 ~ 2026-04-10 | 個股期連續近月（仍卡 underlying 4/13） |
+
+!!! note "TX / MTX 連續期 — 兩種來源"
+
+    歷史段（≤ 2026-05-08）來自 `RAW_SOURCES/日k 期貨tquant lab/{TX,MTX}_continuous_*.parquet` 手動 drop，含完整 back-adjusted `*_adj` 序列與 `adj_factor`。
+
+    新尾段（2026-05-09 ~）由 `bars_1d.tw_futures` 衍生 — 每日選 max(volume) 的月份合約為 front。`source='qd_{tx|mtx}_continuous_extended_from_bars1d'` 標記，**`adj_factor=NULL` + `*_adj = raw`**（back-adjust chain 不延續）。要做嚴格 back-adj 回測時要過濾掉這段。
 
 ## 5. Options
 

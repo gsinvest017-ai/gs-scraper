@@ -19,11 +19,24 @@ flowchart TB
     L3["3. fetch_tej.py --table all --append-since-silver<br/>CSV → bronze + silver delta"]
     L4["4. qd-ingest tej-{stock,inst-stock,margin}<br/>silver bars/flows"]
     L5["5. qd-ingest build-catalog<br/>(staging swap 若 UI lock 還在)"]
-    L6["6. gap_report.py --format all<br/>更新 docs/gap_dashboard.html"]
+    L55["5.5 restore_finmind_views.py<br/>還原被 build-catalog 砍掉的 finmind_* + qc views"]
+    L6["6. gap_report.py --format all<br/>更新 docs/gap_dashboard.html + docs-site/ mirror"]
     L7["7. log 到 meta/audit/daily_refresh_YYYY-MM-DD.log"]
 
-    L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7
+    L1 --> L2 --> L3 --> L4 --> L5 --> L55 --> L6 --> L7
 ```
+
+!!! info "Step 3.5 — restore_finmind_views"
+
+    `qd-ingest build-catalog` 從固定的 view DDL 集合重建 catalog，**不知道** FinMind sqlite snapshot 那 9 個 view 的存在，每次都會把它們砍掉。`scripts/restore_finmind_views.py` 自動 glob 最新的 `bronze/finmind/finmind_*.sqlite`，重建：
+
+    - `finmind_stock_price` / `finmind_stock_price_norm`
+    - `finmind_stock_price_adj` / `finmind_stock_price_adj_norm`
+    - `finmind_stock_info` / `finmind_stock_info_with_warrant`
+    - `finmind_trading_date` / `finmind_stock_week_price`
+    - `qc_stock_price_diff`
+
+    Step 3.5 標記為 non-fatal — 失敗會 log 但不中止 daily_refresh。
 
 ## Exit codes
 

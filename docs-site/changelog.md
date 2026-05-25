@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-05-25 — 自動化 + 大量 STALE 補完
+
+- **新增 `incremental-crawler` repo agent**（`.claude/agents/incremental-crawler.md`）：每次跑增量爬蟲都強制 regen gap_dashboard 並 commit
+- **新增 `/update-doc` 全域 skill**（`~/.claude/skills/update-doc/`）：任何 repo 都能用，根據 git log 提案 doc 更新
+- **新增 `scripts/restore_finmind_views.py`**：`qd-ingest build-catalog` 後自動還原 9 個 FinMind / qc views，daily_refresh.sh 在 step 3.5 自動呼叫
+- **TX / MTX 連續期延伸到 2026-05-22**：從 `bars_1d` 衍生（每日 max(volume) 月份合約為 front），不依賴 `RAW_SOURCES/日k 期貨tquant lab/` 手動檔；新列 `source='qd_{tx|mtx}_continuous_extended_from_bars1d'`，`adj_factor=NULL`
+- **新增 docs-site/ops/automation.md** 一頁說明上述兩個自動化
+- **TEJ catch-up 大規模補洞**：`stock_trading_attrs +244,557` / `chip_dist +44,086` / `inst_futures_full +10,260` / `accounting_raw +6,290` / `security_attrs +3,405` / `stock_futures_corp_actions +1,865` / `cash_dividend +698` 列
+- **啟動 FinMind tick crawler**（PID-managed background process）：8 trading days × 3,088 stocks ≈ 24,704 calls / sponsor tier 1500/hr ≈ ETA ~16 hr；首 30 秒驗證 +224K rows
+- **`gap_report.py` 新增 `snapshot` category**：bronze one-shot 資料（如 finmind_*）surface as INFO 而非 STALE
+
 ## 2026-05-21 — 文檔站上線（v0.1）
 
 - 加 `docs-site/` 完整 MkDocs Material 站台
