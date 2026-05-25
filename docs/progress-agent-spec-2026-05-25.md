@@ -20,7 +20,7 @@
 |---|---|---|
 | **M1** | `.claude/agents/incremental-crawler.md`（QUANTDATA-scoped agent spec）+ 本進度檔 | ✅ |
 | **M2** | `~/.claude/skills/update-doc/SKILL.md` + `~/.claude/commands/update-doc.md`（global） | ✅ |
-| **M3** | docs-site/ops/ 補一頁說明這兩個自動化 + 在 README 連到；commit + push | ⏳ |
+| **M3** | docs-site/ops/ 補一頁說明這兩個自動化 + 在 README 連到；commit + push | ✅ |
 
 ---
 
@@ -50,7 +50,16 @@
 - **尊重 repo-scoped agent**：若 repo 有 `.claude/agents/<doc-*>.md`，本 skill 是 fallback
 - **scaffold 路線**：repo 沒 doc-site 也能起手
 
-### M3 — pending
+### M3 — docs-site/ops/automation.md
+
+新頁 `docs-site/ops/automation.md`：
+
+- `incremental-crawler` 的觸發、流程 mermaid、不要做的事
+- `/update-doc` 的觸發、4 種框架對照、scaffold 模式
+- 兩者分工矩陣（爬資料 → 用 crawler；改 source → 用 update-doc；非 QUANTDATA → 用 update-doc）
+- 安裝 / 跨機器同步說明
+
+`mkdocs.yml` nav 加 `ops/automation.md` 條目，`mkdocs build --strict` PASS（19 頁，0.38s）。
 
 ---
 

@@ -91,5 +91,6 @@ nav:
       - 日常維運（daily refresh）: ops/daily-refresh.md
       - 手動 ingest: ops/manual-ingest.md
       - Cron 排程: ops/cron.md
+      - 自動化 (Agents & /update-doc): ops/automation.md
       - 常見問題: ops/troubleshooting.md
   - 變更紀錄: changelog.md
