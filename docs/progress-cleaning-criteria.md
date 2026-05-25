@@ -18,7 +18,7 @@
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 本進度檔 + outline | ✅ |
-| **M2** | `docs-site/architecture/cleaning-criteria.md` 完整內容 | ⏳ |
+| **M2** | `docs-site/architecture/cleaning-criteria.md` 完整內容 | ✅ |
 | **M3** | nav 加進去 + medallion.md 連結 + mkdocs strict + push | ⏳ |
 
 ## Outline（M2 內容預計）
@@ -77,3 +77,17 @@
 ### M1 — outline
 
 見上面。
+
+### M2 — cleaning-criteria.md 完整
+
+新頁 `docs-site/architecture/cleaning-criteria.md`，6 個 section：
+
+1. 整體原則 cross-cutting（idempotency / audit trail / atomic write / schema versioning）— 表格
+2. **raw → bronze** — 5 條規則 + bronze 不應該做 + PR review checklist
+3. **bronze → silver** — 9 條規則（schema、type cast 表、symbol normalize、dedupe、pandera validate、quarantine、Hive partition、charset、zstd）+ 不該做 + checklist
+4. **silver → gold** — 7 條規則（determinism、PIT correctness、source versioning、NULL semantics、universe boundary、view vs parquet 決策、test fixture）+ 不該做 + checklist
+5. 失敗模式速查表 — 6 個常見症狀 × 排查路徑
+6. 加新 source / adapter 的 8 步流程
+7. 進階 cross-source QC
+
+每段都直接引用 repo 內既存實作（fetch_tej / restore_finmind_views / qc_stock_price_diff / continuous parquet 等），不是純抽象標準。
