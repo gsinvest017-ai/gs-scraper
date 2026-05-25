@@ -39,12 +39,20 @@ CATALOG = REPO / "catalog" / "quant.duckdb"
 
 # --- Trading-day-aware lag config -----------------------------------------
 TPE_TZ = ZoneInfo("Asia/Taipei")
-# TW market closes 13:30 TPE; TEJ EOD usually lands by ~14:00. Be conservative
-# and treat today's data as "expected to be available" only after 15:00 TPE.
-EOD_CUTOFF_HOUR_TPE = 15
+# Cutoff = "today's data is expected to be in silver". TW spot closes 13:30,
+# TEJ EOD lands ~14:00, but our cron runs 17:30 — so today's silver isn't
+# expected until ~18:00 TPE. Before that, expected_latest = previous trading
+# day so no false lag during the 13:30-17:30 window.
+EOD_CUTOFF_HOUR_TPE = 18
 # Categories whose lag is measured in trading days (not calendar days).
-# Other categories (monthly/quarterly/event/derived/snapshot) keep raw lag.
-TRADING_DAY_CATEGORIES = frozenset({"daily-trading"})
+# These all carry a trading-date semantic (TW market days) so weekends and
+# pre-EOD intraday today should not be charged as lag.
+#   - daily-trading: TEJ OHLCV / flows / etc.
+#   - snapshot:      bronze sqlite views (FinMind) — underlying is trading-day
+#   - derived:       gold features / cross-market — input is trading-day
+# Other categories (monthly/quarterly/event) follow publication-date semantics
+# and keep raw calendar lag.
+TRADING_DAY_CATEGORIES = frozenset({"daily-trading", "snapshot", "derived"})
 
 
 # --- Dataset registry ------------------------------------------------------
