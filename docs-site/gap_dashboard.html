@@ -41,11 +41,11 @@
 </head>
 <body>
 <h1>📊 QUANTDATA Gap Dashboard</h1>
-<div class="subtitle">Generated 2026-05-25 10:21:54 · catalog: <code>catalog/quant.duckdb</code> · 26 datasets monitored</div>
+<div class="subtitle">Generated 2026-05-25 10:45:19 · catalog: <code>catalog/quant.duckdb</code> · 26 datasets monitored</div>
 
 <div class="summary">
-  <div class="pill STALE">🔴 STALE<br><b>10</b></div>
-  <div class="pill WARN">⚠️ WARN<br><b>7</b></div>
+  <div class="pill STALE">🔴 STALE<br><b>8</b></div>
+  <div class="pill WARN">⚠️ WARN<br><b>9</b></div>
   <div class="pill EMPTY">❓ EMPTY<br><b>1</b></div>
   <div class="pill INFO">ℹ️ INFO<br><b>4</b></div>
   <div class="pill OK">✅ OK<br><b>4</b></div>
@@ -69,8 +69,6 @@
 <tr class="STALE"><td>🔴 STALE</td><td class="tier-P0">P0</td><td><code>revenue_monthly</code></td><td>月營收（每月 10 日前後公告）</td><td>monthly</td><td>2026-04-01</td><td class="lag">54d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:108px"></span></span></td><td><code>fetch_tej.py --table revenue_monthly --append-since-silver</code></td></tr>
 <tr class="STALE"><td>🔴 STALE</td><td class="tier-P0">P0</td><td><code>tw_inst_futures_daily</code></td><td>期貨三大法人（TAIFEX 直抓）</td><td>daily-trading</td><td>2026-05-08</td><td class="lag">17d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:34px"></span></span></td><td><code>(TAIFEX scraper — currently no auto-refresh)</code></td></tr>
 <tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>macro_daily</code></td><td>總體變數日資料 (VIX, USDTWD, ...)</td><td>daily-trading</td><td>2026-05-07</td><td class="lag">18d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:36px"></span></span></td><td><code>yfinance scraper for VIX/USDTWD/...  (no auto job yet)</code></td></tr>
-<tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>tx_continuous_d</code></td><td>TX 連續期</td><td>daily-trading</td><td>2026-05-08</td><td class="lag">17d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:34px"></span></span></td><td><code>(TX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)</code></td></tr>
-<tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>mtx_continuous_d</code></td><td>MTX 連續期</td><td>daily-trading</td><td>2026-05-08</td><td class="lag">17d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:34px"></span></span></td><td><code>(MTX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)</code></td></tr>
 <tr class="STALE"><td>🔴 STALE</td><td class="tier-P1">P1</td><td><code>tw_chip_dist_daily</code></td><td>TEJ 集保戶股權分散表</td><td>daily-trading</td><td>2026-05-15</td><td class="lag">10d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:20px"></span></span></td><td><code>fetch_tej.py --table chip_dist --append-since-silver</code></td></tr>
 <tr class="STALE"><td>🔴 STALE</td><td class="tier-P2">P2</td><td><code>bars_1m</code></td><td>1 分鐘 K 線 (MXF)</td><td>daily-trading</td><td>2026-03-12</td><td class="lag">74d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:148px"></span></span></td><td><code>(MXF 1m — 來自 RAW_SOURCES/MXF_1m_clean_all/，需手動更新)</code></td></tr>
 <tr class="STALE"><td>🔴 STALE</td><td class="tier-P2">P2</td><td><code>txo_daily_features</code></td><td>選擇權 TXO 日特徵</td><td>daily-trading</td><td>2026-04-01</td><td class="lag">54d</td><td><span class="bar" style="width:180px"><span class="STALE" style="width:108px"></span></span></td><td><code>(TXO daily features — 來自選擇權日盤逐筆，無 auto-refresh)</code></td></tr>
@@ -82,6 +80,8 @@
 <tr class="WARN"><td>⚠️  WARN</td><td class="tier-P0">P0</td><td><code>tw_futures_large_trader_daily</code></td><td>期貨大額交易人未沖銷部位</td><td>daily-trading</td><td>2026-05-22</td><td class="lag">3d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:6px"></span></span></td><td><code>fetch_tej.py --table futures_large_trader --append-since-silver</code></td></tr>
 <tr class="WARN"><td>⚠️  WARN</td><td class="tier-P0">P0</td><td><code>bars_1d</code></td><td>所有期貨日 K（含 MXF/TXF/個股期）</td><td>daily-trading</td><td>2026-05-22</td><td class="lag">3d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:6px"></span></span></td><td><code>fetch_tej.py --table futures_daily --append-since-silver</code></td></tr>
 <tr class="WARN"><td>⚠️  WARN</td><td class="tier-P1">P1</td><td><code>tw_inst_futures_full_daily</code></td><td>期貨三大法人完整版（含選擇權）</td><td>daily-trading</td><td>2026-05-22</td><td class="lag">3d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:6px"></span></span></td><td><code>fetch_tej.py --table inst_futures_full --append-since-silver</code></td></tr>
+<tr class="WARN"><td>⚠️  WARN</td><td class="tier-P1">P1</td><td><code>tx_continuous_d</code></td><td>TX 連續期</td><td>daily-trading</td><td>2026-05-22</td><td class="lag">3d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:6px"></span></span></td><td><code>(TX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)</code></td></tr>
+<tr class="WARN"><td>⚠️  WARN</td><td class="tier-P1">P1</td><td><code>mtx_continuous_d</code></td><td>MTX 連續期</td><td>daily-trading</td><td>2026-05-22</td><td class="lag">3d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:6px"></span></span></td><td><code>(MTX 連續期 — 來自 RAW_SOURCES/日k 期貨tquant lab/，無自動 refresh)</code></td></tr>
 <tr class="WARN"><td>⚠️  WARN</td><td class="tier-P2">P2</td><td><code>accounting_raw</code></td><td>原始會計簽證科目（AINVFINB 118 欄）</td><td>quarterly</td><td>2026-03-01</td><td class="lag">85d</td><td><span class="bar" style="width:180px"><span class="WARN" style="width:170px"></span></span></td><td><code>fetch_tej.py --table accounting_raw --append-since-silver</code></td></tr>
 <tr class="EMPTY"><td>❓ EMPTY</td><td class="tier-P2">P2</td><td><code>cross_market_features</code></td><td>跨市場特徵（VIX-vol、SPY-corr 等）</td><td>derived</td><td>—</td><td class="lag">—</td><td></td><td><code>(cross-market features — derived from VIX/SPY/macro; rebuild after macro_daily refresh)</code></td></tr>
 <tr class="INFO"><td>ℹ️  INFO</td><td class="tier-P1">P1</td><td><code>stock_factor_daily</code></td><td>個股技術因子（漲跌幅、RSI、ADX 等）</td><td>derived</td><td>2025-12-31</td><td class="lag">145d</td><td><span class="bar" style="width:180px"><span class="INFO" style="width:180px"></span></span></td><td><code>qd-ingest rebuild-stock-factors  (依 tw_stock_bars 衍生)</code></td></tr>
