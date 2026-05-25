@@ -70,7 +70,7 @@ sqlite 本檔仍在：`bronze/finmind/finmind_2026-05-18.sqlite` (2.5 GB, sha256
 |---|---|---|
 | **M1** | 寫此 doc + 起始 snapshot | ✅ |
 | **M2** | 🥇 價格：fetch_tej `stock_daily` + `futures_daily` | ✅ |
-| **M3** | 🥉 籌碼：fetch_tej `inst_stock` + `margin` + `chip_dist` + `inst_futures_full` + `futures_large_trader` | ⏳ |
+| **M3** | 🥉 籌碼：fetch_tej `inst_stock` + `margin` + `chip_dist` + `inst_futures_full` + `futures_large_trader` | ✅ |
 | **M4** | 其他 TEJ STALE（revenue_monthly P0! / accounting_raw / stock_trading_attrs / cash_dividend / stock_futures_corp_actions / security_attrs）+ catalog rebuild + 還原 finmind_* + qc view | ⏳ |
 | **M5** | tick 盤點與後續路徑 + gap_report 重生 + push | ⏳ |
 
@@ -98,7 +98,17 @@ fetch_tej.py --table futures_daily --append-since-silver
 零列。預期：今日是週一 UTC 01:30 ≈ CST 09:30，週六/週日 (5/23、5/24) 無交易，2026-05-25 today 的 EOD 通常 14:00 CST 才落。資料事實上「已最新」（trade-day 角度），增量爬蟲驗證了 idempotent 沒副作用，可以放心進 M3。
 
 「量」隨 OHLCV 一起 bundle 在 stock_daily / futures_daily 內，所以同步完成。
-### M3 — pending
+### M3 — 籌碼 incremental
+
+| table | rows fetched | silver Δ |
+|---|---:|---|
+| `inst_stock` | 0 | weekend + Mon-AM, no EOD yet |
+| `margin` | 0 | 同上 |
+| `chip_dist` | 44,086 | **真的補了 10d STALE 的空白**（5/16–5/22）寫到 silver/flows/tw_chip_dist_daily |
+| `inst_futures_full` | 10,260 | chunked fetch 補齊 5 月 inst flow |
+| `futures_large_trader` | 0 | 同 inst_stock |
+
+合計新進 silver: **54,346 列**。M4 之後跑 build-catalog，view 才會看到新數。
 ### M4 — pending
 ### M5 — pending
 
