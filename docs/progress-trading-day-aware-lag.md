@@ -31,7 +31,7 @@
 |---|---|---|
 | **M1** | 寫此進度檔 | ✅ |
 | **M2** | gap_report.py 加 trading-day calendar loader + expected_latest_trading_day + 套用到 daily-trading probe；regen | ✅ |
-| **M3** | strict build + push live | ⏳ |
+| **M3** | strict build + push live | ✅ |
 
 ## 進度日誌
 
@@ -63,7 +63,12 @@ Legend 補一行說明「Daily-trading 類別的 lag 為 trading-day-aware」。
 - OK 4 → 12（補回那 8 個 + tx/mtx_continuous）
 - STALE 8 → 8（真 stale 維持 STALE，chip_dist 仍 7d、tw_inst_futures_daily 仍 14d）
 - INFO 4、EMPTY 1 不變
-### M3 — pending
+### M3 — push live
+
+`git push origin main` (07f75ab) → docs.yml workflow success ~20s。第一輪 poll 還在 in_progress 同時 GitHub Pages CDN 還沒更新；20s 後 cache-bust 強制重抓，確認：
+
+- 新 legend 行「Daily-trading 類別的 lag 為 trading-day-aware ...」已上 live
+- `bars_1d` 的 `class="lag">0d</code>`，符合預期
 
 ## Fallback
 
