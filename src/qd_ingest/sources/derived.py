@@ -688,6 +688,184 @@ def build_stock_futures_adjustments() -> dict:
     return info
 
 
+def build_futures_bar_factors() -> dict:
+    """Day-bar factor panel for tw_futures + tw_stock_futures from silver/bars/bars_1d.
+
+    Mirrors stock_factor_daily but covers futures (TXF/MXF/individual stock futures).
+    Includes open-interest deltas, which stocks lack.
+
+    Output: gold/features/futures_bar_factors.parquet
+            keyed by (trading_date, asset_class, symbol)
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "bars" / "bars_1d" / "asset_class=*" / "**" / "*.parquet")
+    df = pl.scan_parquet(glob, hive_partitioning=False).filter(
+        pl.col("asset_class").is_in(["tw_futures", "tw_stock_futures"])
+        & (pl.col("session") == "day")
+        & pl.col("close").is_not_null()
+        & (pl.col("symbol").is_not_null())
+        & (pl.col("symbol") != "")
+    ).select([
+        "trading_date", "asset_class", "symbol",
+        "high", "low", "close", "volume", "open_interest",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.sort(["asset_class", "symbol", "trading_date"])
+
+    df = df.with_columns([
+        pl.col("close").log().diff().over(["asset_class", "symbol"]).alias("log_ret"),
+    ])
+
+    out = df.with_columns([
+        (pl.col("close") / pl.col("close").shift(5).over(["asset_class", "symbol"]) - 1).alias("ret_5d"),
+        (pl.col("close") / pl.col("close").shift(20).over(["asset_class", "symbol"]) - 1).alias("ret_20d"),
+        (pl.col("close") / pl.col("close").shift(60).over(["asset_class", "symbol"]) - 1).alias("ret_60d"),
+        pl.col("log_ret").rolling_std(window_size=20).over(["asset_class", "symbol"]).alias("vol_20d"),
+        pl.col("log_ret").rolling_std(window_size=60).over(["asset_class", "symbol"]).alias("vol_60d"),
+        (pl.col("high") - pl.col("low")).rolling_mean(window_size=14)
+            .over(["asset_class", "symbol"]).alias("atr_14"),
+        (pl.col("close").cast(pl.Float64) * pl.col("volume").cast(pl.Float64))
+            .rolling_mean(window_size=20).over(["asset_class", "symbol"]).alias("turnover_20d"),
+        (pl.col("open_interest")
+            - pl.col("open_interest").shift(5).over(["asset_class", "symbol"])).alias("oi_chg_5d"),
+        (pl.col("open_interest")
+            - pl.col("open_interest").shift(20).over(["asset_class", "symbol"])).alias("oi_chg_20d"),
+    ]).select([
+        "trading_date", "asset_class", "symbol",
+        "close", "volume", "open_interest",
+        "ret_5d", "ret_20d", "ret_60d",
+        "vol_20d", "vol_60d", "atr_14", "turnover_20d",
+        "oi_chg_5d", "oi_chg_20d",
+    ]).with_columns([
+        pl.lit("qd_gold_futures_bar_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "futures_bar_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height,
+            "symbols": out.select(["asset_class", "symbol"]).n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/futures_bar_factors",
+        bronze_file="silver/bars/bars_1d/tw_futures+tw_stock_futures",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[futures_bar_factors] {info}")
+    return info
+
+
+def materialize_qc_snapshot() -> dict:
+    """Materialize qc_stock_price_diff view as a gold parquet for portability.
+
+    The view is a TEJ vs FinMind close/volume reconciliation. Persisting it
+    means tools without access to both source views can still consume QC.
+
+    Outputs:
+      gold/features/qc_stock_price_diff_snapshot.parquet
+      gold/features/qc_stock_price_diff_yearly.parquet
+    """
+    import duckdb
+    from ..common.paths import CATALOG_DB
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+
+    dest = GOLD / "features" / "qc_stock_price_diff_snapshot.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"COPY (SELECT * FROM qc_stock_price_diff) TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)")
+    rows = con.execute(f"SELECT count(*) FROM read_parquet('{dest}')").fetchone()[0]
+
+    dest_y = GOLD / "features" / "qc_stock_price_diff_yearly.parquet"
+    con.execute(f"""
+        COPY (
+            SELECT
+                EXTRACT(year FROM trading_date)::INT AS year,
+                count(*) AS rows,
+                count(DISTINCT stock_id) AS stocks,
+                avg(abs(pct_diff)) AS mean_abs_pct_diff,
+                max(abs(pct_diff)) AS max_abs_pct_diff,
+                sum(CASE WHEN abs(pct_diff) > 1.0 THEN 1 ELSE 0 END) AS rows_diff_gt_1pct,
+                avg(CASE WHEN tej_volume IS NULL OR finmind_volume IS NULL THEN NULL
+                         ELSE 1.0 * (tej_volume - finmind_volume)
+                              / NULLIF(GREATEST(tej_volume, finmind_volume), 0) END)
+                    AS mean_vol_rel_diff
+            FROM qc_stock_price_diff
+            GROUP BY 1
+            ORDER BY 1
+        ) TO '{dest_y}' (FORMAT PARQUET, COMPRESSION ZSTD)
+    """)
+    rows_y = con.execute(f"SELECT count(*) FROM read_parquet('{dest_y}')").fetchone()[0]
+    con.close()
+
+    info = {"snapshot_rows": rows, "yearly_rows": rows_y,
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="catalog_derived", table="gold/features/qc_stock_price_diff_snapshot",
+        bronze_file="catalog:qc_stock_price_diff",
+        rows_in=rows, rows_out=rows, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[qc_stock_price_diff_snapshot] {info}")
+    return info
+
+
+def materialize_finmind_canonical() -> dict:
+    """Materialize finmind_stock_price_norm LEFT JOIN finmind_stock_price_adj_norm
+    as a single gold parquet — gives downstream a parquet-only path to FinMind data.
+
+    Output: gold/features/finmind_price_canonical.parquet
+    """
+    import duckdb
+    from ..common.paths import CATALOG_DB
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    dest = GOLD / "features" / "finmind_price_canonical.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    con.execute(f"""
+        COPY (
+            SELECT
+                r.trading_date,
+                r.stock_id,
+                r.open, r.high, r.low, r.close,
+                r.volume, r.amount_twd, r.spread, r.turnover,
+                a.open  AS adj_open,
+                a.high  AS adj_high,
+                a.low   AS adj_low,
+                a.close AS adj_close,
+                'qd_gold_finmind_price_canonical_v1' AS source
+            FROM finmind_stock_price_norm r
+            LEFT JOIN finmind_stock_price_adj_norm a
+              ON r.trading_date = a.trading_date AND r.stock_id = a.stock_id
+        ) TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)
+    """)
+    rows = con.execute(f"SELECT count(*) FROM read_parquet('{dest}')").fetchone()[0]
+    stocks = con.execute(
+        f"SELECT count(DISTINCT stock_id) FROM read_parquet('{dest}')"
+    ).fetchone()[0]
+    con.close()
+
+    info = {"rows": rows, "stocks": stocks,
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="catalog_derived", table="gold/features/finmind_price_canonical",
+        bronze_file="catalog:finmind_stock_price_norm+adj_norm",
+        rows_in=rows, rows_out=rows, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[finmind_price_canonical] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": copy_txo_daily_features(),
@@ -701,6 +879,9 @@ def build_all() -> dict:
         "stock_attrs": build_stock_attrs_status(),
         "dividend_calendar": build_dividend_calendar(),
         "stock_futures_adjustments": build_stock_futures_adjustments(),
+        "futures_bar_factors": build_futures_bar_factors(),
+        "qc_snapshot": materialize_qc_snapshot(),
+        "finmind_canonical": materialize_finmind_canonical(),
     }
     return summary
 
