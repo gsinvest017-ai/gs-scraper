@@ -64,7 +64,7 @@ Rows：
 | **M1** | 本進度檔（含映射表） | ✅ |
 | **M2** | extend `Dataset` dataclass + 填 raw/bronze/silver/gold tuple + `_measure_layer()` helper | ✅ |
 | **M3** | render 新欄位（5 個 layer cell）+ regen 兩份 HTML + JSON | ✅ |
-| **M4** | push live | ⏳ |
+| **M4** | push live | ✅ |
 
 ## 進度日誌
 
@@ -93,6 +93,10 @@ HTML_TEMPLATE：
 - **總計 dedupe**：用 `layer_pattern_union` 把所有 dataset 的 patterns 合進 set 再 `_measure_layer` 一次，避免共用 FinMind sqlite 被算兩次（修正後 Bronze 從 4.7 GB → 2.3 GB）
 
 `mkdocs build --strict` PASS。
+
+### M4 — push live
+
+`git push origin main` (7c037af) → docs.yml workflow ~30s 完成。CDN cache 25s 後 cache-bust 抓到新版：「🥉 Bronze 2.3 GB / 🥈 Silver 698.4 MB / 🥇 Gold 294.4 MB」與五個 `<th>` 都正確顯示。Live URL: https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html
 
 ## Fallback
 
