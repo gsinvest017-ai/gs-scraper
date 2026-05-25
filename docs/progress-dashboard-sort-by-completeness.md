@@ -27,7 +27,7 @@
 |---|---|---|
 | **M1** | 寫此進度檔 | ✅ |
 | **M2** | 改 `scripts/gap_report.py`：算 `completeness_pct`、預設排序按它 DESC、新欄「完整度 %」、bar 視覺改成「填滿 = 完整」、regen 兩份 HTML | ✅ |
-| **M3** | strict build + push live | ⏳ |
+| **M3** | strict build + push live | ✅ |
 
 ## 進度日誌
 
@@ -44,7 +44,9 @@
 - legend 補說明：「Completeness = clamp(1 − lag/90, 0, 1) × 100%」
 
 Regen 兩份 HTML（docs/ + docs-site/）。實際排序頂端：cash_dividend_events (100%) → tw_stock_futures_corp_actions (100%) → tw_stock_trading_attrs_daily (100%) → bars_1d (97%) ... → 底部最 stale 的視圖。
-### M3 — pending
+### M3 — push live
+
+`git push origin main` (8a43fbd) → docs.yml workflow run `26381265015`，success。Live URL `https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html` 第一次 poll 即 HTTP 200。內容驗證含「完整度」中文 header + `class="pct"` 百分比 column + cash_dividend_events 100% / -143d 行帶 fill 滿 bar。
 
 ## Fallback
 
