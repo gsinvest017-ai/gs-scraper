@@ -66,9 +66,9 @@ LEFT JOIN raw + adj on (trading_date, stock_id)：
 | Mn | 內容 | 狀態 |
 |---|---|---|
 | **M1** | 本進度檔 + 因子設計 | ✅ |
-| **M2** | 3 個 builder 加進 `derived.py` 並執行 | ⏳ |
-| **M3** | Registry：3 個新 Dataset + 4 個 backlink；catalog.py 註冊新 view | ⏳ |
-| **M4** | `qd-ingest build-catalog` + `restore_finmind_views` + dashboard regen + strict mkdocs build + commit/push | ⏳ |
+| **M2** | 3 個 builder 加進 `derived.py` 並執行 | ✅ |
+| **M3** | Registry：3 個新 Dataset + 4 個 backlink；catalog.py 註冊新 view | ✅ |
+| **M4** | `qd-ingest build-catalog` + `restore_finmind_views` + dashboard regen + strict mkdocs build + commit/push | ✅ |
 
 ## Fallback
 
@@ -78,4 +78,49 @@ LEFT JOIN raw + adj on (trading_date, stock_id)：
 
 ## 完成日誌
 
-（待 M2-M4 完成後追加）
+### M2 — 3 個新 gold artifact
+
+加進 `src/qd_ingest/sources/derived.py`：
+
+| Gold parquet | 列數 | 主鍵 | size | 耗時 |
+|---|---|---|---|---|
+| `gold/features/futures_bar_factors.parquet`           | 1,741,051 | 378 (asset_class, symbol) | 60 MB  | 1.2s |
+| `gold/features/qc_stock_price_diff_snapshot.parquet`  | 6,386,130 | (trading_date, stock_id)  | 55 MB  | 18.8s |
+| `gold/features/qc_stock_price_diff_yearly.parquet`    | 17        | year                      | 1.7 KB | (同上) |
+| `gold/features/finmind_price_canonical.parquet`       | 10,592,556| (trading_date, stock_id)  | 277 MB | 17.3s |
+
+備註：
+- `futures_bar_factors` 過濾 `asset_class IN ('tw_futures', 'tw_stock_futures') AND session='day' AND symbol IS NOT NULL AND symbol <> ''`，把空 symbol 的 settlement-only 列濾掉，結果剩 1.74M 列。
+- QC yearly 顯示 2011-2026 幾乎完全 zero diff（mean_abs_pct_diff = 0），唯一例外是 2010（mean 6.7e-7，max 20.8% — 早年單檔個股偶發 outlier），與直覺一致：TEJ 與 FinMind 在 2011+ OHLC 一致。
+- finmind canonical 抽查 2330：close = adj_close（2026 最近沒除權息）。schema 與 silver 一致 + adj_open/high/low/close 補充欄。
+
+### M3 — backlinks + 新 registry 條目
+
+`scripts/gap_report.py`：
+
+- `bars_1d.gold_paths` += 5 個 gold backlinks（stock_factor_daily, futures_bar_factors, tx_continuous_d, mtx_continuous_d, stock_futures_continuous_d）
+- `qc_stock_price_diff.gold_paths` += 2（snapshot + yearly）
+- `finmind_stock_price_norm.gold_paths` / `finmind_stock_price_adj_norm.gold_paths` += `finmind_price_canonical`
+- 新增 3 個 Dataset 條目：`futures_bar_factors`（P1, derived）、`qc_stock_price_diff_snapshot`（P2, derived; 含 yearly 副產品）、`finmind_price_canonical`（P1, derived）
+
+`src/qd_ingest/common/catalog.py`：4 個新 gold view 註冊到 catalog（含 yearly），rebuild 後 catalog 列出 **51 views（含 finmind 還原）**。
+
+### M4 — dashboard + push
+
+Dashboard summary 變化：
+
+| 指標 | M2 前 | M2 後 |
+|---|---|---|
+| 總 datasets | 34 | **37** (+3 新 derived gold view) |
+| OK | 21 | **24** (+3) |
+| INFO | 3 | 3 |
+| WARN | 1 | 1 |
+| STALE | 8 | 8 |
+| EMPTY | 1 | 1 |
+| 🥇 Gold 總 size | ~440 MB | ~830 MB |
+
+**100% 完整度 view 全部都有 gold 了**（含 bars_1d 5 個 backlinks、qc snapshot、finmind canonical）。剩下 EMPTY/WARN/STALE 都是上游完整度本身就 < 100% 的 dataset，非 silver→gold 缺口。
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>
