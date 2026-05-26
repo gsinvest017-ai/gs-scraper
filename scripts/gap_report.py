@@ -199,7 +199,7 @@ DATASETS = [
             "python -m qd_ingest.sources.derived  (build_margin_factors)",
             "融資融券時序因子（balance chg 5/20d, util z-score 60d）", "P1",
             gold_paths=("gold/features/margin_factors.parquet",)),
-    Dataset("fundamentals_pit",        "trading_date", "derived",
+    Dataset("fundamentals_pit",        "trading_date", "quarterly",
             "python -m qd_ingest.sources.derived  (build_fundamentals_pit)",
             "PIT 財務 panel（依 publish_date 對齊，含 TTM 與 YoY 因子）", "P1",
             gold_paths=("gold/features/fundamentals_pit.parquet",)),
