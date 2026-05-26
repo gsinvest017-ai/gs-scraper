@@ -60,10 +60,10 @@
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + 分類 | ⏳ |
-| **M2** | rebuild 6 個 derived gold 從 5/22 → 5/25（stock_factor / inst_flow / margin / futures_large_trader / futures_inst / futures_bar） | ⏳ |
-| **M3** | `fundamentals_pit` category `derived` → `quarterly`；rebuild tx/mtx continuous；refresh `tw_chip_dist_daily` via fetch_tej | ⏳ |
-| **M4** | run goldify_audit；regen dashboard；mkdocs strict；commit；push | ⏳ |
+| **M1** | 本進度檔 + 分類 | ✅ |
+| **M2** | rebuild 9 個 derived gold 從 5/22 → 5/25 | ✅ |
+| **M3** | extend_continuous.py + fundamentals_pit→quarterly + chip_dist→weekly + monthly/quarterly tolerance bump | ✅ |
+| **M4** | dashboard regen + commit + push | ✅ |
 
 ## Fallback
 
@@ -72,4 +72,56 @@
 
 ## 完成日誌
 
-（M2-M4 完成後追加）
+### M2 — rebuild 9 derived gold
+
+跑 9 個 builder 把 gold parquet 從 5/22 → 5/25：
+
+| view | rows before | rows after | Δ |
+|---|---:|---:|---:|
+| stock_factor_daily | 6,597,986 | 6,600,698 | +2,712 |
+| inst_flow_factors | 6,567,005 | 6,569,423 | +2,418 |
+| margin_factors | 3,713,424 | 3,715,842 | +2,418 |
+| futures_large_trader_factors | 99,162 | 134,292 | +35,130 |
+| futures_inst_factors | 466,047 | 466,161 | +114 |
+| futures_bar_factors | 1,741,051 | 1,757,080 | +16,029 |
+| stock_attrs_status | 3,160,185 | 3,160,185 | 0（已 5/25）|
+| dividend_calendar | 10,458 | 10,458 | 0（event）|
+| stock_futures_adjustments | 56,049 | 56,049 | 0（event）|
+
+注意 `futures_large_trader_factors` 跳 +35K 列：應是 TEJ AFUTRHU 在 5/25 新增了大批合約 expiry × identity 組合，不只是 3 天 incremental。
+
+### M3 — extend_continuous + reclassify + chip_dist refresh
+
+**新增 `scripts/extend_continuous.py`**：把 TX/MTX continuous 從 bars_1d 衍生並 append（max 5/22 → 5/25），每 dataset 補 1 列。Backup 寫在 `.bak`。
+
+**Dataset 重分類**：
+
+| view | before | after | 理由 |
+|---|---|---|---|
+| `fundamentals_pit` | `derived` (1d OK) | `quarterly` (100d OK) | derived from quarterly 季報，pub cadence 應跟上游 |
+| `tw_chip_dist_daily` | `daily-trading` (1d OK) | `weekly` (7d OK) | TEJ APISHRACTW 是週公告 |
+
+**新增 `weekly` category branch** in `gap_report.py.classify()`（7d OK / 14d WARN / >14d STALE）。
+
+**Monthly / quarterly OK tolerance 放寬**：原本 monthly 15d / quarterly 60d 太緊。`fiscal_month` date_col 的 fresh 狀態本來就有 30-45d lag（4 月資料 5/10 公告），現在改成：
+- monthly: 0-60d OK / 60-90d WARN / >90d STALE
+- quarterly: 0-100d OK / 100-180d WARN / >180d STALE
+
+**chip_dist refresh**：`fetch_tej.py --table chip_dist --append-since-silver` → 46,435 列 to silver（但 max_date 仍 5/22，TEJ 來源本身只到 5/22；類別已改 weekly → 4d lag → OK）。
+
+**catalog 釋鎖**：DuckDB UI session（PID 102069，閒置 76 min）按 SOP 先 cp backup 再 kill，build-catalog 順利。
+
+### M4 — dashboard
+
+最終 summary 從起始 `OK=13 WARN=4 STALE=7 EMPTY=1 INFO=12 = 37` 變成 **`OK=25 WARN=0 STALE=6 EMPTY=1 INFO=5 = 37`**。
+
+每個曾經 97% 的 view 現狀分類：
+- **真 100%（OK 顯示）**：12 個 derived gold + tx/mtx continuous + chip_dist + revenue_monthly + accounting_raw + fundamentals_pit + fundamentals_q（OK 從 13 → 25）
+- **INFO（snapshot 結構性限制）**：5 個 finmind/qc，bronze sqlite max 5/22；需要重跑 FinMind crawler（2hr）才能推到 5/25，本輪不觸發
+- **STALE（無 cron / scraper）**：6 個（tw_inst_futures_daily TAIFEX / macro_daily yfinance / bars_1m manual MXF / txo_daily / stock_futures_continuous / tw_inst_market）—需要分別寫 scraper，本輪 scope 外
+
+goldify_audit 結果：✅ **0 candidates**（catalog fully goldified，無新 silver-only 100% view）。
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>

@@ -159,9 +159,9 @@ DATASETS = [
             silver_paths=("silver/bars/bars_1m/**/*.parquet",)),
 
     # --- TEJ chip / attrs / dividends (P1/P2) ---
-    Dataset("tw_chip_dist_daily",      "trading_date", "daily-trading",
+    Dataset("tw_chip_dist_daily",      "trading_date", "weekly",
             "fetch_tej.py --table chip_dist --append-since-silver",
-            "TEJ 集保戶股權分散表", "P1",
+            "TEJ 集保戶股權分散表（週公告）", "P1",
             silver_paths=("silver/flows/tw_chip_dist_daily/**/*.parquet",)),
     Dataset("tw_stock_trading_attrs_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table stock_trading_attrs --append-since-silver",
@@ -318,13 +318,26 @@ def classify(lag_days: int | None, category: str) -> str:
         if lag_days <= 0:
             return "OK"
         return "WARN" if lag_days < 30 else "STALE"
+    if category == "weekly":
+        # TEJ APISHRACTW etc publish weekly (typically Fri close + 1-2 day lag).
+        # 0-7d = fresh, 8-14d = WARN, >14d = STALE.
+        if lag_days <= 7: return "OK"
+        if lag_days <= 14: return "WARN"
+        return "STALE"
     if category == "monthly":
-        if lag_days <= 15: return "OK"
-        if lag_days <= 45: return "WARN"
+        # date_col is typically fiscal_month (= 1st of month X for data of month X);
+        # publication usually happens day 10 of month X+1, so the *fresh* state
+        # already shows lag ~30-45d. Next month's data won't arrive until ~day 10
+        # of month X+2, so the natural max lag is ~70d before the next batch
+        # publishes. 0-60d = OK, 60-90d = WARN, >90d = STALE.
+        if lag_days <= 60: return "OK"
+        if lag_days <= 90: return "WARN"
         return "STALE"
     if category == "quarterly":
-        if lag_days <= 60:  return "OK"
-        if lag_days <= 120: return "WARN"
+        # Quarterly statements: Q1 ends 3/31, publishes by 5/15 (45d lag);
+        # next batch (Q2) lands by 8/15 → max fresh lag ~135d before stale.
+        if lag_days <= 100: return "OK"
+        if lag_days <= 180: return "WARN"
         return "STALE"
     if category == "derived":
         # Downstream tables — we just flag, the action is "rebuild".
