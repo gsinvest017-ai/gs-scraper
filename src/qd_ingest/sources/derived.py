@@ -1205,6 +1205,72 @@ def build_macro_factors() -> dict:
     return info
 
 
+def build_market_inst_aggregated() -> dict:
+    """Aggregate tw_inst_stock_daily → market-level daily totals.
+
+    Source silver tw_inst_market_daily (TWSE direct) is STALE at 4/16 with only
+    15 rows / 5 identities — and uses TWD value not lots. This builder rolls up
+    the stock-level tw_inst_stock_daily (max 5/25, ~6.6M rows) by trading_date
+    so downstream gets a fresh market aggregate.
+
+    Output: gold/features/market_inst_aggregated.parquet (one row per trading_date)
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_inst_stock_daily" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "trading_date", "stock_id",
+        "foreign_net_lot", "sitc_net_lot", "dealer_net_lot", "total_net_lot",
+        "foreign_buy_lot", "foreign_sell_lot",
+        "sitc_buy_lot", "sitc_sell_lot",
+        "dealer_buy_lot", "dealer_sell_lot",
+        "foreign_hold_pct", "sitc_hold_pct", "dealer_hold_pct",
+        "ingestion_ts",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    # dedup silver multi-ingest before aggregating
+    df = df.sort(["stock_id", "trading_date", "ingestion_ts"]).unique(
+        subset=["stock_id", "trading_date"], keep="last"
+    ).drop("ingestion_ts")
+
+    out = df.group_by("trading_date").agg([
+        pl.col("foreign_net_lot").sum().alias("foreign_net_lot"),
+        pl.col("sitc_net_lot").sum().alias("sitc_net_lot"),
+        pl.col("dealer_net_lot").sum().alias("dealer_net_lot"),
+        pl.col("total_net_lot").sum().alias("total_net_lot"),
+        pl.col("foreign_buy_lot").sum().alias("foreign_buy_lot"),
+        pl.col("foreign_sell_lot").sum().alias("foreign_sell_lot"),
+        pl.col("sitc_buy_lot").sum().alias("sitc_buy_lot"),
+        pl.col("sitc_sell_lot").sum().alias("sitc_sell_lot"),
+        pl.col("dealer_buy_lot").sum().alias("dealer_buy_lot"),
+        pl.col("dealer_sell_lot").sum().alias("dealer_sell_lot"),
+        pl.col("foreign_hold_pct").mean().alias("foreign_hold_pct_mean"),
+        pl.col("sitc_hold_pct").mean().alias("sitc_hold_pct_mean"),
+        pl.col("dealer_hold_pct").mean().alias("dealer_hold_pct_mean"),
+        pl.col("stock_id").n_unique().alias("stocks_count"),
+    ]).sort("trading_date").with_columns([
+        pl.lit("qd_gold_market_inst_aggregated_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "market_inst_aggregated.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height,
+            "max_date": str(out["trading_date"].max()),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/market_inst_aggregated",
+        bronze_file="silver/flows/tw_inst_stock_daily",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[market_inst_aggregated] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": copy_txo_daily_features(),
@@ -1229,6 +1295,7 @@ def build_all() -> dict:
         "tw_inst_market_daily_snapshot": materialize_tw_inst_market_daily_snapshot(),
         "bars_1m_daily_summary": build_bars_1m_daily_summary(),
         "macro_factors": build_macro_factors(),
+        "market_inst_aggregated": build_market_inst_aggregated(),
     }
     return summary
 
