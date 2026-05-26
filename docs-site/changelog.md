@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-05-26 — Cron 自動 daily_refresh 證實生效（昨日首次完整 4 步綠燈）
+
+不是新功能、而是「自動化證實生效」的里程碑：
+
+- **昨日 2026-05-25 17:30 CST cron 第一次跑完整 4 階段**（含 step 3.5 `restore_finmind_views`，這是 5/25 上午才加的步驟）並結尾 `daily_refresh OK`
+- TEJ 4 個主表 max_date 從 2026-05-22 → **2026-05-25**：`tw_stock_bars` / `tw_inst_stock_daily` / `tw_margin_daily` / `tw_stock_trading_attrs_daily` / `bars_1d`
+- 仍有 STALE（`macro_daily` / `tw_inst_futures_daily` / `bars_1m` / `txo_daily_features` / `tw_inst_market_daily` 等），這些 dataset 不在 cron `fetch_tej.py --table all` 範圍，要手動或加 scraper
+- **已知 gap**：cron step 沒包 `python -m qd_ingest.sources.derived`，所以新 silver 不會自動 propagate 到 gold parquet。Dashboard 在 cron 跑完後 derived gold 全變 INFO（lag 3d）；下次跑 goldify routine 或在 cron 加 step 5 可關掉這個 gap
+
+日誌：`meta/audit/daily_refresh_2026-05-25.log`，cron wrapper `meta/audit/daily_refresh_cron.log`。
+
+## 2026-05-25 (night) — Goldify routine 自動化（agent + audit script）
+
+把過去 3 輪手動執行的 silver→gold 流程包成可重複呼叫的工具，未來新 silver view 滿格時不再依賴人類掃 dashboard：
+
+- **`scripts/goldify_audit.py`** — 偵測 100% 完整度但 `gold_paths` 為空的 view，輸出 stdout / `--json` / `--markdown` 三種格式；用 9 個 factor template（time_series_bar / flow_rolling / balance_zscore / per_entity_oi / event_panel / boolean_panel / pit_fundamentals / view_materialize / left_join_merge）heuristically 對應 silver schema → 建議仿哪支既有 builder。當前 catalog 跑出 0 candidates（已 fully goldified）。
+- **`.claude/agents/goldify-100pct.md`** — repo-scoped agent，使用者說「跑 goldify routine / 處理剩下的 silver→gold」就觸發；強制 4-milestone 流程（plan / builder / registry+catalog / rebuild+dashboard+push），silver multi-ingest dedup 為 builder 責任、progress doc 不可省。
+- **`docs-site/ops/goldify-routine.md`** — 使用者文檔，含 ripe candidate 定義、9 個 template 對應表、與 incremental-crawler / `/update-doc` 的分工。
+- `docs-site/ops/automation.md` 從 2 agent → 3 agent 表格。
+
+commits `b12d924..b9df543`。進度檔：`docs/progress-goldify-agent.md`。
+
 ## 2026-05-25 (evening) — Goldify 全部 100% 完整度 view（3 輪收尾）
 
 把 dashboard 上 **所有 100% 完整度但沒有 gold artifact 的 view** 全部 goldify，分 3 輪推進；最終 dashboard `OK=17 → 24`、總 datasets `30 → 37`、Gold 總量 `~140 MB → ~830 MB`、catalog `36 views → 49 views`。
