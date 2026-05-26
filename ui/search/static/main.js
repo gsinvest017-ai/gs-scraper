@@ -80,8 +80,10 @@
       ops.forEach(([v, label]) => {
         const opt = document.createElement('option'); opt.value = v; opt.textContent = label; opSel.appendChild(opt);
       });
-      // value widget: if col has distinct_values (≤ 50), use dropdown; if date → date input
-      const oldVal = val.value;
+      // Use the LIVE current value element, not the captured `val` closure ref
+      // (which becomes detached after the first replaceWith).
+      const currentEl = row._valEl || val;
+      const oldVal = currentEl && currentEl.value !== undefined ? currentEl.value : '';
       let newVal;
       if (col.distinct_values && col.distinct_values.length > 0 && (opSel.value === 'eq' || opSel.value === 'in')) {
         newVal = document.createElement('select');
@@ -107,13 +109,15 @@
       // for nullable ops, hide value input
       const noValue = ['isnull', 'notnull', 'is_true', 'is_false'].includes(opSel.value);
       newVal.style.display = noValue ? 'none' : '';
-      val.replaceWith(newVal);
+      // attach the SQL-preview listener to the NEW element (the old one's listener is now on a detached node)
+      newVal.addEventListener('input', updateSqlPreview);
+      newVal.addEventListener('change', updateSqlPreview);
+      currentEl.replaceWith(newVal);
       Object.defineProperty(row, '_valEl', { value: newVal, configurable: true });
     }
 
     colSel.addEventListener('change', () => { refreshOps(); updateSqlPreview(); });
     opSel.addEventListener('change', () => { refreshOps(); updateSqlPreview(); });
-    val.addEventListener('input', updateSqlPreview);
 
     row.appendChild(colSel); row.appendChild(opSel); row.appendChild(val); row.appendChild(remove);
     filterList.appendChild(row);
@@ -233,6 +237,21 @@
       const xIdx = lastResult.columns.indexOf(x);
       if (xIdx < 0) return;
 
+      // Helper: sort (x[], y[]) pairs by X ascending — Plotly draws lines in array
+      // order, so unsorted X (e.g. when query was ORDER BY ingestion_ts DESC) gives
+      // spaghetti criss-cross. Sort each trace independently before plotting.
+      function sortByX(xs, ys) {
+        const idx = xs.map((_, i) => i);
+        idx.sort((a, b) => {
+          const va = xs[a], vb = xs[b];
+          if (va == null && vb == null) return 0;
+          if (va == null) return -1;
+          if (vb == null) return 1;
+          return va < vb ? -1 : va > vb ? 1 : 0;
+        });
+        return { x: idx.map(i => xs[i]), y: idx.map(i => ys[i]) };
+      }
+
       // If groupBy, build per-group traces
       const traces = [];
       if (groupBy) {
@@ -245,19 +264,26 @@
           groups[key].x.push(r[xIdx]);
           ys.forEach((yc, i) => { groups[key].ys[i].push(r[lastResult.columns.indexOf(yc)]); });
         });
-        Object.keys(groups).slice(0, 20).forEach(key => {  // cap at 20 series per group
+        const keys = Object.keys(groups);
+        if (keys.length > 20) {
+          console.warn(`group-by produced ${keys.length} series; rendering first 20 only`);
+        }
+        keys.slice(0, 20).forEach(key => {
           ys.forEach((yc, i) => {
-            traces.push({ type: 'scatter', mode: 'lines', name: `${key} ${yc}`,
-                          x: groups[key].x, y: groups[key].ys[i] });
+            const sorted = sortByX(groups[key].x, groups[key].ys[i]);
+            traces.push({ type: 'scatter', mode: 'lines+markers', name: `${key} · ${yc}`,
+                          x: sorted.x, y: sorted.y });
           });
         });
       } else {
         ys.forEach(yc => {
           const yIdx = lastResult.columns.indexOf(yc);
+          const xs = lastResult.rows.map(r => r[xIdx]);
+          const ysArr = lastResult.rows.map(r => r[yIdx]);
+          const sorted = sortByX(xs, ysArr);
           traces.push({
-            type: 'scatter', mode: 'lines', name: yc,
-            x: lastResult.rows.map(r => r[xIdx]),
-            y: lastResult.rows.map(r => r[yIdx]),
+            type: 'scatter', mode: 'lines+markers', name: yc,
+            x: sorted.x, y: sorted.y,
           });
         });
       }
