@@ -219,6 +219,7 @@ class Candidate:
     row_count: int
     max_date: str
     completeness_pct: float
+    severity: str
     columns: list[str]
     date_col: str
     silver_paths: tuple[str, ...]
@@ -228,7 +229,16 @@ class Candidate:
     suggested_steps: list[str] = field(default_factory=list)
 
 
-def audit() -> list[Candidate]:
+def audit(complete_only: bool = False) -> list[Candidate]:
+    """Find catalog views that should be goldified.
+
+    Default (complete_only=False): any view with `row_count > 0` and empty
+    `gold_paths` — regardless of dashboard severity. Gold reflects an "as of
+    silver max_date" snapshot, so STALE silvers can still be goldified.
+
+    complete_only=True restores the legacy filter (only severity=OK / 100%
+    complete). Useful for CI where you only want to act on fresh data.
+    """
     registry = load_registry()
     completeness = load_completeness()
     con = duckdb.connect(str(CATALOG), read_only=True)
@@ -240,11 +250,16 @@ def audit() -> list[Candidate]:
         comp = completeness.get(view)
         if not comp:
             continue
-        # The HTML dashboard treats severity=OK as 100% complete (lag_days within
-        # tolerance). JSON output doesn't include the derived completeness_pct,
-        # so we use the same proxy: severity OK + INFO at lag_days<=1.
+        # Need at least one row to derive from. EMPTY views with no data at all
+        # are skipped regardless of mode — there's literally nothing to goldify.
+        if (comp.get("row_count") or 0) == 0:
+            continue
+        # Also need at least one upstream data path (silver/bronze/raw) in the
+        # registry, otherwise the view is a pure computed view that may not
+        # benefit from materialization (use view_materialize template if it does).
+        # We don't enforce that here — `suggest_template` handles the no-silver case.
         pct = _proxy_completeness(comp)
-        if pct != 100.0:
+        if complete_only and pct != 100.0:
             continue
         cols = view_columns(con, view)
         template = suggest_template(cols, ds.date_col, ds.category)
@@ -265,6 +280,7 @@ def audit() -> list[Candidate]:
             row_count=comp.get("row_count", 0),
             max_date=str(comp.get("max_date", "")),
             completeness_pct=pct,
+            severity=comp.get("severity", "?"),
             columns=cols,
             date_col=ds.date_col,
             silver_paths=ds.silver_paths,
@@ -281,15 +297,18 @@ def audit() -> list[Candidate]:
 
 def format_text(candidates: list[Candidate]) -> str:
     if not candidates:
-        return "✅ goldify_audit: no 100%-complete views are missing gold. Catalog is fully goldified.\n"
+        return "✅ goldify_audit: no views with non-gold data found. Catalog is fully goldified.\n"
+    n100 = sum(1 for c in candidates if c.completeness_pct == 100.0)
+    n_partial = len(candidates) - n100
     lines = [
-        f"goldify_audit — {len(candidates)} ripe candidate(s) found (100% complete, no gold_paths)",
+        f"goldify_audit — {len(candidates)} candidate(s) found ({n100} at 100% / {n_partial} partial)",
         "=" * 100,
     ]
     for c in candidates:
+        comp_tag = f"{c.completeness_pct:.0f}% {c.severity}"
         lines += [
             "",
-            f"📌 {c.view}  (tier={c.tier}, category={c.category})",
+            f"📌 {c.view}  (tier={c.tier}, category={c.category}, completeness={comp_tag})",
             f"   {c.description}",
             f"   silver rows: {c.row_count:,}  |  max_date: {c.max_date}  |  date_col: {c.date_col}",
             f"   suggested template: {c.template}  (model after gold/features/{c.template_example}.parquet)",
@@ -302,6 +321,12 @@ def format_text(candidates: list[Candidate]) -> str:
         "Standard workflow for each candidate (run as 4 milestones):",
     ]
     lines += [f"   {s}" for s in candidates[0].suggested_steps]
+    if n_partial > 0:
+        lines += [
+            "",
+            "ℹ️  Some candidates are not 100% complete (STALE/WARN). Gold will reflect a snapshot",
+            "    of the silver as-of its current max_date. Refresh upstream separately for fresher gold.",
+        ]
     return "\n".join(lines) + "\n"
 
 
@@ -310,19 +335,19 @@ def format_markdown(candidates: list[Candidate]) -> str:
     lines = [
         f"# Goldify Audit — {today}",
         "",
-        f"Found **{len(candidates)} candidate view(s)** at 100% completeness with no gold artifact.",
+        f"Found **{len(candidates)} candidate view(s)** with non-gold data and no gold_paths backlink.",
         "",
     ]
     if not candidates:
-        lines += ["✅ All 100%-complete views are already goldified. Nothing to do."]
+        lines += ["✅ All views with non-gold data already have gold backlinks. Nothing to do."]
         return "\n".join(lines) + "\n"
     lines += [
-        "| view | tier | category | rows | template | model after |",
-        "|---|---|---|---:|---|---|",
+        "| view | tier | category | completeness | severity | rows | template | model after |",
+        "|---|---|---|---:|---|---:|---|---|",
     ]
     for c in candidates:
         lines.append(
-            f"| `{c.view}` | {c.tier} | {c.category} | {c.row_count:,} | `{c.template}` | `{c.template_example}` |"
+            f"| `{c.view}` | {c.tier} | {c.category} | {c.completeness_pct:.0f}% | {c.severity} | {c.row_count:,} | `{c.template}` | `{c.template_example}` |"
         )
     lines += [
         "",
@@ -351,13 +376,15 @@ def format_markdown(candidates: list[Candidate]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Find 100%-complete catalog views lacking gold")
+    p = argparse.ArgumentParser(description="Find catalog views with non-gold data (default: all severities; --complete-only restricts to 100%)")
     p.add_argument("--json", metavar="PATH", help="write JSON output to PATH")
     p.add_argument("--markdown", metavar="PATH", help="write Markdown report to PATH")
     p.add_argument("--quiet", action="store_true", help="suppress stdout text")
+    p.add_argument("--complete-only", action="store_true",
+                   help="legacy filter — restrict to views at 100%% completeness (severity=OK)")
     args = p.parse_args(argv)
 
-    candidates = audit()
+    candidates = audit(complete_only=args.complete_only)
     if not args.quiet:
         print(format_text(candidates))
 
