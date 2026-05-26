@@ -1,8 +1,10 @@
 ---
-description: Goldify every 100%-complete catalog view that lacks gold; loop until 0 candidates or stuck.
+description: Goldify EVERY catalog view that has non-gold data (silver/bronze/raw) and no gold_paths — regardless of completeness. Loop until 0 candidates or stuck.
 ---
 
-You are running the **`/goldify-100` repo routine** on QUANTDATA. The goal: every catalog view at 100% completeness (`OK` severity) must have at least one entry in `gold_paths` (either a new gold parquet derived from its silver, or a backlink to an existing gold). When you finish one pass, re-audit; if new ripe candidates emerged (e.g. because the previous pass created a downstream silver that now hits 100%), do another pass. Stop when **0 candidates** or **stuck** (no progress for 2 consecutive iterations).
+You are running the **`/goldify-100` repo routine** on QUANTDATA. The goal: **100% catalog coverage of gold artifacts** — every view whose silver/bronze/raw contains at least one row must have an entry in `gold_paths` (a new gold parquet derived from its source, or a backlink to an existing gold). Completeness % is NOT a filter: STALE views with old silver data are equally valid goldification targets. Gold reflects "as of silver max_date" snapshot; refresh upstream separately if you want fresher gold. When you finish one pass, re-audit; if new ripe candidates emerged, do another pass. Stop when **0 candidates** or **stuck** (no progress for 2 consecutive iterations).
+
+> **Note on the name**: "goldify-100" originally implied "100% per-view completeness" but is reinterpreted as "100% catalog coverage of gold". This wider scope was the intent; the legacy narrower behavior is still accessible via `scripts/goldify_audit.py --complete-only`.
 
 **User extra instructions**: $ARGUMENTS
 
@@ -125,12 +127,15 @@ Match exactly the `.claude/agents/goldify-100pct.md` workflow:
 
 ```
 $ /goldify-100
-> Audit: ✅ no 100%-complete views are missing gold.
+> Audit: ✅ no views with non-gold data found.
 > Catalog is fully goldified. No work to do.
 > exit 0
 ```
 
-This is expected most days. The routine only does real work when silver newly hits 100% (e.g. after a major crawler catch-up).
+This is expected most days. The routine does real work when:
+- A new silver view appears (e.g. a fresh `fetch_tej.py --table foo` writes silver parquet for a previously-untracked table)
+- An existing silver view has data but no `gold_paths` backlink (registry oversight)
+- A previously empty view gains its first row of data
 
 ## Why both agent and command?
 
