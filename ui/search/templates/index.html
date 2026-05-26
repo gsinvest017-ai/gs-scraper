@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Views — QUANTDATA Search{% endblock %}
+{% block content %}
+<h1>Catalog views</h1>
+<p class="subtitle">{{ views|length }} views in <code>{{ catalog_path }}</code>. Time-series views (with date column + numeric cols) listed first.</p>
+<div class="filter-bar">
+  <input type="text" id="view-filter" placeholder="Filter views by name (e.g. tw_, factor, finmind)..." autocomplete="off">
+  <button id="refresh-btn" type="button">↻ Refresh catalog snapshot</button>
+</div>
+<table id="views-table">
+<thead>
+<tr>
+  <th>View</th>
+  <th class="num">Rows</th>
+  <th>Max date</th>
+  <th class="num">Cols</th>
+  <th>Type</th>
+  <th></th>
+</tr>
+</thead>
+<tbody>
+{% for v in views %}
+<tr class="view-row {{ 'ts' if v.is_time_series else 'other' }}">
+  <td><code>{{ v.name }}</code>{% if v.error %} <span class="err">⚠ {{ v.error }}</span>{% endif %}</td>
+  <td class="num">{{ '{:,}'.format(v.row_count or 0) }}</td>
+  <td>{{ v.max_date or '—' }}</td>
+  <td class="num">{{ v.n_columns or 0 }}</td>
+  <td>{% if v.is_time_series %}<span class="tag-ts">time-series</span>{% else %}<span class="tag-static">tabular</span>{% endif %}</td>
+  <td><a class="btn" href="/view/{{ v.name }}">Query →</a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} — QUANTDATA Search{% endblock %}
+{% block content %}
+<h1><code>{{ meta.name }}</code></h1>
+<p class="subtitle">
+  {{ '{:,}'.format(meta.row_count) }} rows · {{ meta.columns|length }} columns ·
+  {% if meta.max_date %}max_date <code>{{ meta.max_date }}</code> · {% endif %}
+  {% if meta.is_time_series %}<span class="tag-ts">time-series</span>{% else %}<span class="tag-static">tabular</span>{% endif %}
+</p>
+
+<details class="schema-details">
+  <summary>Schema ({{ meta.columns|length }} cols)</summary>
+  <table class="schema-table">
+    <thead><tr><th>Column</th><th>Type</th><th>Kind</th></tr></thead>
+    <tbody>
+    {% for c in meta.columns %}
+      <tr><td><code>{{ c.name }}</code></td><td><code>{{ c.sql_type }}</code></td><td>{{ c.dtype }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+
+<section class="filter-section">
+  <h2>Filters</h2>
+  <div id="filter-list"></div>
+  <div class="filter-actions">
+    <button type="button" id="add-filter-btn">+ Add filter</button>
+    <label>Order by
+      <select id="order-by">
+        <option value="">(none)</option>
+        {% for c in meta.columns %}<option value="{{ c.name }}"{% if c.is_date %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Dir
+      <select id="order-dir">
+        <option value="DESC" selected>DESC</option>
+        <option value="ASC">ASC</option>
+      </select>
+    </label>
+    <label>Limit
+      <input type="number" id="limit" value="{{ default_limit }}" min="1" max="{{ max_limit }}">
+    </label>
+    <button type="button" id="run-btn" class="primary">▶ Run query</button>
+  </div>
+  <pre id="sql-preview" class="sql"></pre>
+</section>
+
+<section id="result-section" style="display:none">
+  <div class="tabs">
+    <button type="button" data-tab="table" class="active">📋 Table</button>
+    <button type="button" data-tab="chart" {% if not meta.is_time_series %}disabled title="Not a time-series view"{% endif %}>📈 Chart</button>
+  </div>
+  <div id="tab-table" class="tab-pane active">
+    <div id="result-meta"></div>
+    <div id="result-table-wrap"></div>
+  </div>
+  <div id="tab-chart" class="tab-pane">
+    <div class="chart-controls">
+      <label>X (date)
+        <select id="chart-x">
+          {% for c in meta.date_columns %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Y (numeric, multi-select)
+        <select id="chart-y" multiple size="6">
+          {% for c in meta.numeric_columns %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Group by (optional)
+        <select id="chart-group">
+          <option value="">(none)</option>
+          {% for c in meta.string_columns %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="button" id="render-chart-btn">Render chart</button>
+    </div>
+    <div id="plot" style="height: 500px;"></div>
+  </div>
+</section>
+
+<script id="view-meta" type="application/json">{{ meta_json|safe }}</script>
+{% endblock %}
