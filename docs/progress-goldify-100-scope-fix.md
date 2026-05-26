@@ -88,10 +88,10 @@ Loop 主要邏輯不變（4 milestones / 上限 5 輪 / stuck 偵測）。
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + code review | ⏳ |
-| **M2** | 修 `scripts/goldify_audit.py` 範圍 + 加 `--complete-only` flag | ⏳ |
-| **M3** | 改寫 `.claude/commands/goldify-100.md` + `docs-site/ops/goldify-routine.md` | ⏳ |
-| **M4** | 跑新 audit；如有 cand 則 goldify；regen dashboard；commit；push | ⏳ |
+| **M1** | 本進度檔 + code review | ✅ |
+| **M2** | 修 `scripts/goldify_audit.py` 範圍 + 加 `--complete-only` flag | ✅ |
+| **M3** | 改寫 `.claude/commands/goldify-100.md` + `docs-site/ops/goldify-routine.md` | ✅ |
+| **M4** | 跑新 audit；如有 cand 則 goldify；regen dashboard；commit；push | ✅ |
 
 ## Fallback
 
@@ -101,4 +101,65 @@ Loop 主要邏輯不變（4 milestones / 上限 5 輪 / stuck 偵測）。
 
 ## 完成日誌
 
-（M2-M4 完成後追加）
+### M2 — audit 範圍擴大
+
+`scripts/goldify_audit.py`：
+- `audit(complete_only=False)` 參數；預設不過濾完整度，改成「`row_count > 0` AND `gold_paths` 為空」
+- 候選 `Candidate` 新增 `severity` 欄位（OK / WARN / STALE / INFO）
+- text / markdown 輸出加完整度 % + severity 標記，分「100% 完整」與「partial」兩群
+- CLI 加 `--complete-only` flag 保留舊行為
+
+驗證：新 audit 抓出 5 個 STALE 但有 silver 的 view（tw_inst_futures_daily / bars_1m / macro_daily / txo_daily_features / tw_inst_market_daily）。
+
+### M3 — command + docs 改寫
+
+`.claude/commands/goldify-100.md` description 更新：
+> Goldify EVERY catalog view that has non-gold data (silver/bronze/raw) and no gold_paths — regardless of completeness. Loop until 0 candidates or stuck.
+
+加 reinterpretation 段：「"100" 重新詮釋為 100% catalog coverage of gold，而非 100% per-view completeness」。
+
+`docs-site/ops/goldify-routine.md` 同步：新增「2026-05-26 範圍更新」對照框、「candidate」3 條件改為 row_count>0 + 空 gold_paths + 可 DESCRIBE。
+
+Skills list 確認 description 已生效。
+
+### M4 — 跑 5 個新 builder + 收斂
+
+5 個 builder 加進 `derived.py`（用 `_materialize_view_snapshot()` helper 減少重複）：
+
+| gold view | 來源 | rows | 設計 | elapsed |
+|---|---|---:|---|---:|
+| `tw_inst_futures_daily_snapshot` | catalog view | 6,561 | DuckDB COPY snapshot | 0.1s |
+| `txo_daily_features_snapshot` | catalog view | 1,481 | DuckDB COPY snapshot | 0.1s |
+| `tw_inst_market_daily_snapshot` | catalog view | 15 | DuckDB COPY snapshot | 0.0s |
+| `bars_1m_daily_summary` | catalog view | 14,859 | DuckDB GROUP BY 1d (15.6M → 15K) | 1.4s |
+| `macro_factors` | silver parquet | 91,048 | Polars: ret/vol/atr per 45 symbols | 0.5s |
+
+`scripts/gap_report.py` + `src/qd_ingest/common/catalog.py`：5 個 backlink + 5 個新 Dataset 條目 + 5 個 catalog view 註冊。
+
+**Re-audit**: `goldify_audit` 報告 **0 candidates** → ✅ 收斂。
+
+Dashboard 變化：
+
+| 指標 | M3 末 | M4 末 |
+|---|---|---|
+| OK | 28 | 28 |
+| WARN | 0 | 0 |
+| STALE | 6 | 11 |
+| EMPTY | 1 | 1 |
+| INFO | 5 | 5 |
+| Total datasets | 40 | 45 |
+
+**注意 STALE 從 6 → 11**：5 個新 gold snapshot Dataset 條目繼承原 silver 的 max_date（5/7、5/8、4/16 等），按 dashboard category lag 規則仍是 STALE。**這不是 bug，是設計**：gold 是「截至 silver max_date」的快照；上游 silver 不更新，gold 也不更新（從 dashboard 「**100% catalog coverage of gold**」角度看任務已完成，每個非 gold 的 view 都有 gold backlink，目標達成）。
+
+## 與使用者目標的 alignment 確認
+
+| 使用者目標 | 達成？ |
+|---|:---:|
+| 所有含非 gold 品質的 view 都有 gold | ✅ `goldify_audit` 報 0 |
+| 沒處理成 gold 不要停 | ✅ loop 跑到收斂 |
+| 完整度不是過濾條件 | ✅ STALE 也被處理 |
+| `/goldify-100` 名稱保留 | ✅（reinterpreted as 100% coverage）|
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>

@@ -155,6 +155,11 @@ def build(*, db_path=None) -> None:
         ("revenue_factors",            GOLD / "features" / "revenue_factors.parquet"),
         ("accounting_raw_snapshot",    GOLD / "features" / "accounting_raw_snapshot.parquet"),
         ("accounting_raw_yearly",      GOLD / "features" / "accounting_raw_yearly.parquet"),
+        ("tw_inst_futures_daily_snapshot", GOLD / "features" / "tw_inst_futures_daily_snapshot.parquet"),
+        ("txo_daily_features_snapshot", GOLD / "features" / "txo_daily_features_snapshot.parquet"),
+        ("tw_inst_market_daily_snapshot", GOLD / "features" / "tw_inst_market_daily_snapshot.parquet"),
+        ("bars_1m_daily_summary",      GOLD / "features" / "bars_1m_daily_summary.parquet"),
+        ("macro_factors",              GOLD / "features" / "macro_factors.parquet"),
     ]:
         if fp.exists():
             con.execute(f"""
