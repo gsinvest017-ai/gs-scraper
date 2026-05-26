@@ -162,7 +162,8 @@ DATASETS = [
     Dataset("tw_chip_dist_daily",      "trading_date", "weekly",
             "fetch_tej.py --table chip_dist --append-since-silver",
             "TEJ 集保戶股權分散表（週公告）", "P1",
-            silver_paths=("silver/flows/tw_chip_dist_daily/**/*.parquet",)),
+            silver_paths=("silver/flows/tw_chip_dist_daily/**/*.parquet",),
+            gold_paths=("gold/features/chip_dist_factors.parquet",)),
     Dataset("tw_stock_trading_attrs_daily", "trading_date", "daily-trading",
             "fetch_tej.py --table stock_trading_attrs --append-since-silver",
             "個股交易屬性（注意/處置/全額交割）", "P2",
@@ -173,7 +174,8 @@ DATASETS = [
     Dataset("revenue_monthly",         "fiscal_month", "monthly",
             "fetch_tej.py --table revenue_monthly --append-since-silver",
             "月營收（每月 10 日前後公告）", "P0",
-            silver_paths=("silver/fundamentals/revenue_monthly/**/*.parquet",)),
+            silver_paths=("silver/fundamentals/revenue_monthly/**/*.parquet",),
+            gold_paths=("gold/features/revenue_factors.parquet",)),
     Dataset("fundamentals_q",          "publish_date", "quarterly",
             "(TWN_EWIFINQ CSV — 來自 TEJ 訂閱包，無 API auto-refresh)",
             "季報（單季 + 累季財報）", "P1",
@@ -184,7 +186,11 @@ DATASETS = [
     Dataset("accounting_raw",          "fiscal_month", "quarterly",
             "fetch_tej.py --table accounting_raw --append-since-silver",
             "原始會計簽證科目（AINVFINB 118 欄）", "P2",
-            silver_paths=("silver/fundamentals/accounting_raw/**/*.parquet",)),
+            silver_paths=("silver/fundamentals/accounting_raw/**/*.parquet",),
+            gold_paths=(
+                "gold/features/accounting_raw_snapshot.parquet",
+                "gold/features/accounting_raw_yearly.parquet",
+            )),
 
     # --- 衍生 (downstream of stock_bars etc.) ---
     Dataset("stock_factor_daily",      "trading_date", "derived",
@@ -293,6 +299,23 @@ DATASETS = [
             "python -m qd_ingest.sources.derived  (materialize_finmind_canonical)",
             "FinMind raw + adj OHLC 合併（parquet 取代 sqlite 查詢）", "P1",
             gold_paths=("gold/features/finmind_price_canonical.parquet",)),
+
+    # --- /goldify-100 iter1 (2026-05-26) ---
+    Dataset("chip_dist_factors",       "trading_date", "weekly",
+            "python -m qd_ingest.sources.derived  (build_chip_dist_factors)",
+            "集保戶股權分散因子（大戶 / 散戶 4w 變化、集中度、質押率）", "P1",
+            gold_paths=("gold/features/chip_dist_factors.parquet",)),
+    Dataset("revenue_factors",         "fiscal_month", "monthly",
+            "python -m qd_ingest.sources.derived  (build_revenue_factors)",
+            "月營收衍生因子（YoY 加速度、24m z-score、6m persistence）", "P0",
+            gold_paths=("gold/features/revenue_factors.parquet",)),
+    Dataset("accounting_raw_snapshot", "fiscal_month", "quarterly",
+            "python -m qd_ingest.sources.derived  (materialize_accounting_snapshot)",
+            "會計簽證科目 parquet 持久化（含 yearly aggregate 副產物）", "P2",
+            gold_paths=(
+                "gold/features/accounting_raw_snapshot.parquet",
+                "gold/features/accounting_raw_yearly.parquet",
+            )),
 ]
 
 

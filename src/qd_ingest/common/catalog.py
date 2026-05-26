@@ -151,6 +151,10 @@ def build(*, db_path=None) -> None:
         ("qc_stock_price_diff_snapshot", GOLD / "features" / "qc_stock_price_diff_snapshot.parquet"),
         ("qc_stock_price_diff_yearly", GOLD / "features" / "qc_stock_price_diff_yearly.parquet"),
         ("finmind_price_canonical",    GOLD / "features" / "finmind_price_canonical.parquet"),
+        ("chip_dist_factors",          GOLD / "features" / "chip_dist_factors.parquet"),
+        ("revenue_factors",            GOLD / "features" / "revenue_factors.parquet"),
+        ("accounting_raw_snapshot",    GOLD / "features" / "accounting_raw_snapshot.parquet"),
+        ("accounting_raw_yearly",      GOLD / "features" / "accounting_raw_yearly.parquet"),
     ]:
         if fp.exists():
             con.execute(f"""
