@@ -84,6 +84,7 @@ nav:
   - UI:
       - 概覽: ui/overview.md
       - DuckDB Web UI: ui/duckdb-ui.md
+      - Search Web UI（form-based）: ui/search.md
       - Gap dashboard: ui/gap-dashboard.md
       - Tailscale Funnel 遠端存取: ui/funnel.md
   - Live Dashboard ↗: gap_dashboard.html

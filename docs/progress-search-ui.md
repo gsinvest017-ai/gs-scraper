@@ -55,10 +55,10 @@ docs-site/ui/
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + ui/search/ Flask 骨架 + landing template | ⏳ |
-| **M2** | catalog introspection（views list, columns + types, distinct values for enums）+ form widgets | ⏳ |
-| **M3** | query endpoint + table + Plotly chart for time-series | ⏳ |
-| **M4** | `docs-site/ui/search.md` + `scripts/run_search_ui.sh` + strict mkdocs + commit + push | ⏳ |
+| **M1** | 本進度檔 + ui/search/ Flask 骨架 + landing template | ✅ |
+| **M2** | catalog introspection（views list, columns + types, distinct values for enums）+ form widgets | ✅ |
+| **M3** | query endpoint + table + Plotly chart for time-series | ✅ |
+| **M4** | `docs-site/ui/search.md` + `scripts/run_search_ui.sh` + strict mkdocs + commit + push | ✅ |
 
 ## Fallback
 
@@ -68,4 +68,28 @@ docs-site/ui/
 
 ## 完成日誌
 
-（M2-M4 後追加）
+### M1-M3 — Flask UI 全套（合併 commit）
+
+實作清單：
+- `ui/search/app.py`（130 行 Flask）— routes：`/`, `/view/<name>`, `/api/query` (POST), `/api/refresh` (POST)
+- `ui/search/catalog_inspector.py`（180 行）— `list_views()`、`get_view_meta()` 含欄位型別分類（date/numeric/string/bool）+ 低基數欄位（≤ 50 distinct）自動 dropdown；catalog 走 temp copy + `read_only=True` 不搶 lock
+- `ui/search/query_builder.py`（90 行）— `Filter` dataclass + 9 種 op（eq/contains/in/range_min/range_max/date_from/date_to/is_true/is_false/isnull/notnull）；強制 view + column whitelist，所有 value 走 `?` parameterized query
+- `templates/{base,index,view}.html` — Jinja Material-style；index 列 58 個 view + 即時 client-side filter；view page 含 schema details + filter builder + result table + Plotly chart tabs
+- `static/{style.css,main.js}` — 400 行 vanilla JS：動態 filter row 工廠（依欄位型別切 widget）、SQL preview、JSON API 呼叫、Plotly 多 trace 圖（含 group-by ≤ 20 series cap）
+
+驗證：
+- `python -m ui.search.app` 啟動 OK，title `<title>Views — QUANTDATA Search</title>`
+- `POST /api/query` 餵 `view=tw_stock_bars, filters=[symbol=2330, trading_date>=2026-05-20]` → 5 列 24 欄回傳，含 TSMC 5/26 OHLCV (2270.0/2325.0/2270.0/2270.0)、5/25 ...
+
+### M4 — launcher + docs + nav
+
+- `scripts/run_search_ui.sh`（30 行 bash）— sanity check venv + catalog 後 exec `python -m ui.search.app`
+- `docs-site/ui/search.md` — user-facing 文件：與 DuckDB UI 4213 的差異對照表、架構 tree、安全機制（whitelist + parameterized + read_only + LIMIT 5000）、觸發範例
+- `mkdocs.yml` nav 加「Search Web UI（form-based）」進 UI section
+- `mkdocs build --strict`：PASS
+
+## Live
+
+啟動：`bash scripts/run_search_ui.sh` → <http://127.0.0.1:5050>
+
+文件：<https://gsinvest017-ai.github.io/gs-scraper/ui/search/>（push 後生效）
