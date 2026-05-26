@@ -4,6 +4,53 @@
 
 ---
 
+## 2026-05-26 (afternoon) — `/goldify-100` 範圍修正：從「100% 完整度才 goldify」改成「所有非 gold 都 goldify」
+
+User feedback：原 `/goldify-100` 描述「process 100%-complete views」與真實目標「**所有 raw/bronze/silver 都應該有對應 gold**」不符。STALE 但有 silver 的 view 也是 goldification 對象。
+
+修正範圍（commits `fcfb145..8fc4d66`，5 commits）：
+
+- **`scripts/goldify_audit.py`** 預設過濾條件改成 `row_count > 0 AND empty gold_paths`，不再用完整度卡。加 `--complete-only` flag 保留舊行為（向後相容）。報告多顯示 `severity` + 完整度 %，分「100% fresh」與「partial」兩群。
+- **`.claude/commands/goldify-100.md`** description rewrite：「Goldify EVERY catalog view that has non-gold data (silver/bronze/raw) and no gold_paths — regardless of completeness.」"100" reinterpreted as 100% catalog coverage of gold（不是 100% per-view completeness）。
+- **5 新 gold builders** for STALE silvers：
+  - `tw_inst_futures_daily_snapshot` (6,561 rows, DuckDB COPY)
+  - `txo_daily_features_snapshot` (1,481 rows, DuckDB COPY)
+  - `tw_inst_market_daily_snapshot` (15 rows, DuckDB COPY)
+  - `bars_1m_daily_summary` (15.6M → **14,859 daily aggregates**, DuckDB GROUP BY)
+  - `macro_factors` (91,048 rows × 45 symbols, polars: ret/vol/atr factors for VIX/USDTWD/...)
+- **Re-audit 結果**：0 candidates → catalog **100% gold coverage 達成**
+- **`docs-site/ops/goldify-routine.md`** "ripe candidate" 定義從 3 條件（severity OK / no gold_paths / DESCRIBE-able）改成 (row_count>0 / no gold_paths / DESCRIBE-able)，完整度不再卡。
+
+Dashboard 變化：OK 25 → 28 / WARN 0 → 0 / STALE 6 → 11（新增 5 個 gold snapshot 條目繼承 silver 的 max_date，因此被 dashboard 標 STALE — 設計如此：gold 是「截至 silver max_date」的快照）/ 總 datasets 40 → 45 / catalog views 51 → 56。
+
+進度檔：`docs/progress-goldify-100-scope-fix.md`、`docs/progress-cleanup-97pct.md`、`docs/progress-goldify-100-2026-05-26-iter1.md`。
+
+## 2026-05-26 (early afternoon) — 新增 `/goldify-100` 一鍵 loop slash command
+
+Repo-scoped slash command `/goldify-100`（commits `9d73562..9f937f8`，3 commits）：
+
+- **`.claude/commands/goldify-100.md`** — `/goldify-100` 觸發即跑 audit → goldify → re-audit 直到 0 candidates 或 5 輪 cap / stuck
+- 與 `.claude/agents/goldify-100pct.md` 的分工：agent 是自然語言路由的「單輪 worker」；command 是「多輪 loop controller」。
+- `docs-site/ops/automation.md` 從 3-agent → 4-asset table
+
+亦於同日跑了該 command 的 iter1（commits `2c60fd8..c19b10c`）新增 3 個 gold：`chip_dist_factors`、`revenue_factors`、`accounting_raw_snapshot` (+ `_yearly`)。
+
+## 2026-05-26 (morning) — Cleanup 97% views: dashboard tolerance 校準 + STALE silver rebuild
+
+針對 dashboard 上一票卡在 97%（3d lag）的 view 做分類處理（commits `a4f3308..d759848`，4 commits）：
+
+- 9 個 derived gold 從 silver 5/22 rebuild 到 5/25：`stock_factor_daily` (+2.7K)、`inst_flow_factors`、`margin_factors`、`futures_large_trader_factors` (+35K！)、`futures_inst_factors`、`futures_bar_factors` 等
+- `extend_continuous.py` 從 bars_1d 衍生 TX/MTX continuous 5/22 → 5/25
+- **Dashboard category tolerance 校準**：
+  - 新增 `weekly` category (7d OK / 14d WARN)：`tw_chip_dist_daily` 從 daily-trading → weekly（TEJ APISHRACTW 是週公告）
+  - monthly OK threshold 15d → 60d（fiscal_month date_col 結構性 lag ~30d）
+  - quarterly OK 60d → 100d（Q1 publish 後 lag ~45d 才算 fresh）
+  - `fundamentals_pit` category derived → quarterly（pub cadence 跟上游 fundamentals_q）
+- `fetch_tej.py --table chip_dist --append-since-silver` refresh：+46K 列到 silver（但 TEJ 來源本身只到 5/22）
+- Dashboard summary `OK 13 → 25 / WARN 4 → 0` 起跳
+
+進度檔：`docs/progress-cleanup-97pct.md`。
+
 ## 2026-05-26 — Cron 自動 daily_refresh 證實生效（昨日首次完整 4 步綠燈）
 
 不是新功能、而是「自動化證實生效」的里程碑：
