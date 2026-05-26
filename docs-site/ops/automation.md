@@ -1,11 +1,12 @@
 # 自動化（Agents & 全域 skill）
 
-QUANTDATA 周邊有三個自動化資產，都是「人類常忘記做的尾段」打包成可重用的觸發：
+QUANTDATA 周邊有四個自動化資產，都是「人類常忘記做的尾段」打包成可重用的觸發：
 
 | 名稱 | 範圍 | 何時用 |
 |---|---|---|
 | `incremental-crawler` | QUANTDATA repo-scoped agent | 跑增量爬蟲 / 抓最新 TEJ / refresh FinMind 時 |
-| `goldify-100pct` | QUANTDATA repo-scoped agent | silver 滿格 100% 完整度但還沒升級到 gold 時。詳見 [Goldify routine](goldify-routine.md) |
+| `goldify-100pct` | QUANTDATA repo-scoped agent | silver 滿格 100% 完整度但還沒升級到 gold 時（單次）。詳見 [Goldify routine](goldify-routine.md) |
+| `/goldify-100` | QUANTDATA repo-scoped slash command | 同上但**含 loop**：跑完一輪再 audit，直到 0 candidates 或卡住。最多 5 輪。詳見 [Goldify routine](goldify-routine.md) |
 | `/update-doc` | 全域 slash command（所有 repo 可用） | 文檔網站落後最新 commit 時 |
 
 ---
