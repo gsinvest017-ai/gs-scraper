@@ -1050,6 +1050,161 @@ def materialize_accounting_snapshot() -> dict:
     return info
 
 
+def _materialize_view_snapshot(view: str, dest_name: str, source_tag: str) -> dict:
+    """Generic helper: COPY a catalog view to gold/features/<dest_name>.parquet."""
+    import duckdb
+    from ..common.paths import CATALOG_DB
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    dest = GOLD / "features" / f"{dest_name}.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"COPY (SELECT * FROM {view}) TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)")
+    rows = con.execute(f"SELECT count(*) FROM read_parquet('{dest}')").fetchone()[0]
+    con.close()
+    info = {"rows": rows, "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source=source_tag, table=f"gold/features/{dest_name}",
+        bronze_file=f"catalog:{view}",
+        rows_in=rows, rows_out=rows, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[{dest_name}] {info}")
+    return info
+
+
+def materialize_tw_inst_futures_daily_snapshot() -> dict:
+    """TAIFEX 三大法人期貨 daily snapshot (6.5K rows, scraper-direct silver)."""
+    return _materialize_view_snapshot(
+        "tw_inst_futures_daily", "tw_inst_futures_daily_snapshot",
+        "catalog_derived",
+    )
+
+
+def materialize_txo_daily_features_snapshot() -> dict:
+    """TXO 14-col daily features snapshot (1.5K rows)."""
+    return _materialize_view_snapshot(
+        "txo_daily_features", "txo_daily_features_snapshot",
+        "catalog_derived",
+    )
+
+
+def materialize_tw_inst_market_daily_snapshot() -> dict:
+    """市場層級三大法人 aggregate snapshot (15 rows)."""
+    return _materialize_view_snapshot(
+        "tw_inst_market_daily", "tw_inst_market_daily_snapshot",
+        "catalog_derived",
+    )
+
+
+def build_bars_1m_daily_summary() -> dict:
+    """Per-day OHLCV aggregation from bars_1m. 1m → 1d collapse cuts 15.6M rows to ~50K daily summaries.
+
+    Output: gold/features/bars_1m_daily_summary.parquet
+            keyed by (trading_date, asset_class, symbol)
+    """
+    import duckdb
+    from ..common.paths import CATALOG_DB
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    dest = GOLD / "features" / "bars_1m_daily_summary.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"""
+        COPY (
+            SELECT
+                trading_date,
+                asset_class,
+                symbol,
+                COUNT(*) AS bars_count,
+                MIN(ts_utc) AS first_ts,
+                MAX(ts_utc) AS last_ts,
+                FIRST(open ORDER BY ts_utc) AS day_open,
+                MAX(high) AS day_high,
+                MIN(low) AS day_low,
+                LAST(close ORDER BY ts_utc) AS day_close,
+                SUM(volume) AS day_volume,
+                AVG(close) AS day_avg_close,
+                'qd_gold_bars_1m_daily_summary_v1' AS source
+            FROM bars_1m
+            WHERE close IS NOT NULL
+            GROUP BY 1, 2, 3
+            ORDER BY 2, 3, 1
+        ) TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)
+    """)
+    rows = con.execute(f"SELECT count(*) FROM read_parquet('{dest}')").fetchone()[0]
+    con.close()
+    info = {"rows": rows, "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="catalog_derived", table="gold/features/bars_1m_daily_summary",
+        bronze_file="catalog:bars_1m",
+        rows_in=rows, rows_out=rows, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[bars_1m_daily_summary] {info}")
+    return info
+
+
+def build_macro_factors() -> dict:
+    """Macro time-series factors from silver/macro/macro_daily.parquet.
+
+    Per-symbol mom + vol + atr14, similar to stock_factor_daily but for
+    VIX / USDTWD / WTI / 10Y etc.
+
+    Output: gold/features/macro_factors.parquet  (keyed by trading_date, symbol)
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    src = SILVER / "macro" / "macro_daily.parquet"
+    if not src.exists():
+        console.log(f"[red]missing {src}[/red]")
+        return {}
+    df = pl.read_parquet(src).select([
+        "trading_date", "symbol", "open", "high", "low", "close", "adj_close", "volume",
+    ])
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.filter(pl.col("close").is_not_null()).sort(["symbol", "trading_date"])
+
+    df = df.with_columns([
+        pl.col("close").log().diff().over("symbol").alias("log_ret"),
+    ])
+
+    out = df.with_columns([
+        (pl.col("close") / pl.col("close").shift(1).over("symbol") - 1).alias("ret_1d"),
+        (pl.col("close") / pl.col("close").shift(5).over("symbol") - 1).alias("ret_5d"),
+        (pl.col("close") / pl.col("close").shift(20).over("symbol") - 1).alias("ret_20d"),
+        (pl.col("close") / pl.col("close").shift(60).over("symbol") - 1).alias("ret_60d"),
+        pl.col("log_ret").rolling_std(window_size=20).over("symbol").alias("vol_20d"),
+        pl.col("log_ret").rolling_std(window_size=60).over("symbol").alias("vol_60d"),
+        (pl.col("high") - pl.col("low")).rolling_mean(window_size=14).over("symbol").alias("atr_14"),
+    ]).select([
+        "trading_date", "symbol", "close", "adj_close",
+        "ret_1d", "ret_5d", "ret_20d", "ret_60d",
+        "vol_20d", "vol_60d", "atr_14",
+    ]).with_columns([
+        pl.lit("qd_gold_macro_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "macro_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "symbols": out["symbol"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/macro_factors",
+        bronze_file="silver/macro/macro_daily.parquet",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[macro_factors] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": copy_txo_daily_features(),
@@ -1069,6 +1224,11 @@ def build_all() -> dict:
         "chip_dist_factors": build_chip_dist_factors(),
         "revenue_factors": build_revenue_factors(),
         "accounting_snapshot": materialize_accounting_snapshot(),
+        "tw_inst_futures_daily_snapshot": materialize_tw_inst_futures_daily_snapshot(),
+        "txo_daily_features_snapshot": materialize_txo_daily_features_snapshot(),
+        "tw_inst_market_daily_snapshot": materialize_tw_inst_market_daily_snapshot(),
+        "bars_1m_daily_summary": build_bars_1m_daily_summary(),
+        "macro_factors": build_macro_factors(),
     }
     return summary
 
