@@ -76,10 +76,10 @@ Outputs:
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + 因子設計 | ⏳ |
-| **M2** | 3 個 builder 進 derived.py + 跑 | ⏳ |
-| **M3** | registry + catalog 註冊 | ⏳ |
-| **M4** | rebuild catalog + dashboard + audit re-check | ⏳ |
+| **M1** | 本進度檔 + 因子設計 | ✅ |
+| **M2** | 3 個 builder 進 derived.py + 跑 | ✅ |
+| **M3** | registry + catalog 註冊 | ✅ |
+| **M4** | rebuild catalog + dashboard + audit re-check | ✅ |
 
 ## Fallback
 
@@ -88,4 +88,48 @@ Outputs:
 
 ## 完成日誌
 
-（M2-M4 完成後追加）
+### M2 — 3 builders 全綠
+
+| gold | rows | stocks/scope | size | elapsed |
+|---|---:|---|---|---|
+| `chip_dist_factors` | 481,450 | 2,428 stocks | (zstd) | 0.6s |
+| `revenue_factors` | 95,061 | 1,971 stocks | (zstd) | 0.2s |
+| `accounting_raw_snapshot` | 202,688 | 1,998 stocks | (zstd) | 4.0s |
+| `accounting_raw_yearly` | 5 | per-year aggregate（2022-2026）| - | (同上) |
+
+Silver multi-ingest dedup 在每個 builder 都跑了一遍。chip_dist 從 silver 704K → gold 481K 是因為**很多 stock 4 週前沒資料** → `shift(4)` 後產生 NULL → 但保留所有列其實沒過濾 → 應該是 polars `unique` 去掉 silver 700K→482K（dedup ~30%）。等下面確認列數。
+
+實際 silver row count 704K → gold 481K，原因：silver 含多次 ingest 後重覆列；dedup keep_last 後剩 482K。原 silver 真實 unique (stock, trading_date) 約 482K，這對得起來。
+
+### M3 — registry + catalog
+
+`scripts/gap_report.py`：
+- `tw_chip_dist_daily.gold_paths` += `gold/features/chip_dist_factors.parquet`
+- `revenue_monthly.gold_paths` += `gold/features/revenue_factors.parquet`
+- `accounting_raw.gold_paths` += `gold/features/accounting_raw_snapshot.parquet` + `_yearly.parquet`
+- 新增 3 個 Dataset 條目：`chip_dist_factors` (P1 weekly)、`revenue_factors` (P0 monthly)、`accounting_raw_snapshot` (P2 quarterly)
+
+`src/qd_ingest/common/catalog.py`：4 個新 view 註冊（含 yearly aggregate）。catalog `SHOW TABLES` 變 51 個（含 9 個 finmind/qc 還原 view）。
+
+### M4 — rebuild + dashboard + audit re-check
+
+`OK=25 → 28` (+3 新 gold view rows)。`SHOW TABLES` 51 個。
+
+**Audit re-check 結果**：
+```
+✅ goldify_audit: no 100%-complete views are missing gold. Catalog is fully goldified.
+```
+
+→ **loop converged after iter1** (n=3 → n=0)。
+
+## /goldify-100 loop summary
+
+| iter | start cands | end cands | new gold |
+|---|---:|---:|---|
+| 1 | 3 | 0 | chip_dist_factors / revenue_factors / accounting_raw_snapshot(+yearly) |
+
+✅ **Converged**。Push trigger 在下一步。
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>
