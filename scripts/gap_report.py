@@ -97,7 +97,10 @@ DATASETS = [
             "個股三大法人買賣超", "P0",
             raw_paths=("../RAW_SOURCES/TEJ資料/TWN_EWTINST1_三大法人.csv",),
             silver_paths=("silver/flows/tw_inst_stock_daily/**/*.parquet",),
-            gold_paths=("gold/features/inst_flow_factors.parquet",)),
+            gold_paths=(
+                "gold/features/inst_flow_factors.parquet",
+                "gold/features/market_inst_aggregated.parquet",
+            )),
     Dataset("tw_margin_daily",         "trading_date", "daily-trading",
             "fetch_tej.py --table margin --append-since-silver",
             "融資融券餘額", "P0",
@@ -235,7 +238,10 @@ DATASETS = [
             "(市場層級三大法人 — 上游應由 tw_inst_stock_daily aggregated 而來)",
             "市場層級三大法人彙總", "P2",
             silver_paths=("silver/flows/tw_inst_market_daily/**/*.parquet",),
-            gold_paths=("gold/features/tw_inst_market_daily_snapshot.parquet",)),
+            gold_paths=(
+                "gold/features/tw_inst_market_daily_snapshot.parquet",
+                "gold/features/market_inst_aggregated.parquet",
+            )),
 
     # --- FinMind bronze snapshot (one-shot dump 2026-05-18, not auto-refreshed) ---
     Dataset("finmind_stock_price_norm",     "trading_date", "snapshot",
@@ -343,6 +349,10 @@ DATASETS = [
             "python -m qd_ingest.sources.derived  (build_macro_factors)",
             "Macro time-series factors（VIX/USDTWD/... 之 ret/vol/atr）", "P1",
             gold_paths=("gold/features/macro_factors.parquet",)),
+    Dataset("market_inst_aggregated",  "trading_date", "daily-trading",
+            "python -m qd_ingest.sources.derived  (build_market_inst_aggregated)",
+            "市場層級三大法人彙總（從 tw_inst_stock_daily 衍生，含 lots + hold_pct mean）", "P1",
+            gold_paths=("gold/features/market_inst_aggregated.parquet",)),
 ]
 
 

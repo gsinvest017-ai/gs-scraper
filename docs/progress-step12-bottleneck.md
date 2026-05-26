@@ -31,10 +31,10 @@
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + inspection | ⏳ |
-| **M2** | gold builder `build_market_inst_aggregated()`；backlink 2 個 silver；register catalog | ⏳ |
-| **M3** | `scripts/extend_stock_futures_continuous.py` from bars_1d；run | ⏳ |
-| **M4** | catalog rebuild + dashboard + strict mkdocs + commit + push | ⏳ |
+| **M1** | 本進度檔 + inspection | ✅ |
+| **M2** | gold builder `build_market_inst_aggregated()`；backlink 2 個 silver；register catalog | ✅ |
+| **M3** | `scripts/extend_stock_futures_continuous.py` from bars_1d；run | ✅ |
+| **M4** | catalog rebuild + dashboard + strict mkdocs + commit + push | ✅ |
 
 ## Fallback
 
@@ -44,4 +44,52 @@
 
 ## 完成日誌
 
-（M2-M4 後追加）
+### M2 — `build_market_inst_aggregated()`
+
+加進 `src/qd_ingest/sources/derived.py`：
+- 從 `silver/flows/tw_inst_stock_daily/year=*/*.parquet` 跑 `GROUP BY trading_date` 聚合
+- 列數：4,015 days（2010-2026）；max_date **2026-05-25**（cron 18:10 跑完 silver 是 5/26 但這次 builder 跑時 silver 還是 5/25）
+- elapsed: 6.4 sec
+- 14 個欄位：foreign/sitc/dealer × {net,buy,sell}_lot + total_net + 3 個 hold_pct mean + stocks_count
+
+### M3 — `extend_stock_futures_continuous.py`
+
+新增 `scripts/extend_stock_futures_continuous.py`，類似 `extend_continuous.py` 但 for 個股期：
+- 從 `bars_1d` 過濾 `asset_class='tw_futures' AND length(symbol)=3 AND symbol NOT IN (38 個指數/商品期 codes)`
+- 每 (futures_code, trading_date) 取 max(volume) front contract
+- 加 **11,093 列 / 70 個 futures_codes**；max_date **2026-04-10 → 2026-05-26**！
+
+注意：cron 在 17:30 跑完後 bars_1d.tw_futures max 已經到 5/26，所以這批 extension 自動把今天的資料也拉進來。
+
+新列 source='qd_stock_futures_continuous_extended_from_bars1d'，`underlying_code`/`name`/`is_rollover`/`hist_high`/`hist_low` 為 NULL（沒有 clean source mapping），不影響大多數使用情境。
+
+### M4 — registry + catalog + dashboard
+
+`scripts/gap_report.py`：
+- `tw_inst_stock_daily.gold_paths` += `gold/features/market_inst_aggregated.parquet`
+- `tw_inst_market_daily.gold_paths` += `gold/features/market_inst_aggregated.parquet`
+- 新增 `Dataset("market_inst_aggregated", "trading_date", "daily-trading", ..., P1)`
+
+`src/qd_ingest/common/catalog.py`：註冊 `market_inst_aggregated` view。
+
+Dashboard 變化：
+
+| 指標 | M3 末 | M4 末 |
+|---|---|---|
+| OK | 28 | **30** (+2) |
+| WARN | 0 | 0 |
+| STALE | 11 | **10** (-1，stock_futures_continuous_d 從 STALE 4/10 → OK 5/26) |
+| INFO | 5 | 5 |
+| EMPTY | 1 | 1 |
+| Total | 45 | **46** (+1 market_inst_aggregated) |
+
+**核心成果**：
+- 1 個 view 從 STALE → OK（`stock_futures_continuous_d`，自動拉到今天的資料）
+- 1 個新 P1 gold view 從零出現（`market_inst_aggregated`，4015 天從 2010 開始）
+- `tw_inst_market_daily` silver 仍 STALE 4/16（TWSE 原始來源不變），但 gold backlink 多了個 fresh 的 `market_inst_aggregated`
+
+剩下 10 STALE 都是 Group 1（沒寫 scraper）：tw_inst_futures_daily (TAIFEX scraper)、macro_daily (yfinance)、bars_1m (manual 1m)、txo_daily_features (TXO tick)、tw_inst_market_daily (TWSE 原版)，加上他們對應的 5 個 gold snapshot 鏡像。需要花較大工程量寫 scraper 才能消，留給後續批次。
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/gap_dashboard.html>
