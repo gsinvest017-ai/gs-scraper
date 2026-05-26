@@ -866,6 +866,190 @@ def materialize_finmind_canonical() -> dict:
     return info
 
 
+def build_chip_dist_factors() -> dict:
+    """Weekly holder-distribution factors from tw_chip_dist_daily.
+
+    Silver rows are weekly snapshots (typically Fri). 4w-window = shift(4).
+    Captures the 大戶/散戶 dynamic + pledged ratio.
+
+    Output: gold/features/chip_dist_factors.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "flows" / "tw_chip_dist_daily" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "trading_date", "stock_id",
+        "holdings_total_kshare", "pledged_kshare",
+        "pct_under_400", "pct_over_1000",
+        "holders_under_400", "holders_over_1000",
+        "ingestion_ts",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.sort(["stock_id", "trading_date", "ingestion_ts"]).unique(
+        subset=["stock_id", "trading_date"], keep="last"
+    ).drop("ingestion_ts").sort(["stock_id", "trading_date"])
+
+    out = df.with_columns([
+        (pl.col("pct_over_1000")
+            - pl.col("pct_over_1000").shift(4).over("stock_id")).alias("large_holder_pct_chg_4w"),
+        (pl.col("pct_under_400")
+            - pl.col("pct_under_400").shift(4).over("stock_id")).alias("retail_pct_chg_4w"),
+        (pl.col("pct_over_1000")
+            / pl.when(pl.col("pct_under_400") == 0).then(None).otherwise(pl.col("pct_under_400"))
+        ).alias("concentration_ratio"),
+        (pl.col("pledged_kshare").cast(pl.Float64)
+            / pl.when(pl.col("holdings_total_kshare") == 0).then(None)
+              .otherwise(pl.col("holdings_total_kshare").cast(pl.Float64))
+            * 100.0
+        ).alias("pledged_pct"),
+        (pl.col("holders_over_1000")
+            - pl.col("holders_over_1000").shift(4).over("stock_id")).alias("large_holder_count_chg_4w"),
+    ]).select([
+        "trading_date", "stock_id",
+        "pct_under_400", "pct_over_1000",
+        "large_holder_pct_chg_4w", "retail_pct_chg_4w",
+        "concentration_ratio", "pledged_pct",
+        "large_holder_count_chg_4w",
+    ]).with_columns([
+        pl.lit("qd_gold_chip_dist_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "chip_dist_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "stocks": out["stock_id"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/chip_dist_factors",
+        bronze_file="silver/flows/tw_chip_dist_daily",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[chip_dist_factors] {info}")
+    return info
+
+
+def build_revenue_factors() -> dict:
+    """Monthly revenue factors from revenue_monthly silver.
+
+    Silver already has yoy/mom/ttm/3m growth; gold adds acceleration + 24m
+    z-score + persistence.
+
+    Output: gold/features/revenue_factors.parquet
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    glob = str(SILVER / "fundamentals" / "revenue_monthly" / "year=*" / "*.parquet")
+    df = pl.scan_parquet(glob).select([
+        "stock_id", "fiscal_month", "publish_date",
+        "revenue_monthly_ktwd", "revenue_ttm_ktwd",
+        "revenue_yoy_growth_pct", "revenue_mom_growth_pct",
+        "revenue_3m_growth_pct", "revenue_ttm_growth_pct",
+        "ingestion_ts",
+    ]).collect()
+    if df.schema["fiscal_month"] != pl.Date:
+        df = df.with_columns(pl.col("fiscal_month").cast(pl.Date))
+    df = df.sort(["stock_id", "fiscal_month", "ingestion_ts"]).unique(
+        subset=["stock_id", "fiscal_month"], keep="last"
+    ).drop("ingestion_ts").sort(["stock_id", "fiscal_month"])
+
+    mean24 = pl.col("revenue_3m_growth_pct").rolling_mean(window_size=24).over("stock_id")
+    std24  = pl.col("revenue_3m_growth_pct").rolling_std(window_size=24).over("stock_id")
+    mean24_ttm = pl.col("revenue_ttm_growth_pct").rolling_mean(window_size=24).over("stock_id")
+    std24_ttm  = pl.col("revenue_ttm_growth_pct").rolling_std(window_size=24).over("stock_id")
+
+    out = df.with_columns([
+        (pl.col("revenue_yoy_growth_pct")
+            - pl.col("revenue_yoy_growth_pct").shift(1).over("stock_id")
+        ).alias("revenue_yoy_acceleration"),
+        ((pl.col("revenue_3m_growth_pct") - mean24) / std24).alias("revenue_3m_zscore_24m"),
+        ((pl.col("revenue_ttm_growth_pct") - mean24_ttm) / std24_ttm).alias("revenue_ttm_zscore_24m"),
+        (pl.col("revenue_mom_growth_pct") > 0).cast(pl.Float64)
+            .rolling_mean(window_size=6).over("stock_id").alias("revenue_mom_persistence_6m"),
+    ]).select([
+        "fiscal_month", "stock_id", "publish_date",
+        "revenue_monthly_ktwd", "revenue_ttm_ktwd",
+        "revenue_yoy_growth_pct", "revenue_mom_growth_pct",
+        "revenue_yoy_acceleration",
+        "revenue_3m_zscore_24m", "revenue_ttm_zscore_24m",
+        "revenue_mom_persistence_6m",
+    ]).with_columns([
+        pl.lit("qd_gold_revenue_factors_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "revenue_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+    info = {"rows": out.height, "stocks": out["stock_id"].n_unique(),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/revenue_factors",
+        bronze_file="silver/fundamentals/revenue_monthly",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[revenue_factors] {info}")
+    return info
+
+
+def materialize_accounting_snapshot() -> dict:
+    """Materialize accounting_raw view as a gold parquet for portability.
+
+    The silver has 121 columns (mostly Chinese names). This builder is a
+    direct COPY via DuckDB so downstream tools don't need to glob the
+    hive-partitioned silver.
+
+    Outputs:
+      gold/features/accounting_raw_snapshot.parquet
+      gold/features/accounting_raw_yearly.parquet
+    """
+    import duckdb
+    from ..common.paths import CATALOG_DB
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+
+    dest = GOLD / "features" / "accounting_raw_snapshot.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"COPY (SELECT * FROM accounting_raw) TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)")
+    rows = con.execute(f"SELECT count(*) FROM read_parquet('{dest}')").fetchone()[0]
+
+    dest_y = GOLD / "features" / "accounting_raw_yearly.parquet"
+    con.execute(f"""
+        COPY (
+            SELECT
+                EXTRACT(year FROM fiscal_month)::INT AS year,
+                count(*) AS rows,
+                count(DISTINCT stock_id) AS stocks,
+                avg(資產總額) AS mean_total_assets,
+                avg(負債總額) AS mean_total_liabilities,
+                avg(現金及約當現金) AS mean_cash
+            FROM accounting_raw
+            GROUP BY 1
+            ORDER BY 1
+        ) TO '{dest_y}' (FORMAT PARQUET, COMPRESSION ZSTD)
+    """)
+    rows_y = con.execute(f"SELECT count(*) FROM read_parquet('{dest_y}')").fetchone()[0]
+    con.close()
+
+    info = {"snapshot_rows": rows, "yearly_rows": rows_y,
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="catalog_derived", table="gold/features/accounting_raw_snapshot",
+        bronze_file="catalog:accounting_raw",
+        rows_in=rows, rows_out=rows, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[accounting_raw_snapshot] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": copy_txo_daily_features(),
@@ -882,6 +1066,9 @@ def build_all() -> dict:
         "futures_bar_factors": build_futures_bar_factors(),
         "qc_snapshot": materialize_qc_snapshot(),
         "finmind_canonical": materialize_finmind_canonical(),
+        "chip_dist_factors": build_chip_dist_factors(),
+        "revenue_factors": build_revenue_factors(),
+        "accounting_snapshot": materialize_accounting_snapshot(),
     }
     return summary
 
