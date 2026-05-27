@@ -1,7 +1,7 @@
 """Derived gold layer.
 
 Inputs:
-- SUPPLEMENT/DERIVED/txo_daily_features.parquet   -> gold/features/txo_daily_features.parquet (copy + normalize)
+- finmind_txo_option_daily (FinMind TaiwanOptionDaily) -> gold/features/txo_daily_features.parquet (build_txo_daily_features)
 - SUPPLEMENT/DERIVED/cross_market_features.parquet -> gold/features/cross_market_features.parquet (copy + repair index)
 - silver/bars/bars_1d (asset_class=tw_stock) -> gold/features/stock_factor_daily.parquet  (compute mom + vol factors)
 """

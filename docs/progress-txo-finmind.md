@@ -59,6 +59,37 @@
 - FinMind option 抓不到 → 維持舊 silver partition，non-fatal。
 - 全史 backfill 太久 → 先做增量（補 2026-04-01→今的洞）證明 pipeline，全史另跑。
 
+## 決策
+
+使用者選 **選項 1：重新定義 + 全史重算**（標準 BS 方法）。
+
 ## 完成日誌
 
-（決策後追加）
+### M2 — fetch_finmind 擴充 + bronze view（commit `965750d`）
+
+- `fetch_finmind.py` 加 `OPTION_DATASETS`（`TaiwanOptionDaily`→`taiwan_option_daily`, data_id=TXO）+ `by_range` kind（range endpoint 帶 data_id 會回整段，year-chunk）。
+- 全史 backfill：**2,844,692 rows**（2020-01-02→2026-05-27），snapshot 3.05GB。
+- `restore_finmind_views.py` 註冊 `finmind_txo_option_daily` view（best-effort，舊 snapshot 無此表）。
+
+### M3 — `build_txo_daily_features()`（commit `92c4fbb`）
+
+- 讀 `finmind_txo_option_daily`（`trading_session='position'` —— 該 session 才同時有 volume + OI；`after_market` OI=0）。
+- **10 個乾淨欄**：total call/put vol+oi（全 contract 加總）、pcr_vol/oi。
+- **front monthly contract**（6-digit contract_date，3rd-Wed expiry ≥ date 取最近）上算：
+  - **spot = put-call parity**（|call_settle − put_settle| 最小的 strike → spot = K + C − P）。本資料 index scale ≈ 43,900。
+  - **max_pain**：對每個 strike 算 option-holder 總內含值，取最小 → strike；`max_pain_dist = (max_pain−spot)/spot`。
+  - **atm_iv_proxy**：最接近 spot 的 strike，call+put BS-IV（bisection, r=1.5%, T=到 3rd-Wed/365）平均。**年化 ~19% mean**（舊外部值 0.018 非年化）。
+  - **iv_skew_proxy**：OTM put(~spot×0.95) IV − OTM call(~spot×1.05) IV，~0.03（正常 equity skew）。
+- `mxf_close` ← `mtx_continuous_d.close`（join key 需 coerce Timestamp→date；MXF 落後 1 天故最新 2 日 NaN）。
+- 全史重算 **1,552 日**（52s）。`build_all()` 的 `"txo"` 改呼叫新 builder → 已透過 daily_refresh step 3.7 自動接上（fetch 在 step 1.7，view restore 在 3.5）。
+
+### M4 — materialize + dashboard
+
+- `materialize_txo_daily_features_snapshot()` → 1,552 rows。
+- gap_report registry note 更新（不再「無 auto-refresh」；category 維持 daily-trading）。
+- dashboard：**OK 39 → 41，STALE 6 → 4**。`txo_daily_features` + snapshot 兩 P2 全 OK（0d, 2026-05-27）。
+
+## 後續
+
+- 剩 STALE=4：`bars_1m`/`bars_1m_daily_summary`（#6，需付費源）+ `tw_inst_market_daily`/`_snapshot`（可由 tw_inst_stock_daily 聚合的 bonus）。
+- IV proxy 定義已寫死在 `build_txo_daily_features`（r=1.5%、±5% moneyness skew、front monthly）；如需改定義在該函式調整即可，全史會一致重算。
