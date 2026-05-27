@@ -17,15 +17,26 @@ flowchart TB
     L1["1. flock /tmp/quantdata_daily_refresh.lock<br/>防重入"]
     L2["2. 從 fish universal vars 載入 TEJAPI_KEY/BASE<br/>(若 unset)"]
     L3["3. fetch_tej.py --table all --append-since-silver<br/>CSV → bronze + silver delta"]
+    L35["3b. fetch_macro.py (yfinance, 45 symbols)<br/>SUPPLEMENT/*_daily.parquet（non-fatal）"]
     L4["4. qd-ingest tej-{stock,inst-stock,margin}<br/>silver bars/flows"]
+    L45["4b. python -m qd_ingest.sources.macro<br/>SUPPLEMENT → silver/macro/macro_daily.parquet"]
     L5["5. qd-ingest build-catalog<br/>(staging swap 若 UI lock 還在)"]
     L55["5.5 restore_finmind_views.py<br/>還原被 build-catalog 砍掉的 finmind_* + qc views"]
     L57["5.7 python -m qd_ingest.sources.derived<br/>重生全部 gold parquet (silver→gold)"]
     L6["6. gap_report.py --format all<br/>更新 docs/gap_dashboard.html + docs-site/ mirror"]
     L7["7. log 到 meta/audit/daily_refresh_YYYY-MM-DD.log"]
 
-    L1 --> L2 --> L3 --> L4 --> L5 --> L55 --> L57 --> L6 --> L7
+    L1 --> L2 --> L3 --> L35 --> L4 --> L45 --> L5 --> L55 --> L57 --> L6 --> L7
 ```
+
+!!! info "Step 1.5 / 2.5 — macro scraper（2026-05-27 加入）"
+
+    `macro_daily` silver 來自 `RAW_SOURCES/SUPPLEMENT/<cat>/*_daily.parquet`，過去沒有任何排程刷新，導致 `macro_daily` → `macro_factors` gold 長期 STALE。
+
+    - **Step 1.5**：`scripts/fetch_macro.py` 用 yfinance append-since-last 把 45 個 macro symbol（VIX / USDTWD / WTI / 美 10Y / SPX / SOX / 各國指數 / 商品 / 信用 ETF）刷到當日。標 **non-fatal** — Yahoo 可能 rate-limit 或從本機連不上，不該中止 TEJ 主線。`--dry-run` 時只印計畫。
+    - **Step 2.5**：`python -m qd_ingest.sources.macro` 把剛刷新的 SUPPLEMENT parquets aggregate 進 `silver/macro/macro_daily.parquet`。必須排在 step 3.7 derived rebuild 之前，`macro_factors` gold 才讀得到當日 macro。同樣 non-fatal。
+
+    手動補跑：`./.venv/bin/python scripts/fetch_macro.py`（可加 `--only VIX,SPY` 限定 symbol）→ `python -m qd_ingest.sources.macro` → `python -m qd_ingest.sources.derived`。
 
 !!! info "Step 3.7 — rebuild derived gold（2026-05-27 加入）"
 

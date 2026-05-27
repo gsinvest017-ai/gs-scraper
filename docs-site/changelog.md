@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-27 — yfinance macro scraper：解開 macro_daily → macro_factors 鏈（bottleneck #2）
+
+`macro_daily`（silver）原本停在上次手動 dump 的日期（19d STALE），因為沒有任何排程刷 `RAW_SOURCES/SUPPLEMENT/<cat>/*_daily.parquet`。新增一支 yfinance scraper 把 45 個 macro symbol（VIX / USDTWD / WTI / 美 10Y / SPX / SOX / 各國指數 / 商品 / 信用 ETF）刷到當日。
+
+- **`scripts/fetch_macro.py`**：顯式 `(category, stem) → yfinance ticker` map（45 個），append-since-last（讀現有 parquet 找 max date，只抓增量），寫前 `.bak` 備份。`--only` / `--full` / `--dry-run`。USDTWD 特例 schema（`usdtwd_*` 前綴）統一還原成標準 OHLCV。
+- **`src/qd_ingest/sources/macro.py`**：加 `__main__`，可 `python -m qd_ingest.sources.macro [--dry-run]` 把 SUPPLEMENT parquets aggregate 進 silver。
+- **`scripts/daily_refresh.sh`**：加 step 1.5（fetch_macro，non-fatal）+ step 2.5（macro→silver ingest），接在既有 step 3.7 derived rebuild 之前，讓 `macro_factors` gold 每天自動跟上。
+- 效果：首跑刷進 854 新 row，`macro_daily` / `macro_factors` 從 STALE → **OK（2026-05-27, 0d lag）**；dashboard OK 30 → 32。
+- `cross_market_features` 仍 EMPTY（來自手動 `SUPPLEMENT/DERIVED/` dump，非直接由 macro_daily 衍生）— 留 backlog，需另寫 cross-market builder。
+
+commit `19b29a4`（+ M1-M4 鏈）。進度檔：`docs/progress-macro-scraper.md`。
+
 ## 2026-05-27 — cron daily_refresh 加 derived gold rebuild step（關掉「衍生 gold 隔天落後」結構問題）
 
 bottleneck recap 發現最高槓桿的修補：`scripts/daily_refresh.sh` 原本只跑 fetch → ingest → build-catalog → restore_finmind → gap_report，**漏掉重生衍生 gold**。每天 TEJ silver 更新後，17 支 derived gold parquet 仍停在上次手動 `build_all()` 的日期 → 隔天 dashboard 上 `stock_factor_daily` / `inst_flow_factors` / `margin_factors` / `futures_*` / `market_inst_aggregated` 等全變 INFO（lag）。

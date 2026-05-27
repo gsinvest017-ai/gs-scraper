@@ -59,10 +59,10 @@ USDTWD 統一改寫成標準 schema —— macro.py 的 `_normalize_one` 對「s
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + 映射設計 | ⏳ |
-| **M2** | `scripts/fetch_macro.py` | ⏳ |
-| **M3** | pip install yfinance + 跑 fetch + re-ingest macro + rebuild macro_factors + 驗 dashboard | ⏳ |
-| **M4** | 接進 daily_refresh.sh + docs + commit + push | ⏳ |
+| **M1** | 本進度檔 + 映射設計 | ✅ |
+| **M2** | `scripts/fetch_macro.py` | ✅ |
+| **M3** | pip install yfinance + 跑 fetch + re-ingest macro + rebuild macro_factors + 驗 dashboard | ✅ |
+| **M4** | 接進 daily_refresh.sh + docs + commit + push | ✅ |
 
 ## Fallback
 
@@ -72,4 +72,32 @@ USDTWD 統一改寫成標準 schema —— macro.py 的 `_normalize_one` 對「s
 
 ## 完成日誌
 
-（M2-M4 後追加）
+### M2 — `scripts/fetch_macro.py`（commit `5bf1683`）
+
+- 顯式 45 個 `(category, stem) → yf ticker` map（不靠規則推導）
+- `_existing_frame()` 還原現有 parquet（USDTWD `usdtwd_*` 前綴 → 標準 OHLCV），`_normalize_yf()` 攤平 yfinance MultiIndex cols + rename 成小寫
+- `refresh_one()` append-since-last + 寫前 `.bak`；`import yfinance` 移到 dry-run early-return 之後（dry-run 不需裝 yfinance）
+- CLI：`--only` / `--full` / `--dry-run`
+
+### M3 — 跑 + re-ingest + 驗 dashboard
+
+- `pip install yfinance`（1.4.0）
+- full 跑：**45 ok / 0 failed / 854 rows added**，所有 SUPPLEMENT parquet 刷到 max date 2026-05-26/05-27
+- `python -m qd_ingest.sources.macro` → silver `macro_daily` 91,048 → **91,922 rows**
+- `build_macro_factors()` → gold `macro_factors` 91,922 rows × 45 symbols
+- rebuild catalog + restore_finmind + regen dashboard：`macro_daily` / `macro_factors` 從 STALE → **OK（2026-05-27, 0d）**；dashboard **OK 30 → 32, STALE 10 → 8**
+
+### M4 — 接 cron + docs（commit `19b29a4` + M4b docs）
+
+- `src/qd_ingest/sources/macro.py` 加 `__main__`（`python -m qd_ingest.sources.macro [--dry-run]`）
+- `scripts/daily_refresh.sh`：
+  - **step 1.5** fetch_macro.py（吃 `FETCH_EXTRA` 的 `--dry-run`，non-fatal）
+  - **step 2.5** macro→silver ingest（排在 step 3.7 derived rebuild 前，non-fatal）
+  - header step 列表更新
+- `bash -n` OK；`--dry-run` 全程 rc=0（step 1.5 跑到，ingest 正確被 skip）
+- docs：`docs-site/changelog.md` 新 entry + `docs-site/ops/daily-refresh.md` mermaid 加 L35/L45 節點 + macro info box
+- `mkdocs build --strict` PASS
+
+## 已知 backlog
+
+- `cross_market_features`（P2, EMPTY）：來自手動 `SUPPLEMENT/DERIVED/` dump，date 欄 NULL，不直接由 macro_daily 衍生 → 需另寫 cross-market builder（從 VIX/SPY/USDTWD + TAIEX 算 beta/corr/spread）。本輪不碰。
