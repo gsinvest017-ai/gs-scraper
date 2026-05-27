@@ -287,10 +287,16 @@
           });
         });
       }
+      // dark theme to match the page + gs-zipline-tej dashboard
+      const axis = { gridcolor: '#2a323e', linecolor: '#2a323e', zerolinecolor: '#2a323e', tickfont: { color: '#7d8590' } };
       Plotly.newPlot('plot', traces, {
         margin: { t: 30, r: 20, b: 40, l: 60 },
-        xaxis: { title: x },
-        yaxis: { title: ys.join(', ') },
+        paper_bgcolor: '#161c24',
+        plot_bgcolor: '#161c24',
+        font: { color: '#e6edf3' },
+        xaxis: { title: x, ...axis },
+        yaxis: { title: ys.join(', '), ...axis },
+        legend: { font: { color: '#e6edf3' } },
         showlegend: true,
       }, { responsive: true });
     });
