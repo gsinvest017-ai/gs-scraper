@@ -9,7 +9,9 @@
 #   1. flock prevents concurrent runs (no-op if another instance still running)
 #   2. Auto-sources TEJAPI_KEY/BASE from fish universal vars if unset
 #   3. fetch_tej --table all --append-since-silver  → CSV+silver-parquet
+#   3b. fetch_macro.py (yfinance, 45 symbols) → SUPPLEMENT/*_daily.parquet
 #   4. qd-ingest tej-{stock,inst-stock,margin} → silver bars/flows
+#   4b. python -m qd_ingest.sources.macro → silver/macro/macro_daily.parquet
 #   5. qd-ingest build-catalog (staging swap if UI lock held)
 #   6. python -m qd_ingest.sources.derived → rebuild all gold parquet (silver→gold)
 #   7. restore finmind/qc views + regen gap dashboard
@@ -113,6 +115,14 @@ if ! "$VENV_PY" "$REPO/scripts/fetch_tej.py" \
 fi
 log INFO "step 1/3 done"
 
+# ---- 1.5 Fetch macro (yfinance) -----------------------------------------
+# Refreshes RAW_SOURCES/SUPPLEMENT/<cat>/*_daily.parquet from Yahoo Finance so
+# macro_daily silver (→ macro_factors gold) can advance. Non-fatal: Yahoo may
+# rate-limit / be unreachable from this host; that must not abort the TEJ path.
+log INFO "step 1.5: fetch_macro.py (yfinance, 45 symbols) ${FETCH_EXTRA[*]:-}"
+"$VENV_PY" "$REPO/scripts/fetch_macro.py" "${FETCH_EXTRA[@]}" >> "$LOG" 2>&1 || \
+    log WARN "fetch_macro.py failed (rc=$?) — non-fatal; macro_daily may lag"
+
 if [[ "$DRY_RUN" == "1" ]]; then
     log INFO "==== daily_refresh DRY-RUN OK (skipped ingest + catalog) ===="
     exit 0
@@ -139,6 +149,14 @@ ingest_one() {
 ingest_one "tej-stock"      "TWN_EWPRCD_股價.csv"      || exit 2
 ingest_one "tej-inst-stock" "TWN_EWTINST1_三大法人.csv" || exit 2
 ingest_one "tej-margin"     "TWN_EWGIN_融資融券.csv"    || exit 2
+
+# ---- 4.5 Ingest macro to silver -----------------------------------------
+# Aggregate the SUPPLEMENT parquets (just refreshed in step 1.5) into
+# silver/macro/macro_daily.parquet. Must run before step 3.7 so the derived
+# rebuild picks up fresh macro rows into macro_factors gold. Non-fatal.
+log INFO "step 2.5: ingest macro → silver (python -m qd_ingest.sources.macro)"
+"$VENV_PY" -m qd_ingest.sources.macro >> "$LOG" 2>&1 || \
+    log WARN "macro ingest failed (rc=$?) — non-fatal; macro_factors may lag"
 log INFO "step 2/3 done"
 
 # ---- 5. Catalog rebuild --------------------------------------------------

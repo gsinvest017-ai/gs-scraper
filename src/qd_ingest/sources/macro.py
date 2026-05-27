@@ -196,3 +196,12 @@ def ingest_macro_daily(*, dry_run: bool = False) -> dict:
         ))
     console.log(f"[macro] [green]done[/green]: {files_seen} files, {rows_out} rows, {summary['elapsed_sec']}s")
     return summary
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Ingest SUPPLEMENT macro parquets → silver/macro/macro_daily.parquet")
+    ap.add_argument("--dry-run", action="store_true", help="walk files + print plan, don't write silver")
+    args = ap.parse_args()
+    ingest_macro_daily(dry_run=args.dry_run)
