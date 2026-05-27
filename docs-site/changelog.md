@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-27 — cron daily_refresh 加 derived gold rebuild step（關掉「衍生 gold 隔天落後」結構問題）
+
+bottleneck recap 發現最高槓桿的修補：`scripts/daily_refresh.sh` 原本只跑 fetch → ingest → build-catalog → restore_finmind → gap_report，**漏掉重生衍生 gold**。每天 TEJ silver 更新後，17 支 derived gold parquet 仍停在上次手動 `build_all()` 的日期 → 隔天 dashboard 上 `stock_factor_daily` / `inst_flow_factors` / `margin_factors` / `futures_*` / `market_inst_aggregated` 等全變 INFO（lag）。
+
+- 加 **step 3.7**：`python -m qd_ingest.sources.derived`（= `build_all()`，~40s），插在 restore_finmind（3.5）之後、gap_report（4）之前
+- **non-fatal**：silver-based polars builders 不受 catalog 鎖影響；catalog-reading `materialize_*` 若遇 DuckDB UI 鎖失敗也只 log WARN，不中止 refresh
+- 效果：往後每個工作日 17:30 cron 跑完，gold 自動跟上當日 silver，不再需要人工 `/goldify-100` 補 rebuild
+
+commit `2e0ef53..ebe7634`。進度檔：`docs/progress-cron-derived-rebuild.md`。
+
 ## 2026-05-26 (afternoon) — `/goldify-100` 範圍修正：從「100% 完整度才 goldify」改成「所有非 gold 都 goldify」
 
 User feedback：原 `/goldify-100` 描述「process 100%-complete views」與真實目標「**所有 raw/bronze/silver 都應該有對應 gold**」不符。STALE 但有 silver 的 view 也是 goldification 對象。

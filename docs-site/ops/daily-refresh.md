@@ -20,11 +20,18 @@ flowchart TB
     L4["4. qd-ingest tej-{stock,inst-stock,margin}<br/>silver bars/flows"]
     L5["5. qd-ingest build-catalog<br/>(staging swap 若 UI lock 還在)"]
     L55["5.5 restore_finmind_views.py<br/>還原被 build-catalog 砍掉的 finmind_* + qc views"]
+    L57["5.7 python -m qd_ingest.sources.derived<br/>重生全部 gold parquet (silver→gold)"]
     L6["6. gap_report.py --format all<br/>更新 docs/gap_dashboard.html + docs-site/ mirror"]
     L7["7. log 到 meta/audit/daily_refresh_YYYY-MM-DD.log"]
 
-    L1 --> L2 --> L3 --> L4 --> L5 --> L55 --> L6 --> L7
+    L1 --> L2 --> L3 --> L4 --> L5 --> L55 --> L57 --> L6 --> L7
 ```
+
+!!! info "Step 3.7 — rebuild derived gold（2026-05-27 加入）"
+
+    沒有這步時，gold parquet（`stock_factor_daily` / `inst_flow_factors` / `margin_factors` / `futures_*` / `market_inst_aggregated` 等 17 支）會停在上次手動 `build_all()` 的日期，而 silver 每天往前 → 隔天 dashboard 上這些 derived gold 全變 INFO（lag）。
+
+    Step 3.7 跑 `python -m qd_ingest.sources.derived`（= `build_all()`，~40s）讓 gold 每天自動跟著 silver 重生。標記 **non-fatal**：多數 builder 直接讀 silver parquet（不受 catalog 寫鎖影響），少數讀 catalog 的 `materialize_*` 若遇 DuckDB UI 鎖可能失敗，但不該中止整個 refresh。
 
 !!! info "Step 3.5 — restore_finmind_views"
 

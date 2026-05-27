@@ -22,9 +22,34 @@
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 | ⏳ |
-| **M2** | daily_refresh.sh 加 step「rebuild derived gold」+ 更新 header 註解 step 編號；本機驗證 derived module 跑得起來 | ⏳ |
-| **M3** | docs-site changelog + ops/daily-refresh.md（若存在）更新；commit；push | ⏳ |
+| **M1** | 本進度檔 | ✅ |
+| **M2** | daily_refresh.sh 加 step「rebuild derived gold」+ 更新 header 註解 step 編號；本機驗證 derived module 跑得起來 | ✅ |
+| **M3** | docs-site changelog + ops/daily-refresh.md 更新；commit；push | ✅ |
+
+## 完成日誌
+
+### M2 — daily_refresh.sh 改動
+
+- header 註解 step 列表 6 步 → 8 步（加 derived rebuild + 拆出 restore/gap）
+- 在 step 3.5（restore_finmind）後、step 4（gap_report）前插入 **step 3.7**：
+  ```bash
+  log INFO "step 3.7: rebuild derived gold (python -m qd_ingest.sources.derived)"
+  "$VENV_PY" -m qd_ingest.sources.derived >> "$LOG" 2>&1 || \
+      log WARN "derived gold rebuild failed (rc=$?) — non-fatal; run manually to recover"
+  ```
+- `bash -n` syntax OK
+- 本機跑 `python -m qd_ingest.sources.derived` 全 17 支 builder 成功（~40s），含 catalog-reading 的 qc_snapshot / finmind_canonical / accounting_snapshot / 3 個 *_snapshot；market_inst_aggregated max 推到 2026-05-26
+
+### M3 — docs
+
+- `docs-site/ops/daily-refresh.md`：mermaid 流程加 L57 節點 + 「Step 3.7」info box
+- `docs-site/changelog.md`：新增 2026-05-27 entry
+- `mkdocs build --strict` PASS
+- dashboard regen：OK=30（derived gold 已對齊 silver 5/26，STALE=10 仍是 scraper-blocked 上游，非本次 scope）
+
+## Live
+
+<https://gsinvest017-ai.github.io/gs-scraper/ops/daily-refresh/>
 
 ## Fallback
 
