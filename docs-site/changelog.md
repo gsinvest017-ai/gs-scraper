@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-27 — FinMind 接 cron：by-date 增量 fetcher（bottleneck #3）
+
+5 個 FinMind-derived view（`finmind_stock_price_norm` / `finmind_price_canonical` / `finmind_stock_price_adj_norm` / `qc_stock_price_diff` / `qc_stock_price_diff_snapshot`）長期停在舊日期（INFO），因為 `bronze/finmind/finmind_*.sqlite` snapshot 沒排程刷新——只有「restore view」(step 3.5) 和「materialize gold」(step 3.7) 接了 cron，**fetch 是手動**。
+
+- **`scripts/fetch_finmind.py`**：用 FinMind **by-date bulk** 端點（不帶 `data_id` → 單呼叫回整個市場單日資料）逐日補 `[max_date..today]` 的缺口，而非 catalog 的 `per_stock` 模式（~3,088 檔 × 2 ≈ 4h）。增量只需數秒。重用 FinMind repo 的 `client` + `Storage`（retry / rate-limit / `INSERT OR REPLACE` 去重），rows 過濾到 twse/tpex/emerging universe（避免 by-date bulk 夾帶數萬筆權證污染既有表）。寫完 `PRAGMA wal_checkpoint` 後 `cp` live sqlite → `bronze/finmind/finmind_<DATE>.sqlite` + sha256，GC 只留最新 5 份。`--dry-run` / `--only` / `--full` / `--keep`。
+- **`scripts/daily_refresh.sh`**：加 **step 1.7**（在 macro fetch 1.5 之後、dry-run 早退之前），用 **FinMind venv** 跑 fetcher，non-fatal；找不到 venv 則 skip 並 log WARN。產出的 snapshot 被既有 step 3.5 `restore_finmind_views` glob 為最新，3.7 materialize gold 自動跟上。
+- 效果：首跑把 snapshot 從 2026-05-22 推到 **2026-05-26**（補 05-22/05-25/05-26 三個交易日；05-27 當日資料尚未發布，自動 skip）。
+
+> **為何不改 crawler 的 `per_stock` → `global_date`**：full backfill 用 per_stock 較省呼叫；增量用 by-date 較省。維持分工，且不動 sibling repo。
+
+commit `e4f3bd4..`（M1-M4 鏈）。進度檔：`docs/progress-finmind-cron.md`。
+
 ## 2026-05-27 — yfinance macro scraper：解開 macro_daily → macro_factors 鏈（bottleneck #2）
 
 `macro_daily`（silver）原本停在上次手動 dump 的日期（19d STALE），因為沒有任何排程刷 `RAW_SOURCES/SUPPLEMENT/<cat>/*_daily.parquet`。新增一支 yfinance scraper 把 45 個 macro symbol（VIX / USDTWD / WTI / 美 10Y / SPX / SOX / 各國指數 / 商品 / 信用 ETF）刷到當日。

@@ -10,6 +10,7 @@
 #   2. Auto-sources TEJAPI_KEY/BASE from fish universal vars if unset
 #   3. fetch_tej --table all --append-since-silver  → CSV+silver-parquet
 #   3b. fetch_macro.py (yfinance, 45 symbols) → SUPPLEMENT/*_daily.parquet
+#   3c. fetch_finmind.py (by-date incremental, FinMind venv) → bronze snapshot
 #   4. qd-ingest tej-{stock,inst-stock,margin} → silver bars/flows
 #   4b. python -m qd_ingest.sources.macro → silver/macro/macro_daily.parquet
 #   5. qd-ingest build-catalog (staging swap if UI lock held)
@@ -122,6 +123,22 @@ log INFO "step 1/3 done"
 log INFO "step 1.5: fetch_macro.py (yfinance, 45 symbols) ${FETCH_EXTRA[*]:-}"
 "$VENV_PY" "$REPO/scripts/fetch_macro.py" "${FETCH_EXTRA[@]}" >> "$LOG" 2>&1 || \
     log WARN "fetch_macro.py failed (rc=$?) — non-fatal; macro_daily may lag"
+
+# ---- 1.7 Fetch FinMind (by-date incremental) ----------------------------
+# Runs under the FinMind crawler's own venv (it needs that repo's client deps).
+# Produces a fresh bronze/finmind/finmind_<DATE>.sqlite that step 3.5
+# restore_finmind_views globs as the latest snapshot → step 3.7 materializes the
+# finmind/qc gold. By-date bulk = a handful of calls (seconds), NOT the 4h
+# per-stock loop. Non-fatal: FinMind API / network hiccups must not abort TEJ.
+FINMIND_REPO="${FINMIND_REPO:-$REPO/../FINMIND資料集}"
+FINMIND_PY="$FINMIND_REPO/.venv/bin/python"
+if [[ -x "$FINMIND_PY" ]]; then
+    log INFO "step 1.7: fetch_finmind.py (by-date incremental) ${FETCH_EXTRA[*]:-}"
+    FINMIND_REPO="$FINMIND_REPO" "$FINMIND_PY" "$REPO/scripts/fetch_finmind.py" "${FETCH_EXTRA[@]}" >> "$LOG" 2>&1 || \
+        log WARN "fetch_finmind.py failed (rc=$?) — non-fatal; finmind snapshot may lag"
+else
+    log WARN "step 1.7 skipped: FinMind venv not found at $FINMIND_PY (set FINMIND_REPO)"
+fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
     log INFO "==== daily_refresh DRY-RUN OK (skipped ingest + catalog) ===="
