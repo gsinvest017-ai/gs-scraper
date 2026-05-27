@@ -44,4 +44,20 @@ QUANTDATA 的 DuckDB Search Web UI（`ui/search/`，Flask + Plotly, 127.0.0.1:50
 
 ## 完成日誌
 
-（M2-M4 後追加）
+### M2 — style.css 深色（commit `9393fd5`）
+
+`:root` 換成 gs-zipline-tej 的 GitHub-dark vars；寫死的淺色全部換掉（header/table/card `#fff`→`--panel`、`th #f3f4f6`→`--panel-2`、tag pastel 底色→半透明深色、`.remove`/`.err`→`--bad`）；新增 `input/select/textarea` 深色規則（避免原生控件出現白底）。
+
+### M3 — Plotly + base.html（commit `d9b6aaf`）
+
+`Plotly.newPlot` layout 加 `paper_bgcolor/plot_bgcolor=#161c24`、`font #e6edf3`、axis grid/line/tick 深色；`base.html` 加 `<meta name="color-scheme" content="dark">`（讓表單控件/捲軸跟著深色）。
+
+### M4 — 測試 + 重啟
+
+- Flask app 起在 5051 驗證新 template：index + `/view/macro_factors` 皆 200，`color-scheme` meta 存在，無 error。
+- 發現 **5050 有 5/26 留下的舊 process（PID 180595）佔埠**，serve 舊淺色 template；`kill` 後在 5050 重啟新程式碼 → 確認 serve 深色（`color-scheme` meta + `--bg:#0f1419` CSS）。
+- 驗證方式為 curl（HTML/CSS/meta 正確 serve）；CSS 為 deterministic palette，未在瀏覽器實際渲染。
+
+## 後續
+
+- `docs/gap_dashboard.html`（gap_report.py 內嵌 CSS 的靜態報告）仍是淺色；若要全專案一致可另把它也 dark 化（獨立任務，不在本輪 scope）。
