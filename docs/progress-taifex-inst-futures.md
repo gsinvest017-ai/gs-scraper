@@ -60,10 +60,10 @@ full view 每個 (identity_code, trading_date) 觀察到 **6 筆重複**（6 個
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + 驗證對應 | ⏳ |
-| **M2** | `derive_inst_futures_daily()` in taifex.py + CLI + run（驗 max date 2026-05-26、值對齊 full） | ⏳ |
-| **M3** | 接進 daily_refresh.sh（TEJ ingest 後、derived gold rebuild 前）+ docs | ⏳ |
-| **M4** | materialize snapshot + dashboard 驗 2 P0 STALE→OK + commit | ⏳ |
+| **M1** | 本進度檔 + 驗證對應 | ✅ |
+| **M2** | `derive_inst_futures_daily()` in taifex.py + CLI + run（驗 max date 2026-05-26、值對齊 full） | ✅ |
+| **M3** | 接進 daily_refresh.sh（step 2.6）+ docs | ✅ |
+| **M4** | materialize snapshot + dashboard 驗 2 P0 STALE→OK + commit | ✅ |
 
 ## Fallback
 
@@ -73,4 +73,23 @@ full view 每個 (identity_code, trading_date) 觀察到 **6 筆重複**（6 個
 
 ## 完成日誌
 
-（M2-M4 後追加）
+### M2 — `derive_inst_futures_daily()`（commit `d10c5bd`）
+
+- `SILVER_SCHEMA` 抽成 module 常數，`ingest_inst_futures` 與新 fn 共用。
+- polars scan full view silver → filter 9 code → `sort(ingestion_ts).unique(keep="last")` 去重 → pandas → map product/identity → rename → 60d rolling z-score（pandas groupby transform）→ ts_utc 13:30 Asia/Taipei → UTC → pyarrow → `write_silver_partitioned(["year"], delete_matching)`。
+- run：**40,644 rows**（4,516 交易日 × 9），2008-01-02 ~ 2026-05-26；fii/TXO 2026-05-08 = (52, 27805, 29586, -1781) 與舊 view 完全相同。
+
+### M3 — daily_refresh step 2.6 + docs（commit `23e8547`）
+
+- step 2.6 在 macro silver (2.5) 後、build-catalog 前，`$VENV_PY -m qd_ingest.sources.taifex`，non-fatal。
+- header step 列表 + changelog + ops/daily-refresh.md（mermaid L46 + info box）。`bash -n` OK；`mkdocs --strict` PASS。
+
+### M4 — materialize + dashboard
+
+- `materialize_tw_inst_futures_daily_snapshot()` → gold 40,644 rows。
+- dashboard：**OK 37 → 39，STALE 8 → 6**。`tw_inst_futures_daily` + `tw_inst_futures_daily_snapshot` 兩個 P0 全 OK（0d）。
+
+## 後續
+
+- 剩 STALE=6：`bars_1m`/`bars_1m_daily_summary`（#6，需付費源）、`txo_daily_features`/`_snapshot`（#5）、`tw_inst_market_daily`/`_snapshot`（市場層級三大法人，可由 tw_inst_stock_daily 聚合）。
+- backlog：獨立 TAIFEX 官網爬蟲作為 TEJ AFINST 斷線時的備援。
