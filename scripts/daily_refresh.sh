@@ -11,7 +11,9 @@
 #   3. fetch_tej --table all --append-since-silver  → CSV+silver-parquet
 #   4. qd-ingest tej-{stock,inst-stock,margin} → silver bars/flows
 #   5. qd-ingest build-catalog (staging swap if UI lock held)
-#   6. All output appended to meta/audit/daily_refresh_<YYYY-MM-DD>.log
+#   6. python -m qd_ingest.sources.derived → rebuild all gold parquet (silver→gold)
+#   7. restore finmind/qc views + regen gap dashboard
+#   8. All output appended to meta/audit/daily_refresh_<YYYY-MM-DD>.log
 #
 # Exit codes: 0 ok, 1 fetch failed, 2 ingest failed, 3 catalog failed,
 #             10 locked (another instance running), 11 missing TEJAPI_KEY.
@@ -182,6 +184,18 @@ fi
 log INFO "step 3.5: restore finmind / qc views"
 "$VENV_PY" "$REPO/scripts/restore_finmind_views.py" >> "$LOG" 2>&1 || \
     log WARN "restore_finmind_views.py failed (rc=$?) — non-fatal"
+
+# ---- 5.7 Rebuild derived gold (silver → gold) ---------------------------
+# Without this, gold parquet (stock_factor_daily / inst_flow_factors /
+# margin_factors / futures_* / market_inst_aggregated / etc.) stays frozen at
+# the last manual build_all() while silver advances daily → dashboard shows
+# derived gold as INFO/stale the morning after every fetch.
+# Non-fatal: most builders read silver parquet directly (lock-immune); the few
+# catalog-reading materialize_* fns may fail if a DuckDB UI write-lock is held,
+# but that must not abort the whole refresh.
+log INFO "step 3.7: rebuild derived gold (python -m qd_ingest.sources.derived)"
+"$VENV_PY" -m qd_ingest.sources.derived >> "$LOG" 2>&1 || \
+    log WARN "derived gold rebuild failed (rc=$?) — non-fatal; run manually to recover"
 
 # ---- 6. Regenerate gap dashboard ----------------------------------------
 log INFO "step 4/4: regenerate gap dashboard"
