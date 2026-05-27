@@ -50,6 +50,179 @@ def copy_txo_daily_features() -> dict:
     return info
 
 
+# --- TXO daily features, derived from FinMind TaiwanOptionDaily ---------------
+# Supersedes copy_txo_daily_features (which copied a stale, opaque external dump).
+# The 10 flow features reproduce exactly; the 2 IV proxies are REDEFINED with a
+# standard, reproducible methodology (annualized ATM Black-Scholes IV; fixed-
+# moneyness put-call skew) and recomputed across the full history for a single
+# consistent definition. See docs/progress-txo-finmind.md.
+
+_TXO_RF = 0.015  # flat risk-free for the BS-IV proxy
+
+
+def _norm_cdf(x: float) -> float:
+    import math
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _bs_price(S: float, K: float, T: float, sigma: float, is_call: bool) -> float:
+    import math
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return max((S - K) if is_call else (K - S), 0.0)
+    d1 = (math.log(S / K) + (_TXO_RF + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    if is_call:
+        return S * _norm_cdf(d1) - K * math.exp(-_TXO_RF * T) * _norm_cdf(d2)
+    return K * math.exp(-_TXO_RF * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
+
+
+def _bs_iv(price, S: float, K: float, T: float, is_call: bool) -> float:
+    """Implied vol by bisection. NaN if price below intrinsic / non-invertible."""
+    if price is None or not (price > 0) or S <= 0 or K <= 0 or T <= 0:
+        return float("nan")
+    intrinsic = max((S - K) if is_call else (K - S), 0.0)
+    if price < intrinsic - 1e-6:
+        return float("nan")
+    lo, hi = 1e-4, 5.0
+    if _bs_price(S, K, T, hi, is_call) < price:  # price above max modelable
+        return float("nan")
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        if _bs_price(S, K, T, mid, is_call) > price:
+            hi = mid
+        else:
+            lo = mid
+    return 0.5 * (lo + hi)
+
+
+def _third_wednesday(y: int, m: int) -> dt.date:
+    d = dt.date(y, m, 1)
+    return d + dt.timedelta(days=(2 - d.weekday()) % 7 + 14)  # Wed=2; first Wed +14
+
+
+def build_txo_daily_features() -> dict:
+    """FinMind finmind_txo_option_daily (position session) -> gold txo_daily_features.
+
+    12 daily features: pcr_vol/oi, max_pain(+dist), total call/put vol+oi,
+    atm_iv_proxy (annualized ATM BS-IV), iv_skew_proxy (±~5% moneyness put-call
+    IV diff), mxf_close (from mtx_continuous_d). Spot via put-call parity.
+    """
+    import math
+    import re
+    import duckdb
+
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    catalog = (Path(__file__).resolve().parents[3] / "catalog" / "quant.duckdb")
+    con = duckdb.connect(str(catalog), read_only=True)
+    df = con.execute("""
+        SELECT CAST(date AS DATE) AS d, contract_date,
+               CAST(strike_price AS DOUBLE) AS strike, call_put,
+               CAST(volume AS BIGINT) AS volume,
+               CAST(open_interest AS BIGINT) AS oi,
+               CAST(settlement_price AS DOUBLE) AS settle
+        FROM finmind_txo_option_daily
+        WHERE trading_session = 'position'
+    """).df()
+    mxf = con.execute("""
+        SELECT CAST(trading_date AS DATE) AS d, AVG(close) AS mxf_close
+        FROM mtx_continuous_d GROUP BY 1
+    """).df()
+    con.close()
+
+    mxf_by_date = {(k.date() if hasattr(k, "date") else k): v
+                   for k, v in zip(mxf["d"], mxf["mxf_close"])}
+    monthly = re.compile(r"^\d{6}$")
+    rows = []
+    for d, g in df.groupby("d"):
+        d = d.date() if hasattr(d, "date") else d
+        is_call = g["call_put"] == "call"
+        tcv = int(g.loc[is_call, "volume"].sum())
+        tpv = int(g.loc[~is_call, "volume"].sum())
+        tco = int(g.loc[is_call, "oi"].sum())
+        tpo = int(g.loc[~is_call, "oi"].sum())
+
+        # front monthly contract: smallest 3rd-Wed expiry >= d
+        exp_by_c: dict[str, dt.date] = {}
+        for c in g["contract_date"].unique():
+            if isinstance(c, str) and monthly.match(c):
+                exp = _third_wednesday(int(c[:4]), int(c[4:6]))
+                if exp >= d:
+                    exp_by_c[c] = exp
+        front = min(exp_by_c, key=exp_by_c.get) if exp_by_c else None
+
+        spot = max_pain = max_pain_dist = atm_iv = iv_skew = float("nan")
+        if front is not None:
+            fg = g[g["contract_date"] == front]
+            T = max((exp_by_c[front] - d).days, 0) / 365.0
+            calls = fg[fg["call_put"] == "call"].set_index("strike")
+            puts = fg[fg["call_put"] == "put"].set_index("strike")
+            common = sorted(set(calls.index) & set(puts.index))
+            if common:
+                # spot via put-call parity at the strike where |C-P| is smallest
+                diffs = [(abs(calls.at[k, "settle"] - puts.at[k, "settle"]), k) for k in common]
+                _, k_atm = min(diffs)
+                spot = float(k_atm + calls.at[k_atm, "settle"] - puts.at[k_atm, "settle"])
+                # max pain over front strikes (min total option-holder intrinsic)
+                strikes = sorted(set(fg["strike"]))
+                co = fg[fg["call_put"] == "call"].groupby("strike")["oi"].sum()
+                po = fg[fg["call_put"] == "put"].groupby("strike")["oi"].sum()
+                best = None
+                for s in strikes:
+                    pain = sum(co.get(k, 0) * max(s - k, 0) for k in co.index) \
+                         + sum(po.get(k, 0) * max(k - s, 0) for k in po.index)
+                    if best is None or pain < best[0]:
+                        best = (pain, s)
+                max_pain = float(best[1])
+                if spot > 0:
+                    max_pain_dist = (max_pain - spot) / spot
+                # ATM IV (avg of call+put at nearest strike to spot)
+                if T > 0 and spot > 0:
+                    k_near = min(common, key=lambda k: abs(k - spot))
+                    iv_c = _bs_iv(calls.at[k_near, "settle"], spot, k_near, T, True)
+                    iv_p = _bs_iv(puts.at[k_near, "settle"], spot, k_near, T, False)
+                    ivs = [v for v in (iv_c, iv_p) if v == v]
+                    atm_iv = sum(ivs) / len(ivs) if ivs else float("nan")
+                    # skew: OTM put (~spot*0.95) IV - OTM call (~spot*1.05) IV
+                    kp = min(puts.index, key=lambda k: abs(k - spot * 0.95))
+                    kc = min(calls.index, key=lambda k: abs(k - spot * 1.05))
+                    iv_otm_p = _bs_iv(puts.at[kp, "settle"], spot, kp, T, False)
+                    iv_otm_c = _bs_iv(calls.at[kc, "settle"], spot, kc, T, True)
+                    if iv_otm_p == iv_otm_p and iv_otm_c == iv_otm_c:
+                        iv_skew = iv_otm_p - iv_otm_c
+
+        rows.append({
+            "date": d,
+            "pcr_vol": (tpv / tcv) if tcv else float("nan"),
+            "pcr_oi": (tpo / tco) if tco else float("nan"),
+            "max_pain": max_pain,
+            "max_pain_dist": max_pain_dist,
+            "total_call_vol": tcv, "total_put_vol": tpv,
+            "total_call_oi": tco, "total_put_oi": tpo,
+            "atm_iv_proxy": atm_iv, "iv_skew_proxy": iv_skew,
+            "mxf_close": float(mxf_by_date.get(d, float("nan"))),
+        })
+
+    out = pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+    out["date"] = pd.to_datetime(out["date"]).dt.date
+    out["source"] = "finmind_txo_derived"
+    out["ingestion_ts"] = pd.Timestamp.now(tz="UTC")
+    dest = GOLD / "features" / "txo_daily_features.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.Table.from_pandas(out, preserve_index=False), dest, compression="zstd")
+
+    info = {"rows": len(out), "range": [str(out["date"].min()), str(out["date"].max())],
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="finmind_txo_derived", table="gold/features/txo_daily_features",
+        bronze_file="(derived from finmind_txo_option_daily)", rows_in=len(df), rows_out=len(out),
+        sha256="", status="ok", started_at=started,
+        ended_at=dt.datetime.now(dt.timezone.utc).isoformat(), extra=info,
+    ))
+    console.log(f"[txo_daily_features] {info}")
+    return info
+
+
 def copy_cross_market_features() -> dict:
     src = RAW_ROOT / "SUPPLEMENT" / "DERIVED" / "cross_market_features.parquet"
     dest = GOLD / "features" / "cross_market_features.parquet"
@@ -1273,7 +1446,7 @@ def build_market_inst_aggregated() -> dict:
 
 def build_all() -> dict:
     summary = {
-        "txo": copy_txo_daily_features(),
+        "txo": build_txo_daily_features(),
         "cross_market": copy_cross_market_features(),
         "stock_factor": build_stock_factor_daily(),
         "inst_flow": build_inst_flow_factors(),
