@@ -44,10 +44,10 @@
 
 | Mn | 內容 | 狀態 |
 |---|---|---|
-| **M1** | 本進度檔 + 設計 + 連線驗證 | ⏳ |
-| **M2** | `scripts/fetch_finmind.py` + dry-run + live 增量跑（補 2026-05-26/27） | ⏳ |
-| **M3** | 接進 daily_refresh.sh（新 step，non-fatal，FinMind venv）+ docs | ⏳ |
-| **M4** | rebuild catalog + restore + derived + dashboard 驗 5 view INFO→OK + commit | ⏳ |
+| **M1** | 本進度檔 + 設計 + 連線驗證 | ✅ |
+| **M2** | `scripts/fetch_finmind.py` + dry-run + live 增量跑（補 05-25/05-26） | ✅ |
+| **M3** | 接進 daily_refresh.sh（step 1.7，non-fatal，FinMind venv）+ docs | ✅ |
+| **M4** | restore + derived + recategorize + dashboard 驗 5 view INFO→OK + commit | ✅ |
 
 ## Fallback
 
@@ -58,4 +58,28 @@
 
 ## 完成日誌
 
-（M2-M4 後追加）
+### M2 — `scripts/fetch_finmind.py`（commit `f015ca8`）
+
+- 初版用 `start_date..end_date` range 一次抓 → 發現 **no-data_id bulk 只回 start_date 單日**（max date 沒前進）。改成**逐日 loop**（`_day_range`），每日一呼叫，空日（週末/假日/未發布）自動 skip。
+- universe 過濾：by-date bulk 回 41,814 檔（含數萬權證），過濾到 `list_stock_ids(("twse","tpex","emerging"))` ≈ 2,747 檔，與 per_stock backfill 的 universe 一致。
+- snapshot 前 `PRAGMA wal_checkpoint(TRUNCATE)` 把 WAL 收進主檔再 cp，避免快照漏掉剛寫入的列。
+- live 跑：`TaiwanStockInfo` 4,113；price/adj 補 **05-22 / 05-25 / 05-26** 三個交易日（05-27 當日未發布，skip）→ snapshot `finmind_2026-05-27.sqlite` max date **2026-05-26**。
+
+### M3 — daily_refresh.sh step 1.7 + docs（commit `072e94b`）
+
+- step 1.7 在 macro fetch (1.5) 後、dry-run 早退前，用 `$FINMIND_REPO/.venv/bin/python` 跑 fetcher；venv 不存在則 skip + WARN。non-fatal。
+- header step 列表 + changelog + ops/daily-refresh.md（mermaid L37 + info box）。
+- `bash -n` OK；`--dry-run` 全程 rc=0（step 1.7 plan 有印出）。`mkdocs --strict` PASS。
+
+### M4 — restore + materialize + recategorize + dashboard
+
+- `restore_finmind_views.py` 重新指向最新 snapshot → `finmind_stock_price_norm` / `qc_stock_price_diff` max date 2026-05-22 → **2026-05-26**。
+- `materialize_finmind_canonical`（10.6M rows）+ `materialize_qc_snapshot`（6.39M rows）重生 gold。
+- **關鍵 registry 修正**：`finmind_stock_price_norm` / `finmind_stock_price_adj_norm` 原本 category=`snapshot`（classify 永遠回 INFO，因為「bronze 手動 dump 不該期待 fresh」）。既然現在每日自動刷，改成 `daily-trading`（0-1d=OK，容忍 FinMind ~1d 發布延遲）。
+- dashboard：**INFO 5 → 0，OK 32 → 37**。5 個 FinMind view 全部 OK（0d）。
+- 剩下 STALE=8（TAIFEX/TXO/1m，= bottleneck #4/#5/#6）、EMPTY=1（cross_market_features，backlog）。
+
+## 後續
+
+- bottleneck #4 TAIFEX 期貨三大法人 fetcher（P0, 2 view）
+- 首次 cron 跑時若 FinMind venv path 變動，step 1.7 會 skip + WARN（可 `FINMIND_REPO` 覆寫）

@@ -243,15 +243,15 @@ DATASETS = [
                 "gold/features/market_inst_aggregated.parquet",
             )),
 
-    # --- FinMind bronze snapshot (one-shot dump 2026-05-18, not auto-refreshed) ---
-    Dataset("finmind_stock_price_norm",     "trading_date", "snapshot",
-            "(re-sync bronze/finmind/finmind_*.sqlite when FinMind crawler produces a new snapshot)",
+    # --- FinMind bronze snapshot (auto-refreshed daily via fetch_finmind.py / daily_refresh step 1.7) ---
+    Dataset("finmind_stock_price_norm",     "trading_date", "daily-trading",
+            "scripts/fetch_finmind.py  (daily_refresh step 1.7; ~1d publish lag)",
             "FinMind 個股日 K (canonical 命名 + 2000-2026 完整)", "P1",
             raw_paths=("../RAW_SOURCES/FINMIND資料集.zip",),
             bronze_paths=("bronze/finmind/finmind_*.sqlite",),
             gold_paths=("gold/features/finmind_price_canonical.parquet",)),
-    Dataset("finmind_stock_price_adj_norm", "trading_date", "snapshot",
-            "(re-sync bronze/finmind/finmind_*.sqlite for fresh adj series)",
+    Dataset("finmind_stock_price_adj_norm", "trading_date", "daily-trading",
+            "scripts/fetch_finmind.py  (daily_refresh step 1.7; ~1d publish lag)",
             "FinMind 還原權息日 K (TEJ adj_close 對帳用)", "P2",
             raw_paths=("../RAW_SOURCES/FINMIND資料集.zip",),
             bronze_paths=("bronze/finmind/finmind_*.sqlite",),
