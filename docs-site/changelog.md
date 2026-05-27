@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-05-27 — TAIFEX 期貨三大法人 接 cron：從 full view 衍生（bottleneck #4）
+
+2 個 P0 view（`tw_inst_futures_daily` + `tw_inst_futures_daily_snapshot`）卡在 2026-05-08（18d STALE），舊路徑靠手動 dump `SUPPLEMENT/TAIFEX/foreign_oi_daily.parquet`。
+
+**沒有寫新的 TAIFEX 官網爬蟲** —— 勘查發現 `tw_inst_futures_full_daily`（TEJ `TWN/AFINST`）**已經每天自動刷新**（fresh 到 2026-05-26），而且是 stale view 的**超集**（162 個 identity_code × 商品）。所以直接從它衍生：
+
+- **`src/qd_ingest/sources/taifex.py::derive_inst_futures_daily()`**：讀 full view silver（polars），filter 9 個 code → 3 商品 × 3 法人，dedup（keep last by ingestion_ts，full view 每筆有 6 個重複 ingest），rename 欄位，重算 60d net-OI z-score，寫 `silver/flows/tw_inst_futures_daily`（year partition，delete_matching）。
+- **對應**（逐筆驗證相同）：TXF←`{11,12,13}TX`、MXF←`{11,12,13}MTX`、TXO←`{21,22,23}TXO`（期權前綴 2x）；`11/21`=自營、`12/22`=投信、`13/23`=外資。
+- **涵蓋更廣**：full view 9-code 從 **2008** 起，比舊 view（2023 起）多 15 年歷史；衍生時全史覆寫，provenance 統一 `tej_afinst_derived`。
+- **`scripts/daily_refresh.sh`**：加 **step 2.6**（TEJ ingest 後、derived gold rebuild 3.7 前），non-fatal。
+- 效果：silver 從 2026-05-08 → **2026-05-26**（40,644 rows）；2 個 P0 view STALE→OK。
+
+> **為何不寫官網爬蟲**：full view 已經是 fresh 的權威來源，衍生零新增外部依賴、零新 failure mode，且值已驗證逐筆相同。獨立 TAIFEX 爬蟲留作未來「TEJ 斷線時的備援」backlog。
+
+commit `aa415bc..`（M1-M4 鏈）。進度檔：`docs/progress-taifex-inst-futures.md`。
+
 ## 2026-05-27 — FinMind 接 cron：by-date 增量 fetcher（bottleneck #3）
 
 5 個 FinMind-derived view（`finmind_stock_price_norm` / `finmind_price_canonical` / `finmind_stock_price_adj_norm` / `qc_stock_price_diff` / `qc_stock_price_diff_snapshot`）長期停在舊日期（INFO），因為 `bronze/finmind/finmind_*.sqlite` snapshot 沒排程刷新——只有「restore view」(step 3.5) 和「materialize gold」(step 3.7) 接了 cron，**fetch 是手動**。

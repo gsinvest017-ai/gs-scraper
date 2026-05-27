@@ -21,13 +21,14 @@ flowchart TB
     L37["3c. fetch_finmind.py (by-date 增量, FinMind venv)<br/>bronze/finmind/finmind_DATE.sqlite（non-fatal）"]
     L4["4. qd-ingest tej-{stock,inst-stock,margin}<br/>silver bars/flows"]
     L45["4b. python -m qd_ingest.sources.macro<br/>SUPPLEMENT → silver/macro/macro_daily.parquet"]
+    L46["4c. python -m qd_ingest.sources.taifex<br/>derive tw_inst_futures_daily（從 full view）"]
     L5["5. qd-ingest build-catalog<br/>(staging swap 若 UI lock 還在)"]
     L55["5.5 restore_finmind_views.py<br/>還原被 build-catalog 砍掉的 finmind_* + qc views"]
     L57["5.7 python -m qd_ingest.sources.derived<br/>重生全部 gold parquet (silver→gold)"]
     L6["6. gap_report.py --format all<br/>更新 docs/gap_dashboard.html + docs-site/ mirror"]
     L7["7. log 到 meta/audit/daily_refresh_YYYY-MM-DD.log"]
 
-    L1 --> L2 --> L3 --> L35 --> L37 --> L4 --> L45 --> L5 --> L55 --> L57 --> L6 --> L7
+    L1 --> L2 --> L3 --> L35 --> L37 --> L4 --> L45 --> L46 --> L5 --> L55 --> L57 --> L6 --> L7
 ```
 
 !!! info "Step 1.5 / 2.5 — macro scraper（2026-05-27 加入）"
@@ -49,6 +50,16 @@ flowchart TB
     - 產出的 snapshot 被 **step 3.5** `restore_finmind_views` glob 為最新 → **step 3.7** materialize finmind/qc gold 自動跟上。
 
     手動補跑：`FINMIND_REPO=../FINMIND資料集 ../FINMIND資料集/.venv/bin/python scripts/fetch_finmind.py`（`--dry-run` 先看計畫）。
+
+!!! info "Step 2.6 — derive tw_inst_futures_daily（2026-05-27 加入）"
+
+    2 個 P0 view（`tw_inst_futures_daily` + snapshot）過去靠手動 TAIFEX dump，常 STALE。改成從 **已經每天 fresh 的 `tw_inst_futures_full_daily`**（TEJ `TWN/AFINST`，step 1 拉）衍生：
+
+    - `python -m qd_ingest.sources.taifex`（`derive_inst_futures_daily`）filter 9 個 code → 3 商品（TXF/MXF/TXO）× 3 法人（dealer/sitc/fii），dedup keep-last，重算 60d net-OI z-score，覆寫 `silver/flows/tw_inst_futures_daily`。
+    - **不需要 TAIFEX 官網爬蟲** —— full view 是超集且權威，逐筆驗證相同。
+    - 排在 step 3.7 derived gold rebuild 之前，`materialize_tw_inst_futures_daily_snapshot` 才讀得到 fresh silver。non-fatal。
+
+    手動補跑：`.venv/bin/python -m qd_ingest.sources.taifex`（`--dry-run` 先看）。
 
 !!! info "Step 3.7 — rebuild derived gold（2026-05-27 加入）"
 

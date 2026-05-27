@@ -13,6 +13,7 @@
 #   3c. fetch_finmind.py (by-date incremental, FinMind venv) → bronze snapshot
 #   4. qd-ingest tej-{stock,inst-stock,margin} → silver bars/flows
 #   4b. python -m qd_ingest.sources.macro → silver/macro/macro_daily.parquet
+#   4c. python -m qd_ingest.sources.taifex → derive tw_inst_futures_daily silver
 #   5. qd-ingest build-catalog (staging swap if UI lock held)
 #   6. python -m qd_ingest.sources.derived → rebuild all gold parquet (silver→gold)
 #   7. restore finmind/qc views + regen gap dashboard
@@ -174,6 +175,16 @@ ingest_one "tej-margin"     "TWN_EWGIN_融資融券.csv"    || exit 2
 log INFO "step 2.5: ingest macro → silver (python -m qd_ingest.sources.macro)"
 "$VENV_PY" -m qd_ingest.sources.macro >> "$LOG" 2>&1 || \
     log WARN "macro ingest failed (rc=$?) — non-fatal; macro_factors may lag"
+
+# ---- 4.6 Derive tw_inst_futures_daily from the fresh full view ----------
+# tw_inst_futures_full_daily silver was just refreshed by fetch_tej (step 1,
+# TEJ TWN/AFINST). Project its 9 institution×product codes into the aggregated
+# tw_inst_futures_daily silver (no TAIFEX-website scraper needed). Must run
+# before step 3.7 so materialize_tw_inst_futures_daily_snapshot picks it up.
+# Non-fatal: if the full view is missing/empty, the old silver partitions stay.
+log INFO "step 2.6: derive tw_inst_futures_daily (python -m qd_ingest.sources.taifex)"
+"$VENV_PY" -m qd_ingest.sources.taifex >> "$LOG" 2>&1 || \
+    log WARN "tw_inst_futures_daily derive failed (rc=$?) — non-fatal; view may lag"
 log INFO "step 2/3 done"
 
 # ---- 5. Catalog rebuild --------------------------------------------------
