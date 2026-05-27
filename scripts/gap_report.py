@@ -648,51 +648,53 @@ HTML_TEMPLATE = """<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark">
 <title>QUANTDATA Gap Dashboard</title>
 <style>
+  /* GitHub-dark palette — matches ui/search + gs-zipline-tej dashboard */
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang TC", sans-serif;
-          margin: 24px; color: #1f2937; background: #f9fafb; }}
+          margin: 24px; color: #e6edf3; background: #0f1419; }}
   h1 {{ margin: 0 0 6px 0; font-size: 22px; }}
-  .subtitle {{ color: #6b7280; margin-bottom: 18px; font-size: 13px; }}
+  .subtitle {{ color: #7d8590; margin-bottom: 18px; font-size: 13px; }}
   .summary {{ display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }}
   .pill {{ padding: 10px 18px; border-radius: 10px; font-weight: 600; min-width: 90px; text-align: center; }}
-  .pill.OK    {{ background: #d1fae5; color: #065f46; }}
-  .pill.WARN  {{ background: #fef3c7; color: #92400e; }}
-  .pill.STALE {{ background: #fee2e2; color: #991b1b; }}
-  .pill.EMPTY {{ background: #ede9fe; color: #5b21b6; }}
-  .pill.INFO  {{ background: #dbeafe; color: #1e40af; }}
-  table {{ width: 100%; border-collapse: collapse; background: white;
-           box-shadow: 0 1px 2px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }}
-  th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }}
-  th {{ background: #f3f4f6; font-weight: 600; color: #374151; }}
+  .pill.OK    {{ background: rgba(86,211,100,0.15);  color: #56d364; }}
+  .pill.WARN  {{ background: rgba(240,136,62,0.15);  color: #f0883e; }}
+  .pill.STALE {{ background: rgba(248,81,73,0.15);   color: #f85149; }}
+  .pill.EMPTY {{ background: rgba(166,143,255,0.15); color: #b39dff; }}
+  .pill.INFO  {{ background: rgba(88,166,255,0.15);  color: #58a6ff; }}
+  table {{ width: 100%; border-collapse: collapse; background: #161c24;
+           box-shadow: 0 1px 2px rgba(0,0,0,0.3); border-radius: 8px; overflow: hidden; }}
+  th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid #2a323e; font-size: 13px; }}
+  th {{ background: #1f2731; font-weight: 600; color: #e6edf3; }}
   tr:last-child td {{ border-bottom: none; }}
-  tr.OK    {{ background: #ffffff; }}
-  tr.WARN  {{ background: #fffbeb; }}
-  tr.STALE {{ background: #fef2f2; }}
-  tr.EMPTY {{ background: #faf5ff; }}
-  tr.INFO  {{ background: #eff6ff; }}
+  tr.OK    {{ background: #161c24; }}
+  tr.WARN  {{ background: rgba(240,136,62,0.06); }}
+  tr.STALE {{ background: rgba(248,81,73,0.07); }}
+  tr.EMPTY {{ background: rgba(166,143,255,0.06); }}
+  tr.INFO  {{ background: rgba(88,166,255,0.06); }}
   .lag {{ font-variant-numeric: tabular-nums; text-align: right; }}
   .pct {{ font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }}
   .layer {{ font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap;
-            font-size: 11.5px; color: #4b5563; }}
-  .layer.has-data {{ color: #111827; font-weight: 500; }}
-  .layer.empty {{ color: #9ca3af; }}
-  .layer .files {{ color: #6b7280; font-size: 10.5px; margin-left: 4px; }}
+            font-size: 11.5px; color: #7d8590; }}
+  .layer.has-data {{ color: #e6edf3; font-weight: 500; }}
+  .layer.empty {{ color: #4d5560; }}
+  .layer .files {{ color: #7d8590; font-size: 10.5px; margin-left: 4px; }}
   .layer-totals {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 22px 0; font-size: 12px; }}
-  .layer-totals .ltot {{ background: #f3f4f6; padding: 6px 12px; border-radius: 6px; }}
-  .layer-totals .ltot b {{ color: #111827; }}
-  .bar {{ position: relative; display: inline-block; height: 10px; background: #f3f4f6; border-radius: 4px; vertical-align: middle; border: 1px solid #e5e7eb; }}
+  .layer-totals .ltot {{ background: #1f2731; padding: 6px 12px; border-radius: 6px; }}
+  .layer-totals .ltot b {{ color: #e6edf3; }}
+  .bar {{ position: relative; display: inline-block; height: 10px; background: #1f2731; border-radius: 4px; vertical-align: middle; border: 1px solid #2a323e; }}
   .bar > span {{ position: absolute; left: 0; top: 0; height: 100%; border-radius: 4px; }}
-  .bar > span.OK    {{ background: #10b981; }}
-  .bar > span.WARN  {{ background: #f59e0b; }}
-  .bar > span.STALE {{ background: #ef4444; }}
-  .bar > span.INFO  {{ background: #3b82f6; }}
-  .bar > span.EMPTY {{ background: #9ca3af; }}
-  code {{ background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px;
+  .bar > span.OK    {{ background: #56d364; }}
+  .bar > span.WARN  {{ background: #f0883e; }}
+  .bar > span.STALE {{ background: #f85149; }}
+  .bar > span.INFO  {{ background: #58a6ff; }}
+  .bar > span.EMPTY {{ background: #6e7681; }}
+  code {{ background: #1f2731; padding: 2px 6px; border-radius: 4px; font-size: 12px;
           font-family: "JetBrains Mono", "Menlo", monospace; }}
   .tier-P0 {{ font-weight: 700; }}
   .tier-P2 {{ opacity: 0.7; }}
-  .legend {{ font-size: 12px; color: #6b7280; margin-top: 16px; }}
+  .legend {{ font-size: 12px; color: #7d8590; margin-top: 16px; }}
 </style>
 </head>
 <body>
