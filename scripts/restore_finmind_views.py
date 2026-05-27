@@ -61,6 +61,17 @@ def restore(catalog_path: Path, sqlite_path: Path) -> int:
             f"CREATE VIEW {name} AS SELECT * FROM sqlite_scan('{abs_sqlite}', '{src}')"
         )
 
+    # TXO option daily (raw FinMind TaiwanOptionDaily; present only in recent
+    # snapshots). Best-effort — older snapshots predate the option backfill.
+    try:
+        con.execute("DROP VIEW IF EXISTS finmind_txo_option_daily")
+        con.execute(
+            f"CREATE VIEW finmind_txo_option_daily AS "
+            f"SELECT * FROM sqlite_scan('{abs_sqlite}', 'taiwan_option_daily')"
+        )
+    except Exception as e:
+        print(f"[warn] finmind_txo_option_daily: skipped — {e}", file=sys.stderr)
+
     # Canonical normalised views (max/min -> high/low, Trading_Volume -> volume, +source)
     for src, name in [
         ("taiwan_stock_price",     "finmind_stock_price_norm"),

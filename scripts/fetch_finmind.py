@@ -45,6 +45,12 @@ PRICE_DATASETS = {
 # global (no date) datasets refreshed each run to keep the universe current
 INFO_DATASETS = ["TaiwanStockInfo"]
 UNIVERSE_TYPES = ("twse", "tpex", "emerging")
+# by-RANGE datasets fetched with an explicit data_id (the range endpoint honors
+# end_date, unlike the no-data_id stock bulk). dataset -> (live table, data_id).
+OPTION_DATASETS = {
+    "TaiwanOptionDaily": ("taiwan_option_daily", "TXO"),
+}
+OPTION_EARLIEST = "2020-01-01"  # matches the legacy txo_daily_features range
 
 
 def _today() -> dt.date:
@@ -84,7 +90,29 @@ def _build_plan(only: set[str] | None, full: bool) -> list[dict]:
         start = "2000-01-01" if (full or not mx) else mx  # re-fetch max day (dedup via OR REPLACE)
         plan.append({"dataset": ds, "kind": "by_date", "start": start, "end": today,
                      "max_before": mx})
+    for ds, (table, data_id) in OPTION_DATASETS.items():
+        if only and ds not in only:
+            continue
+        mx = _max_date(live, table)
+        start = OPTION_EARLIEST if (full or not mx) else mx  # re-fetch max day (dedup)
+        plan.append({"dataset": ds, "kind": "by_range", "data_id": data_id,
+                     "start": start, "end": today, "max_before": mx})
     return plan
+
+
+def _year_chunks(start: str, end: str) -> list[tuple[str, str]]:
+    """Split [start..end] into per-calendar-year (start,end) pairs (bounds the
+    response size of a range fetch)."""
+    s = dt.date.fromisoformat(start)
+    e = dt.date.fromisoformat(end)
+    out = []
+    y = s.year
+    while y <= e.year:
+        cs = max(s, dt.date(y, 1, 1)).isoformat()
+        ce = min(e, dt.date(y, 12, 31)).isoformat()
+        out.append((cs, ce))
+        y += 1
+    return out
 
 
 def _day_range(start: str, end: str) -> list[str]:
@@ -137,6 +165,23 @@ async def _run_fetch(plan: list[dict]) -> dict:
                 days_landed.append(day)
             results[name] = {
                 "fetched": fetched, "upserted": upserted, "days_landed": days_landed,
+                "start": item["start"], "end": item["end"], "max_before": item.get("max_before"),
+            }
+
+        # by-RANGE datasets (data_id given → range endpoint returns the whole
+        # window). Year-chunk to bound each response.
+        for item in [p for p in plan if p["kind"] == "by_range"]:
+            name = item["dataset"]
+            ds = by_name(name)
+            fetched = upserted = 0
+            for cs, ce in _year_chunks(item["start"], item["end"]):
+                rows = await client.fetch(name, data_id=item["data_id"], start_date=cs, end_date=ce)
+                if not rows:
+                    continue
+                fetched += len(rows)
+                upserted += storage.upsert(ds, rows)
+            results[name] = {
+                "fetched": fetched, "upserted": upserted, "data_id": item["data_id"],
                 "start": item["start"], "end": item["end"], "max_before": item.get("max_before"),
             }
     return results
@@ -193,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
     for p in plan:
         if p["kind"] == "by_date":
             print(f"  {p['dataset']:22s} by_date {p['start']}..{p['end']} (max_before={p['max_before']})")
+        elif p["kind"] == "by_range":
+            print(f"  {p['dataset']:22s} by_range ({p['data_id']}) {p['start']}..{p['end']} (max_before={p['max_before']})")
         else:
             print(f"  {p['dataset']:22s} global (full refresh)")
     if args.dry_run:
@@ -205,6 +252,8 @@ def main(argv: list[str] | None = None) -> int:
             ld = r["days_landed"]
             span = f"{ld[0]}..{ld[-1]}" if ld else "(no new days)"
             print(f"  ✓ {name:22s} upserted={r['upserted']} days={len(ld)} [{span}]")
+        elif "data_id" in r:
+            print(f"  ✓ {name:22s} ({r['data_id']}) upserted={r['upserted']} [{r['start']}..{r['end']}]")
         else:
             print(f"  ✓ {name:22s} fetched={r['fetched']} upserted={r['upserted']}")
 
