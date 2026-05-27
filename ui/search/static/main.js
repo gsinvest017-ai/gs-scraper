@@ -233,9 +233,55 @@
       const ySel = document.getElementById('chart-y');
       const ys = Array.from(ySel.selectedOptions).map(o => o.value);
       const groupBy = document.getElementById('chart-group').value;
+      const period = (document.getElementById('chart-period') || {}).value || 'D';
+      const agg = (document.getElementById('chart-agg') || {}).value || 'last';
       if (!x || ys.length === 0) { alert('Pick X (date) + at least one Y'); return; }
       const xIdx = lastResult.columns.indexOf(x);
       if (xIdx < 0) return;
+
+      // Map a date string to a period-bucket key. D = raw (own bucket).
+      function periodKey(v, p) {
+        if (p === 'D') return String(v);
+        const d = new Date(v);
+        if (isNaN(d.getTime())) return String(v);  // non-date X → no resample
+        const y = d.getUTCFullYear(), m = d.getUTCMonth();  // m: 0-11
+        if (p === 'W') {  // ISO-ish: bucket by that week's Monday
+          const mon = new Date(d);
+          mon.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+          return mon.toISOString().slice(0, 10);
+        }
+        if (p === 'M') return `${y}-${String(m + 1).padStart(2, '0')}`;
+        if (p === 'H') return `${y}-H${m < 6 ? 1 : 2}`;
+        if (p === 'Y') return String(y);
+        return String(v);
+      }
+      function aggregate(vals, a) {
+        if (!vals.length) return null;
+        if (a === 'sum') return vals.reduce((s, c) => s + c, 0);
+        if (a === 'mean') return vals.reduce((s, c) => s + c, 0) / vals.length;
+        if (a === 'first') return vals[0];
+        if (a === 'min') return Math.min(...vals);
+        if (a === 'max') return Math.max(...vals);
+        return vals[vals.length - 1];  // last (period-end)
+      }
+      // Resample an already-X-sorted series into period buckets. x of each
+      // bucket = its last (max) date; y = agg of numeric values in the bucket.
+      function resample(xs, yv, p, a) {
+        if (p === 'D') return { x: xs, y: yv };
+        const buckets = new Map();
+        for (let i = 0; i < xs.length; i++) {
+          const k = periodKey(xs[i], p);
+          if (!buckets.has(k)) buckets.set(k, { lastX: xs[i], vals: [] });
+          const b = buckets.get(k);
+          b.lastX = xs[i];  // xs sorted asc → last seen is the bucket max
+          const n = Number(yv[i]);
+          if (yv[i] != null && yv[i] !== '' && !Number.isNaN(n)) b.vals.push(n);
+        }
+        const ox = [], oy = [];
+        for (const b of buckets.values()) { ox.push(b.lastX); oy.push(aggregate(b.vals, a)); }
+        return { x: ox, y: oy };
+      }
+      const PERIOD_LABEL = { D: '日', W: '周', M: '月', H: '半年', Y: '年' };
 
       // Helper: sort (x[], y[]) pairs by X ascending — Plotly draws lines in array
       // order, so unsorted X (e.g. when query was ORDER BY ingestion_ts DESC) gives
@@ -271,8 +317,9 @@
         keys.slice(0, 20).forEach(key => {
           ys.forEach((yc, i) => {
             const sorted = sortByX(groups[key].x, groups[key].ys[i]);
+            const rs = resample(sorted.x, sorted.y, period, agg);
             traces.push({ type: 'scatter', mode: 'lines+markers', name: `${key} · ${yc}`,
-                          x: sorted.x, y: sorted.y });
+                          x: rs.x, y: rs.y });
           });
         });
       } else {
@@ -281,9 +328,10 @@
           const xs = lastResult.rows.map(r => r[xIdx]);
           const ysArr = lastResult.rows.map(r => r[yIdx]);
           const sorted = sortByX(xs, ysArr);
+          const rs = resample(sorted.x, sorted.y, period, agg);
           traces.push({
             type: 'scatter', mode: 'lines+markers', name: yc,
-            x: sorted.x, y: sorted.y,
+            x: rs.x, y: rs.y,
           });
         });
       }
@@ -294,7 +342,7 @@
         paper_bgcolor: '#161c24',
         plot_bgcolor: '#161c24',
         font: { color: '#e6edf3' },
-        xaxis: { title: x, ...axis },
+        xaxis: { title: `${x} · ${PERIOD_LABEL[period] || ''}${period !== 'D' ? ' (' + agg + ')' : ''}`, ...axis },
         yaxis: { title: ys.join(', '), ...axis },
         legend: { font: { color: '#e6edf3' } },
         showlegend: true,

@@ -72,6 +72,24 @@
           {% for c in meta.string_columns %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
         </select>
       </label>
+      <label>Period 週期
+        <select id="chart-period">
+          <option value="D">日 (原始)</option>
+          <option value="W">周</option>
+          <option value="M">月</option>
+          <option value="H">半年</option>
+          <option value="Y">年</option>
+        </select>
+      </label>
+      <label>Aggregation 聚合
+        <select id="chart-agg">
+          <option value="last">last 期末</option>
+          <option value="mean">mean 均值</option>
+          <option value="sum">sum 加總</option>
+          <option value="min">min</option>
+          <option value="max">max</option>
+        </select>
+      </label>
       <button type="button" id="render-chart-btn">Render chart</button>
     </div>
     <div id="plot" style="height: 500px;"></div>
