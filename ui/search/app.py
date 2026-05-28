@@ -258,7 +258,7 @@ def _jsonify_cell(v):
 
 
 def main():
-    host = "127.0.0.1"
+    host = "0.0.0.0"
     port = 5050
     print(f"[search-ui] starting on http://{host}:{port}", flush=True)
     print(f"[search-ui] catalog: {CATALOG}", flush=True)

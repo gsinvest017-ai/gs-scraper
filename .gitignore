@@ -109,3 +109,6 @@ meta/audit/daily_refresh_cron.log
 # === DuckDB lock / temp ===
 *.duckdb.wal
 *.duckdb.tmp
+
+# === /set-serve-eth backup metadata (per-machine, do not commit) ===
+.claude/local/
