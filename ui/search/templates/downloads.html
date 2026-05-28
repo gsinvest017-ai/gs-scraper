@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Downloads — QUANTDATA Search{% endblock %}
+{% block content %}
+<h1>📦 Bulk CSV downloads</h1>
+<p class="subtitle">勾選 view → 「Download selected as .zip」批次下載（一檔一個 view 為 CSV）。單筆可直接點「↓」下載；catalog ~10GB，請依需要分批。</p>
+
+<form id="dl-form" action="/download/bundle.zip" method="get" target="_blank">
+  <div class="filter-bar" style="margin-bottom:8px">
+    <input id="filter-input" type="text" placeholder="filter by name…" autocomplete="off">
+    <button type="button" data-bucket="all">Select All</button>
+    <button type="button" data-bucket="small">≤ 100k</button>
+    <button type="button" data-bucket="medium">≤ 1M</button>
+    <button type="button" data-bucket="large">&gt; 1M</button>
+    <button type="button" data-bucket="none">Clear</button>
+  </div>
+  <div id="warn" class="err" style="display:none; margin:6px 0 12px"></div>
+
+  <table>
+    <thead><tr>
+      <th style="width:32px"></th>
+      <th>View</th>
+      <th class="num">Rows</th>
+      <th style="width:90px"></th>
+    </tr></thead>
+    <tbody id="dl-rows">
+      {% for v in views %}
+      <tr data-rows="{{ v.row_count }}">
+        <td><input type="checkbox" name="v" value="{{ v.name }}"></td>
+        <td><code>{{ v.name }}</code></td>
+        <td class="num">{{ "{:,}".format(v.row_count) }}</td>
+        <td><a class="btn" href="/download/view/{{ v.name }}.csv">CSV ↓</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="filter-actions" style="margin-top:16px">
+    <span id="sel-meta" class="muted">0 selected · 0 rows</span>
+    <button type="submit" class="primary">Download selected as .zip</button>
+  </div>
+</form>
+
+<script>
+(function() {
+  const rows = Array.from(document.querySelectorAll('#dl-rows tr'));
+  const filterInput = document.getElementById('filter-input');
+  const selMeta = document.getElementById('sel-meta');
+  const warn = document.getElementById('warn');
+  const fmt = n => n.toLocaleString();
+
+  function update() {
+    const sel = rows.filter(r => r.querySelector('input').checked);
+    const totalRows = sel.reduce((a, r) => a + Number(r.dataset.rows || 0), 0);
+    selMeta.textContent = `${sel.length} selected · ${fmt(totalRows)} rows`;
+    // ~150 bytes/row rough estimate × 0.5 zip compression ≈ 75 b/row → MB
+    const estMB = (totalRows * 75) / 1024 / 1024;
+    if (totalRows > 1_000_000) {
+      warn.style.display = 'block';
+      warn.textContent = `⚠ selected ${fmt(totalRows)} rows — est. ~${estMB.toFixed(0)} MB; download may take minutes.`;
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+
+  document.querySelectorAll('button[data-bucket]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const b = btn.dataset.bucket;
+      rows.forEach(r => {
+        if (r.style.display === 'none') return;
+        const n = Number(r.dataset.rows || 0);
+        const cb = r.querySelector('input');
+        if (b === 'all') cb.checked = true;
+        else if (b === 'none') cb.checked = false;
+        else if (b === 'small') cb.checked = n <= 100_000;
+        else if (b === 'medium') cb.checked = n > 100_000 && n <= 1_000_000;
+        else if (b === 'large') cb.checked = n > 1_000_000;
+      });
+      update();
+    });
+  });
+
+  document.getElementById('dl-rows').addEventListener('change', update);
+
+  filterInput.addEventListener('input', () => {
+    const q = filterInput.value.trim().toLowerCase();
+    rows.forEach(r => {
+      const name = r.querySelector('code').textContent.toLowerCase();
+      r.style.display = (!q || name.includes(q)) ? '' : 'none';
+    });
+  });
+
+  document.getElementById('dl-form').addEventListener('submit', e => {
+    const n = rows.filter(r => r.querySelector('input').checked).length;
+    if (!n) { e.preventDefault(); alert('Pick at least one view.'); }
+  });
+
+  update();
+})();
+</script>
+{% endblock %}

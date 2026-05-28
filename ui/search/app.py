@@ -15,7 +15,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, abort
+from flask import Flask, Response, abort, after_this_request, jsonify, render_template, request, send_file, stream_with_context
 
 # Allow `python -m ui.search.app` from repo root
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -132,6 +132,114 @@ def api_refresh():
     refresh_catalog_copy()
     return jsonify({"ok": True, "n_views": len(list_views())})
 
+
+# --- Bulk download (single CSV + zip bundle) ------------------------------
+
+_CSV_CHUNK = 50_000  # rows per fetchmany batch
+
+
+def _csv_escape(v) -> str:
+    if v is None:
+        return ""
+    s = str(v)
+    if any(c in s for c in (",", '"', "\n", "\r")):
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+
+def _stream_view_csv(view: str):
+    """Yield CSV chunks for a view — header + fetchmany batches."""
+    con = get_connection()
+    try:
+        cur = con.execute(f'SELECT * FROM "{view}"')
+        cols = [d[0] for d in cur.description]
+        yield ",".join(_csv_escape(c) for c in cols) + "\n"
+        while True:
+            rows = cur.fetchmany(_CSV_CHUNK)
+            if not rows:
+                break
+            yield "\n".join(",".join(_csv_escape(c) for c in r) for r in rows) + "\n"
+    finally:
+        con.close()
+
+
+@app.route("/downloads")
+def downloads_page():
+    views = list_views()
+    summaries = []
+    for v in views:
+        try:
+            s = view_summary(v)
+            summaries.append({"name": v, "row_count": s.get("row_count") or 0})
+        except Exception:
+            summaries.append({"name": v, "row_count": 0})
+    summaries.sort(key=lambda s: -s["row_count"])
+    return render_template("downloads.html", views=summaries, catalog_path=str(CATALOG))
+
+
+@app.route("/download/view/<view>.csv")
+def download_view_csv(view: str):
+    if view not in list_views():
+        abort(404)
+    headers = {"Content-Disposition": f'attachment; filename="{view}.csv"'}
+    return Response(stream_with_context(_stream_view_csv(view)),
+                    mimetype="text/csv; charset=utf-8", headers=headers)
+
+
+@app.route("/download/bundle.zip")
+def download_bundle_zip():
+    import os
+    import tempfile
+    import zipfile
+    requested = request.args.getlist("v")
+    if not requested:
+        return jsonify({"error": "no views selected (pass ?v=name&v=name...)"}), 400
+    valid = set(list_views())
+    bad = [v for v in requested if v not in valid]
+    if bad:
+        return jsonify({"error": f"unknown views: {bad}"}), 400
+
+    tmp = tempfile.NamedTemporaryFile(prefix="quantdata_", suffix=".zip", delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+
+    errors: dict[str, str] = {}
+    try:
+        con = get_connection()
+        with zipfile.ZipFile(tmp_path, mode="w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            for v in requested:
+                try:
+                    with zf.open(f"{v}.csv", mode="w", force_zip64=True) as entry:
+                        cur = con.execute(f'SELECT * FROM "{v}"')
+                        cols = [d[0] for d in cur.description]
+                        entry.write((",".join(_csv_escape(c) for c in cols) + "\n").encode("utf-8"))
+                        while True:
+                            rows = cur.fetchmany(_CSV_CHUNK)
+                            if not rows:
+                                break
+                            buf = "\n".join(",".join(_csv_escape(c) for c in r) for r in rows) + "\n"
+                            entry.write(buf.encode("utf-8"))
+                except Exception as e:
+                    errors[v] = str(e)
+            if errors:
+                zf.writestr("_errors.txt", "\n".join(f"{k}: {v}" for k, v in errors.items()))
+        con.close()
+    except Exception:
+        try: os.unlink(tmp_path)
+        except OSError: pass
+        raise
+
+    @after_this_request
+    def _cleanup(resp):
+        try: os.unlink(tmp_path)
+        except OSError: pass
+        return resp
+
+    name = "quantdata_bundle.zip" if len(requested) > 1 else f"{requested[0]}.csv.zip"
+    return send_file(tmp_path, as_attachment=True, download_name=name, mimetype="application/zip")
+
+
+# --- helpers --------------------------------------------------------------
 
 def _jsonify_cell(v):
     if v is None:

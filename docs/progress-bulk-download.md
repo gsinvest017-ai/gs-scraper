@@ -60,4 +60,25 @@
 
 ## 完成日誌
 
-（M2–M4 後追加）
+### M2 — endpoints in `ui/search/app.py`
+
+- `_csv_escape()` / `_stream_view_csv()` helpers（fetchmany 50,000/批，記憶體穩定）。
+- `GET /downloads` 渲染 downloads.html，列出所有 view + row_count（依 row_count desc 排）。
+- `GET /download/view/<v>.csv` 串流 CSV（`stream_with_context` + DuckDB cursor）；attachment header；utf-8 mimetype。
+- `GET /download/bundle.zip?v=&v=...` 寫 `NamedTemporaryFile`（`ZIP_DEFLATED` + `allowZip64=True`，每 entry `force_zip64=True`）。每 view 單獨 try/except 收 `_errors.txt`，不會因一個 view 失敗就毀整包。`after_this_request` 註冊清 temp 檔。
+
+### M3 — frontend
+
+- `templates/downloads.html`：勾選表 + name filter input + 4 個 bucket 預設按鈕（≤100k / ≤1M / >1M / All / Clear）+ 「Download selected as .zip」submit；客端 estimated MB（~75 b/row 經壓縮）警示 >1M rows。
+- `base.html` nav 加 `/downloads` 連結。
+
+### M4 — 測試 + 重啟
+
+- 殺掉舊 5050 Flask（PID 638761），重啟新 code。
+- curl `/downloads` 200，DOM 含預設批次按鈕；`/download/view/calendar_xtai.csv` 200，142,338 bytes / 3,925 lines（header + 3,924 rows，欄位對齊）；`/download/bundle.zip?v=calendar_xtai&v=cross_market_features` 200，424,236 bytes，zipfile.ZipFile 讀取兩 entry 完整（calendar 14.5KB 壓縮，cross_market 1MB→400KB）。
+- 無錯誤；temp 檔 after_this_request 已清。
+
+## 後續
+
+- 大 view（10M+ rows）下載未本機跑滿 stress test；理論上 fetchmany + zipfile streaming 寫入 disk 不會 OOM，但實際單一 view 10GB CSV 仍可能下載端逾時。若需要可再加：每 view 一個獨立 download endpoint，使用者並行下載。
+- 可加 CLI（`scripts/export_views.py`）做離線批次匯出，不經 HTTP。
