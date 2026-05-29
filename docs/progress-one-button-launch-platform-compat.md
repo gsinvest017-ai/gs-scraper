@@ -48,6 +48,42 @@
 | **M3** | `.gitattributes`：`*.sh` LF、`*.parquet`/`*.duckdb` binary、Python/CSS/JS/MD 強制 LF |
 | **M4** | smoke：跑 `./run.sh --help`，commit + 進度檔收尾 |
 
+## 進度日誌
+
+### M1 — plan + audit  `f732721`
+
+偵測與 audit table 寫在本文件上半段。
+
+### M2 — `run.sh` + `run.ps1`  `(M2 commit)`
+
+兩支頂層 launcher，相同子命令介面：
+
+| sub | 行為 |
+|---|---|
+| `setup` | 偵測 python >= 3.11，沒 `.venv/` 就 `python -m venv`，缺 `qd_ingest` 套件就 `pip install -e ".[ingest]"`（idempotent） |
+| `ui` | `python -m ui.search.app` |
+| `dashboard` | `python scripts/gap_report.py --format all` |
+| `ingest` | `bash scripts/daily_refresh.sh`（Windows 版直接 fail，叫使用者用 WSL2） |
+| `test` | `python -m pytest -q tests/` |
+| `shell` | `duckdb catalog/quant.duckdb` |
+
+無參數 → 印 menu + `read` 互動選一支。Windows 版用 `Read-Host`。
+
+### M3 — `.gitattributes`  `9edf1bf`
+
+- `* text=auto eol=lf` 為預設
+- `.sh/.py/.css/.js/.md/.toml/.yml/.json` 強制 LF
+- `.ps1/.bat/.cmd/.psm1` 強制 CRLF（Windows-native）
+- `.parquet/.duckdb/.duckdb.wal/.pdf/.zip/.png/.woff` 標 binary（`-text -diff -merge`）
+- 驗證：`git check-attr text catalog/quant.duckdb` → `text: unset` ✓；`run.sh` → `text: set` ✓
+
+### M4 — smoke
+
+- `./run.sh --help` → 列出選單 ✓
+- `./run.sh setup` → `setup complete — venv at .venv` ✓
+- `bash -n run.sh` → 文法 OK ✓
+- `pwsh` 未安裝於 WSL2（正常）；run.ps1 用 PS 5.1+ 語法、不依賴外部 module，手動可在 Windows 端跑
+
 ## Fallback
 
 要 rollback：
@@ -59,3 +95,9 @@ rm -f run.sh run.ps1 .gitattributes
 
 `/one-button-launch` 與 `/platform-compatible` 都不會動 ingest 邏輯、catalog、bronze/silver/gold
 資料，純粹是新增 launcher 與 git 屬性檔。
+
+## 後續可選
+
+- daily_refresh / cron / tunnel 類 Linux-only 腳本：補一條註記在 README，說明它們是 Linux 部署層、Windows 用 WSL2。
+- 加 GitHub Actions `pytest.yml` matrix（ubuntu-latest + windows-latest）用 `run.sh test` / `run.ps1 test` 同時測。本輪未做，避免一次改太多。
+- README 加「Quick start」一行：`./run.sh setup && ./run.sh ui` —— 取代原本三條 manual 指令。
