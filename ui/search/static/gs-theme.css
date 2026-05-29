@@ -1,0 +1,86 @@
+/* applied by /apply-gs-templete 2026-05-28
+ * source: /mnt/c/Users/User/gs-trading-portal/style.css
+ * Genesis gold theme — warm-black bg + champagne fg + gold/copper/champagne/bronze accents
+ *
+ * This file loads AFTER ui/search/static/style.css. The alias-bridge block at the
+ * bottom remaps the existing GH-dark var names (--bg/--panel/--primary/...)
+ * onto the GS palette, so no selectors need to change.
+ */
+:root {
+  /* ── backgrounds (warm-black) ─────────────────── */
+  --bg-0: #07060a;
+  --bg-1: #0c0a0d;
+  --bg-2: #14110f;
+  --bg-card: #161210;
+  --bg-card-hover: #1d1815;
+
+  /* ── grid / lines (cool dim) ──────────────────── */
+  --grid: rgba(140, 150, 165, 0.035);
+  --grid-strong: rgba(140, 150, 165, 0.07);
+  --line: #2b2218;
+  --line-hi: #3d2f1f;
+
+  /* ── foreground (champagne) ───────────────────── */
+  --fg-0: #f0e8d6;
+  --fg-1: #c9b88a;
+  --fg-2: #8a7a5a;
+  --fg-dim: #4f4530;
+
+  /* ── Genesis gold family ──────────────────────── */
+  --gold:           #d4af37;
+  --gold-light:     #e6c97a;
+  --gold-soft:      rgba(212, 175, 55, 0.10);
+  --champagne:      #e8d195;
+  --champagne-soft: rgba(232, 209, 149, 0.08);
+  --copper:         #cd7f32;
+  --copper-soft:    rgba(205, 127, 50, 0.10);
+  --bronze:         #b08d57;
+  --bronze-soft:    rgba(176, 141, 87, 0.10);
+  --amber:          #f5a524;
+  --amber-soft:     rgba(245, 165, 36, 0.12);
+  --rose:           #e0a458;
+
+  /* ── fonts ────────────────────────────────────── */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+
+  /* ── alias bridge → keeps existing QUANTDATA selectors working ── */
+  --bg:            var(--bg-0);
+  --panel:         var(--bg-card);
+  --panel-2:       var(--bg-card-hover);
+  --fg:            var(--fg-0);
+  --muted:         var(--fg-2);
+  --primary:       var(--gold);
+  --primary-hover: var(--gold-light);
+  --primary-fg:    #0d0a05;
+  --accent:        var(--champagne);
+  --accent-2:      var(--copper);
+  --bad:           #e0625a;
+  --border:        var(--line);
+  --code-bg:       var(--bg-card-hover);
+}
+
+body {
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(1200px 600px at 78% -8%, rgba(212, 175, 55, 0.08), transparent 60%),
+    radial-gradient(900px 500px at -8% 92%, rgba(205, 127, 50, 0.06), transparent 60%),
+    var(--bg-0) !important;
+  color: var(--fg-0);
+}
+
+code, .num { font-family: var(--font-mono); }
+
+/* hover/active gold polish for tables and links */
+.links a:hover { color: var(--gold-light); }
+tr:hover td   { background: rgba(212, 175, 55, 0.04); }
+
+/* a11y: keep focus visible against gold accents */
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
