@@ -1,0 +1,48 @@
+# QUANTDATA — line ending + binary handling for Windows / Linux co-clone.
+# Default: auto-detect text. Then pin specific extensions so Windows checkouts
+# stay safe to run.
+
+* text=auto eol=lf
+
+# Source code & config — must stay LF (shell would break with CRLF)
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.py        text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.html      text eol=lf
+*.sql       text eol=lf
+*.lock      text eol=lf
+Dockerfile  text eol=lf
+.gitignore  text eol=lf
+.env*       text eol=lf
+
+# PowerShell — Windows-native, CRLF is normal there
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary — never normalize, never diff as text
+*.parquet   binary
+*.duckdb    binary
+*.duckdb.wal binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.ico       binary
+*.woff      binary
+*.woff2     binary
+
+# Generated dashboards: tracked but treat as text artifacts
+docs/gap_dashboard.html       text eol=lf
+docs-site/gap_dashboard.html  text eol=lf
