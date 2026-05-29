@@ -139,8 +139,12 @@ def discover(root: Path | None = None) -> list[Path]:
 
 def validate_file(p: Path) -> dict:
     kv, errors, warnings = parse_frontmatter(p)
+    try:
+        path_str = str(p.relative_to(REPO))
+    except ValueError:
+        path_str = str(p)
     return {
-        "path": str(p.relative_to(REPO)),
+        "path": path_str,
         "id": kv.get("id"),
         "title": kv.get("title"),
         "runner": kv.get("runner"),
