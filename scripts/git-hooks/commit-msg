@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# QUANTDATA commit-msg hook — 驗證標題含中文。
+#
+# 安裝（per-clone，git 不追蹤 .git/hooks/）：
+#   ln -sf ../../scripts/git-hooks/commit-msg .git/hooks/commit-msg
+#
+# 略過（緊急修補 / 不可逆狀況）：
+#   git commit --no-verify -m "..."
+
+set -e
+
+MSG_FILE="$1"
+REPO="$(git rev-parse --show-toplevel)"
+
+# 找 python：優先 .venv，回退系統
+PY="$REPO/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
+[ -n "$PY" ] || { echo "[commit-msg] 找不到 python" >&2; exit 1; }
+
+"$PY" "$REPO/scripts/check_commit_messages.py" --file "$MSG_FILE"
