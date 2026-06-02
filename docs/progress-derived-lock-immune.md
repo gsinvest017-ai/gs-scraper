@@ -40,6 +40,72 @@ dashboard 現況（2026-06-02）：
 
 **本輪不修的 STALE**：tx/mtx/MXF/個股期連續這 5 條來自 `RAW_SOURCES/*` 手動 dump 的 parquet，沒有 fetcher；要寫 RAW_SOURCES → silver 的 ingest（不在本輪範圍，列下一輪 todo）。
 
+## 進度日誌
+
+### M2 — `_readonly_catalog()` helper + 6 處替換  `1108be7`
+
+`derived.py` 開頭加 `_readonly_catalog()`：tmp `shutil.copy(CATALOG_DB)`、
+`atexit` 清檔、per-process 共用一份 snapshot。6 處 `duckdb.connect(CATALOG_DB,
+read_only=True)` 全換掉。一個小 smoke：`_readonly_catalog()` 對仍鎖中的
+catalog 仍能讀到 59 個 table。
+
+### M3 — 跑 build_all + 重生 dashboard  `974425a`
+
+`python -m qd_ingest.sources.derived` 跑完，22 個 builder 全 OK，總時間
+~45 秒。row count 例：
+
+- `stock_factor_daily` 6.6M rows / 2916 symbols
+- `accounting_raw_snapshot` 6.4M rows / 17 yearly partitions
+- `chip_dist_factors` 10.6M rows / 3092 stocks
+- `dividend_calendar` 3.2M rows
+
+Dashboard 變化（before → after）：
+
+| 狀態 | before | after | delta |
+|---|---|---|---|
+| ✅ OK | 19 | **31** | **+12** |
+| ℹ️ INFO | 10 | 3 | -7 |
+| ⚠️ WARN | 9 | 4 | -5 |
+| 🔴 STALE | 7 | 7 | 0 |
+| ❓ EMPTY | 1 | 1 | 0 |
+
+**主要勝利**：19 個曾經 INFO/WARN 的 derived 一次清掉 12 條。剩下 7 條 INFO/WARN
+是 cron 還沒重跑（不是被擋）；下次 cron 自動 cover。
+
+## 還沒解的（下一輪 todo）
+
+### 🔴 STALE × 7（需手動 RAW_SOURCES → silver 的 ingest，本輪不做）
+
+| view | 來源 | 工作量 |
+|---|---|---|
+| `tx_continuous_d` | `RAW_SOURCES/日k 期貨tquant lab/TX*.parquet` | 寫 ingest read + 標準化 schema |
+| `mtx_continuous_d` | 同上 | 同上 |
+| `stock_futures_continuous_d` | `RAW_SOURCES/股票期貨/` | 同上 |
+| `bars_1m` | `RAW_SOURCES/MXF_1m_clean_all/` | 同上 |
+| `bars_1m_daily_summary` | derived from bars_1m | 上游補齊 → 自動就好 |
+| `tw_inst_market_daily` | aggregate from `tw_inst_stock_daily`（OK） | 寫一個 `build_tw_inst_market_daily()` |
+| `tw_inst_market_daily_snapshot` | materialize 上面 | 上游補齊 → 自動就好 |
+
+### ❓ EMPTY × 1
+
+- `cross_market_features`：builder 已存在但本輪沒被叫到（M3 跑的 build_all 看
+  log 沒看到 cross_market 行）。**追因**：可能在 build_all() 內被條件式 skip；
+  下次跑前看 `derived.py` build_all 是否有覆蓋這支。
+
+## 還想加速？
+
+從 ROI 高到低：
+
+1. **`tw_inst_market_daily` 寫個 group-by aggregator**（10 行 SQL），解掉 2 條
+   STALE 並串到 build_all
+2. **`build_all` 加 cross_market_features 呼叫**，解掉 EMPTY
+3. **RAW_SOURCES → silver ingest 寫個 fetcher**（單表 ~30 行），解掉剩下 4 條
+   STALE
+4. **改 daily_refresh.sh** 在 step 3.7 之前 sleep 等 lock（這次根因已解，未來
+   多保險用）
+5. **cron 跑 derived 改成讀 tmp snapshot 並 keep 過去 N 份**（debug 時可以拿
+   過去 snapshot 比對 row count）
+
 ## Fallback
 
 ```bash
