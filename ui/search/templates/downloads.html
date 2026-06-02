@@ -1,32 +1,45 @@
 {% extends "base.html" %}
-{% block title %}Downloads — QUANTDATA Search{% endblock %}
+{% block title %}批次下載 — QUANTDATA Search{% endblock %}
 {% block content %}
-<h1>📦 Bulk CSV downloads</h1>
-<p class="subtitle">勾選 view → 「Download selected as .zip」批次下載（一檔一個 view 為 CSV）。單筆可直接點「↓」下載；catalog ~10GB，請依需要分批。</p>
+<h1>📦 批次 CSV 下載</h1>
+<p class="subtitle">勾選 view → 「打包成 .zip 下載」批次下載（一檔一個 view 為 CSV）。單筆可直接點「↓ CSV」下載；catalog 約 10 GB，請依需要分批。</p>
 
 <form id="dl-form" action="/download/bundle.zip" method="get" target="_blank">
   <div class="filter-bar" style="margin-bottom:8px">
-    <input id="filter-input" type="text" placeholder="filter by name…" autocomplete="off">
-    <button type="button" data-bucket="all">Select All</button>
-    <button type="button" data-bucket="small">≤ 100k</button>
-    <button type="button" data-bucket="medium">≤ 1M</button>
-    <button type="button" data-bucket="large">&gt; 1M</button>
-    <button type="button" data-bucket="none">Clear</button>
+    <input id="filter-input" type="text" placeholder="依名稱過濾…" autocomplete="off">
+    <select id="source-filter">
+      <option value="">所有資料源</option>
+      {% for src in sources %}
+      <option value="{{ src }}">{{ src }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" data-bucket="all">全選</button>
+    <button type="button" data-bucket="small">≤ 10 萬列</button>
+    <button type="button" data-bucket="medium">≤ 100 萬列</button>
+    <button type="button" data-bucket="large">&gt; 100 萬列</button>
+    <button type="button" data-bucket="none">清除</button>
   </div>
   <div id="warn" class="err" style="display:none; margin:6px 0 12px"></div>
 
   <table>
     <thead><tr>
       <th style="width:32px"></th>
-      <th>View</th>
-      <th class="num">Rows</th>
+      <th>View 名稱</th>
+      <th>說明</th>
+      <th>資料源</th>
+      <th class="num">列數</th>
       <th style="width:90px"></th>
     </tr></thead>
     <tbody id="dl-rows">
       {% for v in views %}
-      <tr data-rows="{{ v.row_count }}">
+      <tr data-rows="{{ v.row_count }}" data-source="{{ v.data_source }}">
         <td><input type="checkbox" name="v" value="{{ v.name }}"></td>
         <td><code>{{ v.name }}</code></td>
+        <td class="desc-cell" title="{{ v.long_description }}">
+          {% if v.long_description %}{{ v.long_description[:55] }}{% if v.long_description|length > 55 %}…{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td><span class="ds-pill ds-{{ v.data_source }}">{{ v.data_source }}</span></td>
         <td class="num">{{ "{:,}".format(v.row_count) }}</td>
         <td><a class="btn" href="/download/view/{{ v.name }}.csv">CSV ↓</a></td>
       </tr>
@@ -35,8 +48,8 @@
   </table>
 
   <div class="filter-actions" style="margin-top:16px">
-    <span id="sel-meta" class="muted">0 selected · 0 rows</span>
-    <button type="submit" class="primary">Download selected as .zip</button>
+    <span id="sel-meta" class="muted">已選 0 個 view · 0 列</span>
+    <button type="submit" class="primary">打包成 .zip 下載</button>
   </div>
 </form>
 
@@ -44,6 +57,7 @@
 (function() {
   const rows = Array.from(document.querySelectorAll('#dl-rows tr'));
   const filterInput = document.getElementById('filter-input');
+  const sourceFilter = document.getElementById('source-filter');
   const selMeta = document.getElementById('sel-meta');
   const warn = document.getElementById('warn');
   const fmt = n => n.toLocaleString();
@@ -51,22 +65,34 @@
   function update() {
     const sel = rows.filter(r => r.querySelector('input').checked);
     const totalRows = sel.reduce((a, r) => a + Number(r.dataset.rows || 0), 0);
-    selMeta.textContent = `${sel.length} selected · ${fmt(totalRows)} rows`;
-    // ~150 bytes/row rough estimate × 0.5 zip compression ≈ 75 b/row → MB
+    selMeta.textContent = `已選 ${sel.length} 個 view · ${fmt(totalRows)} 列`;
+    // ~150 bytes/row 估算 × 0.5 zip 壓縮 ≈ 75 b/row → MB
     const estMB = (totalRows * 75) / 1024 / 1024;
     if (totalRows > 1_000_000) {
       warn.style.display = 'block';
-      warn.textContent = `⚠ selected ${fmt(totalRows)} rows — est. ~${estMB.toFixed(0)} MB; download may take minutes.`;
+      warn.textContent = `⚠ 已選 ${fmt(totalRows)} 列 — 估計約 ${estMB.toFixed(0)} MB；下載可能花幾分鐘。`;
     } else {
       warn.style.display = 'none';
     }
+  }
+
+  function applyTextSourceFilter() {
+    const q = filterInput.value.trim().toLowerCase();
+    const src = sourceFilter.value;
+    rows.forEach(r => {
+      const name = r.querySelector('code').textContent.toLowerCase();
+      const rsrc = r.dataset.source || '';
+      const matchName = !q || name.includes(q);
+      const matchSrc = !src || rsrc === src;
+      r.style.display = (matchName && matchSrc) ? '' : 'none';
+    });
   }
 
   document.querySelectorAll('button[data-bucket]').forEach(btn => {
     btn.addEventListener('click', () => {
       const b = btn.dataset.bucket;
       rows.forEach(r => {
-        if (r.style.display === 'none') return;
+        if (r.style.display === 'none') return;  // 只勾被 filter 顯示的
         const n = Number(r.dataset.rows || 0);
         const cb = r.querySelector('input');
         if (b === 'all') cb.checked = true;
@@ -80,18 +106,12 @@
   });
 
   document.getElementById('dl-rows').addEventListener('change', update);
-
-  filterInput.addEventListener('input', () => {
-    const q = filterInput.value.trim().toLowerCase();
-    rows.forEach(r => {
-      const name = r.querySelector('code').textContent.toLowerCase();
-      r.style.display = (!q || name.includes(q)) ? '' : 'none';
-    });
-  });
+  filterInput.addEventListener('input', applyTextSourceFilter);
+  sourceFilter.addEventListener('change', applyTextSourceFilter);
 
   document.getElementById('dl-form').addEventListener('submit', e => {
     const n = rows.filter(r => r.querySelector('input').checked).length;
-    if (!n) { e.preventDefault(); alert('Pick at least one view.'); }
+    if (!n) { e.preventDefault(); alert('至少選一個 view。'); }
   });
 
   update();
