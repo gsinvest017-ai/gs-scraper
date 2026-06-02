@@ -120,3 +120,29 @@ def test_U026_bs_iv_converges_within_60_iter():
     # Bisection: width / 2^60 ≈ 5e-18 → bracket error ≈ 1e-16, but our tolerance
     # is set by the function's mid-of-bracket return → at most width / 2^61
     assert abs(iv - sigma_in) < 1e-6
+
+
+# ── rf parameter override（rf_daily 串接後）─────────────────────────────────
+
+@pytest.mark.parametrize("rf_in", [0.0, 0.005, 0.015, 0.05])
+def test_U027_bs_round_trip_with_explicit_rf(rf_in):
+    """Pass explicit rf → price→iv round-trip must still recover sigma exactly."""
+    S, K, T, sigma_in = 100.0, 100.0, 30 / 365, 0.25
+    price = _bs_price(S, K, T, sigma_in, True, rf=rf_in)
+    iv = _bs_iv(price, S, K, T, True, rf=rf_in)
+    assert abs(iv - sigma_in) < 1e-3
+
+
+def test_U027_bs_rf_changes_price():
+    """rf=0 vs rf=5% on a 1-year ATM call should differ noticeably (~5%)."""
+    p0 = _bs_price(100, 100, 1.0, 0.20, True, rf=0.0)
+    p5 = _bs_price(100, 100, 1.0, 0.20, True, rf=0.05)
+    assert p5 > p0 + 1.5  # 1-year ATM call gains ~K*(1-e^-rT) from rf
+
+
+def test_U027_bs_rf_default_fallback():
+    """rf=None must equal explicit rf=_TXO_RF (0.015) — backward compat."""
+    from qd_ingest.sources.derived import _TXO_RF
+    p_default = _bs_price(100, 100, 30 / 365, 0.25, True)
+    p_explicit = _bs_price(100, 100, 30 / 365, 0.25, True, rf=_TXO_RF)
+    assert abs(p_default - p_explicit) < 1e-12

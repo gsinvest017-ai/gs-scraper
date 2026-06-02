@@ -94,7 +94,28 @@ def copy_txo_daily_features() -> dict:
 # moneyness put-call skew) and recomputed across the full history for a single
 # consistent definition. See docs/progress-txo-finmind.md.
 
-_TXO_RF = 0.015  # flat risk-free for the BS-IV proxy
+_TXO_RF = 0.015  # fallback flat risk-free if rf_daily lookup misses
+_RF_BY_DATE: dict[dt.date, float] | None = None
+
+
+def _get_rf(d: dt.date | None = None) -> float:
+    """Per-date risk-free lookup from silver/macro/rf_daily.parquet.
+
+    Lazy-loads on first call; returns `_TXO_RF` fallback if file missing or
+    date not in table. `d=None` returns the fallback constant (used by
+    backward-compat callsites)."""
+    global _RF_BY_DATE
+    if d is None:
+        return _TXO_RF
+    if _RF_BY_DATE is None:
+        fp = SILVER / "macro" / "rf_daily.parquet"
+        try:
+            rf_df = pd.read_parquet(fp)
+            rf_df["date"] = pd.to_datetime(rf_df["date"]).dt.date
+            _RF_BY_DATE = dict(zip(rf_df["date"], rf_df["rf"]))
+        except (FileNotFoundError, OSError):
+            _RF_BY_DATE = {}
+    return float(_RF_BY_DATE.get(d, _TXO_RF))
 
 
 def _norm_cdf(x: float) -> float:
@@ -102,30 +123,36 @@ def _norm_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
-def _bs_price(S: float, K: float, T: float, sigma: float, is_call: bool) -> float:
+def _bs_price(S: float, K: float, T: float, sigma: float, is_call: bool,
+              rf: float | None = None) -> float:
+    """Black-Scholes price. `rf=None` falls back to `_TXO_RF` constant for
+    backward compatibility with existing tests / callsites."""
     import math
+    r = _TXO_RF if rf is None else rf
     if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
         return max((S - K) if is_call else (K - S), 0.0)
-    d1 = (math.log(S / K) + (_TXO_RF + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
     d2 = d1 - sigma * math.sqrt(T)
     if is_call:
-        return S * _norm_cdf(d1) - K * math.exp(-_TXO_RF * T) * _norm_cdf(d2)
-    return K * math.exp(-_TXO_RF * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
+        return S * _norm_cdf(d1) - K * math.exp(-r * T) * _norm_cdf(d2)
+    return K * math.exp(-r * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
 
 
-def _bs_iv(price, S: float, K: float, T: float, is_call: bool) -> float:
-    """Implied vol by bisection. NaN if price below intrinsic / non-invertible."""
+def _bs_iv(price, S: float, K: float, T: float, is_call: bool,
+           rf: float | None = None) -> float:
+    """Implied vol by bisection. NaN if price below intrinsic / non-invertible.
+    `rf=None` falls back to `_TXO_RF` constant."""
     if price is None or not (price > 0) or S <= 0 or K <= 0 or T <= 0:
         return float("nan")
     intrinsic = max((S - K) if is_call else (K - S), 0.0)
     if price < intrinsic - 1e-6:
         return float("nan")
     lo, hi = 1e-4, 5.0
-    if _bs_price(S, K, T, hi, is_call) < price:  # price above max modelable
+    if _bs_price(S, K, T, hi, is_call, rf=rf) < price:  # price above max modelable
         return float("nan")
     for _ in range(60):
         mid = 0.5 * (lo + hi)
-        if _bs_price(S, K, T, mid, is_call) > price:
+        if _bs_price(S, K, T, mid, is_call, rf=rf) > price:
             hi = mid
         else:
             lo = mid
@@ -213,16 +240,17 @@ def build_txo_daily_features() -> dict:
                     max_pain_dist = (max_pain - spot) / spot
                 # ATM IV (avg of call+put at nearest strike to spot)
                 if T > 0 and spot > 0:
+                    rf_d = _get_rf(d if hasattr(d, "year") else None)
                     k_near = min(common, key=lambda k: abs(k - spot))
-                    iv_c = _bs_iv(calls.at[k_near, "settle"], spot, k_near, T, True)
-                    iv_p = _bs_iv(puts.at[k_near, "settle"], spot, k_near, T, False)
+                    iv_c = _bs_iv(calls.at[k_near, "settle"], spot, k_near, T, True, rf=rf_d)
+                    iv_p = _bs_iv(puts.at[k_near, "settle"], spot, k_near, T, False, rf=rf_d)
                     ivs = [v for v in (iv_c, iv_p) if v == v]
                     atm_iv = sum(ivs) / len(ivs) if ivs else float("nan")
                     # skew: OTM put (~spot*0.95) IV - OTM call (~spot*1.05) IV
                     kp = min(puts.index, key=lambda k: abs(k - spot * 0.95))
                     kc = min(calls.index, key=lambda k: abs(k - spot * 1.05))
-                    iv_otm_p = _bs_iv(puts.at[kp, "settle"], spot, kp, T, False)
-                    iv_otm_c = _bs_iv(calls.at[kc, "settle"], spot, kc, T, True)
+                    iv_otm_p = _bs_iv(puts.at[kp, "settle"], spot, kp, T, False, rf=rf_d)
+                    iv_otm_c = _bs_iv(calls.at[kc, "settle"], spot, kc, T, True, rf=rf_d)
                     if iv_otm_p == iv_otm_p and iv_otm_c == iv_otm_c:
                         iv_skew = iv_otm_p - iv_otm_c
 
