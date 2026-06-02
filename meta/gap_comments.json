@@ -1,7 +1,7 @@
 {
   "_schema_version": 1,
   "_doc": "Manual notes per catalog view shown in gap_dashboard. Edit via Search UI 「📝 編輯註解」 button or by hand. The Flask /api/gap_comments POST endpoint will update `updated_at` and `comments[<view>]`.",
-  "updated_at": "2026-06-02T09:35:00+08:00",
+  "updated_at": "2026-06-02T09:39:24+08:00",
   "comments": {
     "revenue_monthly": "TEJ 公布上限：每月 21 日左右公布上個月資料。lag 32d 為自然週期，不是 ingest bug。下次新資料 ~6/21。",
     "revenue_factors": "derived from revenue_monthly；隨上游公布週期更新。",
@@ -14,6 +14,7 @@
     "tx_continuous_d": "RAW_SOURCES/日k 期貨tquant lab/TX_continuous_raw.parquet 手動 re-dump；daily_refresh step 3.55 自動 propagate。",
     "mtx_continuous_d": "RAW_SOURCES/日k 期貨tquant lab/MTX_continuous_raw.parquet 手動 re-dump；daily_refresh step 3.55 自動 propagate。",
     "stock_futures_continuous_d": "RAW_SOURCES/股票期貨/continuous_near_month.parquet 手動 re-dump；daily_refresh step 3.55 自動 propagate。",
-    "cross_market_features": "RAW_SOURCES/SUPPLEMENT/DERIVED/cross_market_features.parquet 手動 re-dump；max_date 2026-04-28。"
+    "cross_market_features": "RAW_SOURCES/SUPPLEMENT/DERIVED/cross_market_features.parquet 手動 re-dump；max_date 2026-04-28。",
+    "txo_1min": "RAW_SOURCES/TXO_1min_merged_*.parquet 手動 dump；目前只到 2026-04-22。下次有新 RAW 後跑 scripts/ingest_txo_1min.py。"
   }
 }

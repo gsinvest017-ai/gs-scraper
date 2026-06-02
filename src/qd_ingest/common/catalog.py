@@ -137,6 +137,18 @@ def build(*, db_path=None) -> None:
             SELECT * FROM read_parquet('{_rel(rf_fp)}');
         """)
 
+    # === Silver options ===
+    txo_1min_root = SILVER / "options" / "txo_1min"
+    if txo_1min_root.exists() and any(txo_1min_root.rglob("*.parquet")):
+        con.execute(f"""
+            CREATE OR REPLACE VIEW txo_1min AS
+            SELECT * FROM read_parquet(
+                '{_rel(txo_1min_root)}/**/*.parquet',
+                hive_partitioning=TRUE,
+                union_by_name=TRUE
+            );
+        """)
+
     # === Gold ===
     for name, fp in [
         ("tx_continuous_d",  GOLD / "continuous" / "tx_continuous_d.parquet"),

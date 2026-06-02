@@ -229,6 +229,12 @@ DATASETS = [
             raw_paths=("../RAW_SOURCES/無風險利率日資料_*.csv",),
             silver_paths=("silver/macro/rf_daily.parquet",),
             gold_paths=("silver/macro/rf_daily.parquet",)),  # 純 silver；無需再衍生 gold
+    Dataset("txo_1min",                "trade_date",   "daily-trading",
+            "scripts/ingest_txo_1min.py  (one-shot ingest of RAW parquet)",
+            "選擇權 TXO 1 分鐘 K", "P2",
+            raw_paths=("../RAW_SOURCES/TXO_1min_merged_*.parquet",),
+            silver_paths=("silver/options/txo_1min/**/*.parquet",),
+            gold_paths=("silver/options/txo_1min/**/*.parquet",)),  # 純 silver；下一輪可衍生 gold
     Dataset("txo_daily_features",      "date",         "daily-trading",
             "python -m qd_ingest.sources.derived  (build_txo_daily_features ← FinMind option daily)",
             "選擇權 TXO 日特徵", "P2",
