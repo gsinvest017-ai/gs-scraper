@@ -96,26 +96,83 @@ def copy_txo_daily_features() -> dict:
 
 _TXO_RF = 0.015  # fallback flat risk-free if rf_daily lookup misses
 _RF_BY_DATE: dict[dt.date, float] | None = None
+_RF_CURVE_BY_DATE: dict[dt.date, tuple[float, float]] | None = None  # (irx_pct, tnx_pct) per date
 
 
-def _get_rf(d: dt.date | None = None) -> float:
-    """Per-date risk-free lookup from silver/macro/rf_daily.parquet.
+def _load_rf_daily() -> dict[dt.date, float]:
+    fp = SILVER / "macro" / "rf_daily.parquet"
+    try:
+        rf_df = pd.read_parquet(fp)
+        rf_df["date"] = pd.to_datetime(rf_df["date"]).dt.date
+        return dict(zip(rf_df["date"], rf_df["rf"]))
+    except (FileNotFoundError, OSError):
+        return {}
 
-    Lazy-loads on first call; returns `_TXO_RF` fallback if file missing or
-    date not in table. `d=None` returns the fallback constant (used by
-    backward-compat callsites)."""
-    global _RF_BY_DATE
+
+def _load_rf_curve_pts() -> dict[dt.date, tuple[float, float]]:
+    """Load (IRX 13-week, TNX 10-year) yields per date from macro_daily.
+
+    Returns {date: (irx_decimal, tnx_decimal)} — yields divided by 100 since
+    yfinance ^IRX/^TNX report percent. **Caveat**: these are USD Treasury
+    yields, NOT TWD. Used as a proxy term structure for long-dated TXO since
+    Taiwan term curve data isn't ingested. Short-dated TXO (T<3M) impact
+    is small (<0.1% of option price); longer-dated needs Taiwan curve."""
+    fp = SILVER / "macro" / "macro_daily.parquet"
+    try:
+        df = pd.read_parquet(fp)
+    except (FileNotFoundError, OSError):
+        return {}
+    df = df[df["symbol"].isin(["IRX", "TNX"])].copy()
+    df["d"] = pd.to_datetime(df["trading_date"]).dt.date
+    out: dict[dt.date, tuple[float, float]] = {}
+    grouped = df.groupby("d")
+    for d, g in grouped:
+        irx_rows = g[g["symbol"] == "IRX"]["close"].values
+        tnx_rows = g[g["symbol"] == "TNX"]["close"].values
+        if len(irx_rows) and len(tnx_rows):
+            out[d] = (float(irx_rows[0]) / 100.0, float(tnx_rows[0]) / 100.0)
+    return out
+
+
+def _get_rf(d: dt.date | None = None, T_years: float | None = None) -> float:
+    """Per-date risk-free lookup with optional term-structure interpolation.
+
+    - `d=None` → return `_TXO_RF` constant (backward compat)
+    - `T_years=None` → return rf_daily for that date (TWD flat short rate)
+    - `T_years` given → linear-interp on USD IRX↔TNX curve, then **scale by
+      ratio of rf_daily / IRX** to keep TWD level but adopt USD curve shape.
+      Falls back to rf_daily if curve points missing.
+
+    Caveat: USD-curve-shape applied to TWD level is a proxy until Taiwan
+    long-rate data is ingested."""
+    global _RF_BY_DATE, _RF_CURVE_BY_DATE
     if d is None:
         return _TXO_RF
     if _RF_BY_DATE is None:
-        fp = SILVER / "macro" / "rf_daily.parquet"
-        try:
-            rf_df = pd.read_parquet(fp)
-            rf_df["date"] = pd.to_datetime(rf_df["date"]).dt.date
-            _RF_BY_DATE = dict(zip(rf_df["date"], rf_df["rf"]))
-        except (FileNotFoundError, OSError):
-            _RF_BY_DATE = {}
-    return float(_RF_BY_DATE.get(d, _TXO_RF))
+        _RF_BY_DATE = _load_rf_daily()
+    rf_short = float(_RF_BY_DATE.get(d, _TXO_RF))
+    if T_years is None:
+        return rf_short
+
+    if _RF_CURVE_BY_DATE is None:
+        _RF_CURVE_BY_DATE = _load_rf_curve_pts()
+    pts = _RF_CURVE_BY_DATE.get(d)
+    if not pts:
+        return rf_short
+    irx, tnx = pts  # decimal
+    # Linear interp on log-T space between 0.25y (IRX) and 10y (TNX)
+    import math
+    T = max(0.01, min(float(T_years), 10.0))
+    # interp in log-T: weight w = (log T - log 0.25) / (log 10 - log 0.25)
+    w = (math.log(T) - math.log(0.25)) / (math.log(10.0) - math.log(0.25))
+    w = max(0.0, min(1.0, w))
+    usd_rf_at_T = irx + w * (tnx - irx)
+    # Scale to TWD level: keep curve SHAPE from USD, level anchored by rf_daily
+    if irx > 1e-6:
+        twd_rf_at_T = rf_short * (usd_rf_at_T / irx)
+    else:
+        twd_rf_at_T = rf_short
+    return float(twd_rf_at_T)
 
 
 def _norm_cdf(x: float) -> float:
@@ -240,7 +297,8 @@ def build_txo_daily_features() -> dict:
                     max_pain_dist = (max_pain - spot) / spot
                 # ATM IV (avg of call+put at nearest strike to spot)
                 if T > 0 and spot > 0:
-                    rf_d = _get_rf(d if hasattr(d, "year") else None)
+                    # Use term-structure-aware rf：IRX/TNX curve shape × rf_daily level
+                    rf_d = _get_rf(d if hasattr(d, "year") else None, T_years=T)
                     k_near = min(common, key=lambda k: abs(k - spot))
                     iv_c = _bs_iv(calls.at[k_near, "settle"], spot, k_near, T, True, rf=rf_d)
                     iv_p = _bs_iv(puts.at[k_near, "settle"], spot, k_near, T, False, rf=rf_d)
