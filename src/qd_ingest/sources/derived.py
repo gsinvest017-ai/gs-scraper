@@ -25,6 +25,43 @@ from ..common.paths import GOLD, RAW_ROOT, SILVER
 console = Console()
 
 
+# Module-level tmp catalog snapshot so all builders in one `python -m
+# qd_ingest.sources.derived` run share a single read-only copy. Becomes
+# immune to long-held write locks from interactive `duckdb -ui` sessions.
+_tmp_catalog_path: Path | None = None
+
+
+def _readonly_catalog():
+    """Return a `duckdb.DuckDBPyConnection` to a tmp snapshot of the catalog.
+
+    First call in a process triggers `shutil.copy(CATALOG_DB, tmp)`; subsequent
+    calls reuse the snapshot. Caller still must `.close()` the connection.
+    The tmp file is removed on process exit via atexit.
+    """
+    import atexit
+    import os
+    import shutil
+    import tempfile
+
+    import duckdb
+
+    from ..common.paths import CATALOG_DB
+
+    global _tmp_catalog_path
+    if _tmp_catalog_path is None or not _tmp_catalog_path.exists():
+        fd, tmp = tempfile.mkstemp(
+            prefix="derived_cat_", suffix=".duckdb",
+            dir=str(CATALOG_DB.parent),
+        )
+        os.close(fd)
+        shutil.copy(CATALOG_DB, tmp)
+        _tmp_catalog_path = Path(tmp)
+        atexit.register(
+            lambda p=tmp: os.unlink(p) if os.path.exists(p) else None
+        )
+    return duckdb.connect(str(_tmp_catalog_path), read_only=True)
+
+
 def copy_txo_daily_features() -> dict:
     src = RAW_ROOT / "SUPPLEMENT" / "DERIVED" / "txo_daily_features.parquet"
     dest = GOLD / "features" / "txo_daily_features.parquet"
@@ -109,12 +146,10 @@ def build_txo_daily_features() -> dict:
     """
     import math
     import re
-    import duckdb
 
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    catalog = (Path(__file__).resolve().parents[3] / "catalog" / "quant.duckdb")
-    con = duckdb.connect(str(catalog), read_only=True)
+    con = _readonly_catalog()
     df = con.execute("""
         SELECT CAST(date AS DATE) AS d, contract_date,
                CAST(strike_price AS DOUBLE) AS strike, call_put,
@@ -947,7 +982,7 @@ def materialize_qc_snapshot() -> dict:
     from ..common.paths import CATALOG_DB
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    con = _readonly_catalog()
 
     dest = GOLD / "features" / "qc_stock_price_diff_snapshot.parquet"
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -999,7 +1034,7 @@ def materialize_finmind_canonical() -> dict:
     from ..common.paths import CATALOG_DB
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    con = _readonly_catalog()
     dest = GOLD / "features" / "finmind_price_canonical.parquet"
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1185,7 +1220,7 @@ def materialize_accounting_snapshot() -> dict:
     from ..common.paths import CATALOG_DB
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    con = _readonly_catalog()
 
     dest = GOLD / "features" / "accounting_raw_snapshot.parquet"
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1229,7 +1264,7 @@ def _materialize_view_snapshot(view: str, dest_name: str, source_tag: str) -> di
     from ..common.paths import CATALOG_DB
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    con = _readonly_catalog()
     dest = GOLD / "features" / f"{dest_name}.parquet"
     dest.parent.mkdir(parents=True, exist_ok=True)
     con.execute(f"COPY (SELECT * FROM {view}) TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)")
@@ -1281,7 +1316,7 @@ def build_bars_1m_daily_summary() -> dict:
     from ..common.paths import CATALOG_DB
     t0 = time.time()
     started = dt.datetime.now(dt.timezone.utc).isoformat()
-    con = duckdb.connect(str(CATALOG_DB), read_only=True)
+    con = _readonly_catalog()
     dest = GOLD / "features" / "bars_1m_daily_summary.parquet"
     dest.parent.mkdir(parents=True, exist_ok=True)
     con.execute(f"""
