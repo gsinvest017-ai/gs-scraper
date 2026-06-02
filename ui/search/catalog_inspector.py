@@ -196,7 +196,9 @@ def get_view_meta(view: str, *, with_distinct: bool = False) -> ViewMeta:
 
 def view_summary(view: str) -> dict:
     """Lightweight summary for the index page."""
+    from qd_ingest.common.dataset_meta import get_meta
     meta = get_view_meta(view)
+    data_source, long_description = get_meta(view)
     return {
         "name": meta.name,
         "row_count": meta.row_count,
@@ -204,4 +206,6 @@ def view_summary(view: str) -> dict:
         "n_columns": len(meta.columns),
         "is_time_series": meta.is_time_series,
         "error": meta.error,
+        "data_source": data_source,
+        "long_description": long_description,
     }

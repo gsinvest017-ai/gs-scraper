@@ -67,26 +67,13 @@ TRADING_DAY_CATEGORIES = frozenset({"daily-trading", "snapshot", "derived"})
 #   description— short human label
 #   tier       — P0 (must-have) / P1 (nice-to-have) / P2 (low priority)
 
-# --- Data source enum (中文使用者識別資料源用) -----------------------------
-# 沒有實際做型別驗證，只是 dashboard 顯示 + 篩用；想加就加
-DATA_SOURCES = {
-    "TEJ-API",        # scripts/fetch_tej.py → TWN/A* tables
-    "TEJ-訂閱包",      # 手動匯出 CSV (fundamentals_q / accounting_raw_extended)
-    "FinMind",        # scripts/fetch_finmind.py → bronze/finmind/*.sqlite
-    "TQuant-Lab",     # RAW_SOURCES/{日k 期貨tquant lab,股票期貨,MXF_*}/
-    "yfinance",       # scripts/fetch_macro.py → macro_daily
-    "TAIFEX",         # 期交所 OpenAPI / web
-    "TWSE",           # 證交所 web scraping
-    "Yahoo-extracted",# RAW/三大法人買賣超/institutional_yahoo_value_clean.csv
-    "derived",        # 純 silver→gold transformation
-    "manual-RAW",     # 其他手動 dump (rf_daily, cross_market_features)
-    "other",
-}
+# --- Data source enum + metadata 已抽到共用 module（給 ui/search 也吃） ----
+import sys as _sys
+_sys.path.insert(0, str(REPO / "src"))
+from qd_ingest.common.dataset_meta import DATA_SOURCES, DATASET_META as _DATASET_META  # noqa: E402
 
-
-# view name → (data_source, long_description)。__post_init__ 自動套；
-# 沒列出的 view 走原本 description + data_source='other'。
-_DATASET_META: dict[str, tuple[str, str]] = {
+# 保留之前手寫的本地 dict 以防 import 失敗的 fallback（基本上不會用到）
+_DATASET_META_LOCAL_FALLBACK: dict[str, tuple[str, str]] = {
     # === TEJ-API（fetch_tej.py） ===
     "tw_stock_bars":                 ("TEJ-API", "台股日 K：OHLCV + 還原權息漲跌幅；2010 起逐日 ~6.6M rows / ~1500 stocks。"),
     "tw_inst_stock_daily":           ("TEJ-API", "每股每日三大法人（外資、投信、自營）買賣超 lot 數 + 持股比；2010~。"),
