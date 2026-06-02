@@ -61,10 +61,57 @@ Underlying：TAIEX from macro_daily（trading_date + close）
 
 `strategies/inst_zscore/strategy.py` + `inst_zscore_backtest_report.md`。
 
+## 進度日誌
+
+### M2 — rf curve  `08bf8ca`
+
+`_get_rf(date, T_years)`：log-T 線性 interp IRX(0.25y) → TNX(10y)，再用
+`rf_daily/IRX` 比率拉到 TWD 水準。`build_txo_daily_features` 4 處 `_bs_iv`
+自動吃 curve。
+
+實測 2026-01-15：0.25y→1.225%、10y→1.429%（upward sloping，合理）。
+30 BS unit test backward-compat 全綠。
+
+### M3 — PCP-implied spot realized vol  `9d481ff`
+
+`build_txo_1min_intraday_features` 重寫：每 minute 取 ATM strike 同 minute
+的 call/put close，spot = C-P+K·exp(-rT)；T 從 expiry_month 推第 3 週三；
+rf 從 M2 的 curve 取。
+
+37 rows 結果：mean realized vol **41%**（vs 舊版 280%），range 18-96%
+——接近真實 TAIEX 隱含 vol。
+
+### M4 — inst_zscore strategy backtest  `(M4 commit)`
+
+`strategies/inst_zscore/strategy.py` + `inst_zscore_backtest_report.md`：
+
+| 期間 | strategy Sharpe | B&H Sharpe |
+|---|---|---|
+| 全期 (415d) | -0.66 | 1.37 |
+| IS (290d) | -0.95 | 0.72 |
+| OOS (125d) | -0.05 | 2.93 |
+
+**Negative result**：signal 沒 alpha。後續 M5 補了 threshold sweep + 逆勢測
+試，兩邊都輸（逆勢 -0.96）。報告含完整 caveats + 可嘗試方向。
+
+### M5 — 收尾
+
+- inst_zscore 報告補 threshold sweep + 逆勢結論
+- dashboard 重生 OK 32 / STALE 9 / EMPTY 0（不變）
+- 全 pytest 148 passed
+
+## 三件事總結
+
+| 任務 | 結果 |
+|---|---|
+| rf curve | ✅ 實作完成，IRX/TNX 形狀 × TWD 水準的混合 |
+| PCP-spot vol | ✅ 從 280%/280% 改到 41% mean，貼近真實 vol |
+| inst_zscore 策略 | ⚠️ negative result（無 alpha），但已有完整 framework 可繼續 iterate |
+
 ## Fallback
 
 ```bash
-git revert HEAD~4..HEAD
-git checkout HEAD~4 -- src/qd_ingest/sources/derived.py
+git revert HEAD~5..HEAD
+git checkout HEAD~5 -- src/qd_ingest/sources/derived.py
 rm -rf strategies/inst_zscore/
 ```

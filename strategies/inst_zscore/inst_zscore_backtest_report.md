@@ -70,7 +70,35 @@
 
 ## 後續
 
-- 跑 grid search of z_threshold ∈ {0.5, 0.75, 1.0, 1.5, 2.0}
-- 加 sitc + dealer z-score 多 signal combo
-- 換 underlying 為 TXF（可雙向）
-- walk-forward CV 取代單一 70/30 split
+### Threshold sweep 結果（順勢，已實測）
+
+| z_threshold | Sharpe | CAGR | trades |
+|---|---|---|---|
+| 0.5 | -1.10 | -21.3% | 240 |
+| 0.75 | -1.05 | -18.6% | 218 |
+| **1.0** | **-0.66** | **-9.1%** | 183 |
+| 1.5 | -0.43 | -4.7% | 99 |
+| 2.0 | -0.28 | -2.8% | 52 |
+
+threshold 越高、trade 越少、loss 越小 → 純粹是少做事少賠錢，沒有 alpha 浮現。
+
+### 逆勢測試（z>+1 short, z<-1 long）
+
+CAGR -12.7% / Sharpe -0.96 — **比順勢還慘**。signal 兩個方向都沒 edge。
+
+### 結論
+
+在 415-day 樣本（含台股強牛市，B&H Sharpe 1.37），foreign_total_60d_zscore
+作為市場時機 signal **沒有 alpha**。可能原因：
+
+1. **資料太短**：60d warmup 後剩 415 days 包含一段大牛市，任何 timing
+   strategy 都會 underperform full-invested B&H
+2. **資訊已被市價反映**：外資 60d 累積買賣超是 lagging indicator
+3. **signal 設計需 refine**：60d 太長；可試 20d / 5d；或 z 的差分
+
+### 可嘗試方向
+
+- 改 underlying 為 TXF（可雙向 + leverage）—— 至少 short 端可實作
+- 跟 SITC / dealer z-score combo（multi-factor）
+- 純 long-only：強 signal 時加重倉、弱 signal 時降到 50%
+- walk-forward 5-fold CV 取代單一 70/30 split
