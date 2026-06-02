@@ -656,6 +656,13 @@ HTML_TEMPLATE = """<!doctype html>
           margin: 24px; color: #e6edf3; background: #0f1419; }}
   h1 {{ margin: 0 0 6px 0; font-size: 22px; }}
   .subtitle {{ color: #7d8590; margin-bottom: 18px; font-size: 13px; }}
+  .topnav {{ display:flex; align-items:center; gap:8px; padding:8px 0 14px 0; font-size:13px; color:#7d8590; border-bottom:1px solid #2a323e; margin-bottom:18px; }}
+  .topnav a {{ color:#58a6ff; text-decoration:none; }}
+  .topnav a:hover {{ color:#79c0ff; text-decoration:underline; }}
+  .topnav .back {{ font-weight:600; padding:4px 10px; border:1px solid #2a323e; border-radius:6px; background:#161c24; }}
+  .topnav .back:hover {{ border-color:#58a6ff; }}
+  .topnav .here {{ color:#e6edf3; font-weight:600; }}
+  .topnav .navsep {{ color:#3b434e; }}
   .summary {{ display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }}
   .pill {{ padding: 10px 18px; border-radius: 10px; font-weight: 600; min-width: 90px; text-align: center; }}
   .pill.OK    {{ background: rgba(86,211,100,0.15);  color: #56d364; }}
@@ -698,6 +705,13 @@ HTML_TEMPLATE = """<!doctype html>
 </style>
 </head>
 <body>
+<nav class="topnav">
+  <a href="/" class="back">← Search UI</a>
+  <span class="navsep">·</span>
+  <a href="/downloads">Downloads</a>
+  <span class="navsep">·</span>
+  <span class="here">Gap dashboard</span>
+</nav>
 <h1>📊 QUANTDATA Gap Dashboard</h1>
 <div class="subtitle">Generated {generated_at} · catalog: <code>catalog/quant.duckdb</code> · {total} datasets monitored</div>
 
