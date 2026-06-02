@@ -698,6 +698,8 @@ def probe(catalog_path: Path) -> list[dict]:
                 rows.append({
                     "view": d.view,
                     "description": d.description,
+                    "long_description": d.long_description,
+                    "data_source": d.data_source,
                     "category": d.category,
                     "tier": d.tier,
                     "date_col": d.date_col,
@@ -711,6 +713,8 @@ def probe(catalog_path: Path) -> list[dict]:
             except Exception as e:
                 rows.append({
                     "view": d.view, "description": d.description,
+                    "long_description": d.long_description,
+                    "data_source": d.data_source,
                     "category": d.category, "tier": d.tier,
                     "date_col": d.date_col, "max_date": None,
                     "row_count": None, "lag_days": None,
@@ -792,6 +796,22 @@ HTML_TEMPLATE = """<!doctype html>
   .topnav .navsep {{ color:#3b434e; }}
   td.note {{ font-size:11px; color:#c9b88a; max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
   td.note:hover {{ white-space:normal; word-break:break-word; }}
+  td.desc {{ font-size:13px; }}
+  td.desc .more {{ color:#d4af37; cursor:help; font-size:11px; margin-left:4px; }}
+  td.ds {{ white-space:nowrap; }}
+  .ds-pill {{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; letter-spacing:0.2px; }}
+  /* 每個 source 一個顏色 */
+  .ds-TEJ-API .ds-pill         {{ background:rgba(212,175,55,0.18); color:#d4af37; border:1px solid rgba(212,175,55,0.4); }}
+  .ds-TEJ-訂閱包 .ds-pill        {{ background:rgba(232,209,149,0.16); color:#e8d195; border:1px solid rgba(232,209,149,0.4); }}
+  .ds-FinMind .ds-pill         {{ background:rgba(88,166,255,0.18); color:#79c0ff; border:1px solid rgba(88,166,255,0.4); }}
+  .ds-TQuant-Lab .ds-pill      {{ background:rgba(86,211,100,0.18); color:#56d364; border:1px solid rgba(86,211,100,0.4); }}
+  .ds-yfinance .ds-pill        {{ background:rgba(240,136,62,0.18); color:#f0883e; border:1px solid rgba(240,136,62,0.4); }}
+  .ds-TAIFEX .ds-pill          {{ background:rgba(205,127,50,0.18); color:#cd7f32; border:1px solid rgba(205,127,50,0.4); }}
+  .ds-TWSE .ds-pill            {{ background:rgba(176,141,87,0.18); color:#b08d57; border:1px solid rgba(176,141,87,0.4); }}
+  .ds-Yahoo-extracted .ds-pill {{ background:rgba(224,98,90,0.18); color:#e0625a; border:1px solid rgba(224,98,90,0.4); }}
+  .ds-derived .ds-pill         {{ background:rgba(125,133,144,0.18); color:#c9b88a; border:1px solid rgba(125,133,144,0.4); }}
+  .ds-manual-RAW .ds-pill      {{ background:rgba(245,165,36,0.18); color:#f5a524; border:1px solid rgba(245,165,36,0.4); }}
+  .ds-other .ds-pill           {{ background:rgba(125,133,144,0.12); color:#7d8590; border:1px solid rgba(125,133,144,0.3); }}
   .notes-toolbar {{ display:flex; gap:10px; align-items:center; margin:12px 0 8px 0; font-size:13px; }}
   .notes-toolbar .meta {{ color:#7d8590; }}
   .notes-toolbar button {{ background:#161210; color:#d4af37; border:1px solid #2b2218; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:13px; }}
@@ -897,22 +917,23 @@ HTML_TEMPLATE = """<!doctype html>
 <table>
 <thead>
 <tr>
-  <th>Status</th>
+  <th>狀態</th>
   <th>Tier</th>
-  <th>View</th>
-  <th>Description</th>
-  <th>Category</th>
-  <th>Max date</th>
-  <th class="lag">Lag</th>
+  <th>View 名稱</th>
+  <th>說明</th>
+  <th class="ds">資料源</th>
+  <th>類別</th>
+  <th>最新日期</th>
+  <th class="lag">延遲</th>
   <th class="pct">完整度</th>
-  <th>Completeness</th>
+  <th>填滿條</th>
   <th class="layer">📦 Raw</th>
   <th class="layer">🥉 Bronze</th>
   <th class="layer">🥈 Silver</th>
   <th class="layer">🥇 Gold</th>
-  <th class="layer">📊 Catalog rows</th>
-  <th>Suggested action</th>
-  <th>📝 Note</th>
+  <th class="layer">📊 Catalog 列數</th>
+  <th>建議操作</th>
+  <th>📝 註解</th>
 </tr>
 </thead>
 <tbody>
@@ -921,15 +942,18 @@ HTML_TEMPLATE = """<!doctype html>
 </table>
 
 <div class="legend">
-  預設排序：完整度 (Completeness) 從高到低；同分時 tier P0 在上。
-  Completeness = clamp(1 − lag_days / 90, 0, 1) × 100% — 涵蓋未來日期 (negative lag) 視為 100%，無資料 (EMPTY) 視為 0%。
-  Bar 視覺：填滿 = 完整。
-  Daily-trading 類別的 lag 為 <b>trading-day-aware</b>：對齊到「上一個應已有 EOD 的台股交易日」(weekend 與每日 15:00 TPE EOD 前的 today 不計入 lag)。
-  Severity rules — daily-trading: 0-1d=OK / 2-5d=WARN / &gt;5d=STALE.
-  Monthly: 0-15d=OK / 15-45d=WARN / &gt;45d=STALE.
-  Quarterly: 0-60d=OK / 60-120d=WARN / &gt;120d=STALE.
-  Event (forward-looking): MAX&lt;today = WARN/STALE depending on age.
-  Derived tables (e.g. stock_factor_daily) inherit from upstream — flagged INFO only.
+  <strong>排序</strong>：完整度由高到低；同分時 Tier P0 在上。<br>
+  <strong>完整度</strong> = clamp(1 − lag_days / 90, 0, 1) × 100%（負延遲 = 100%，無資料 = 0%）。
+  <strong>填滿條</strong> 完全填滿 = 完整。<br>
+  <strong>延遲算法</strong>：日交易類已調整 trading-day-aware（週末與盤前不計）。<br>
+  <strong>狀態判定</strong>：
+  日交易 0-1d=OK / 2-5d=WARN / &gt;5d=STALE；
+  月度 0-15d=OK / 15-45d=WARN / &gt;45d=STALE；
+  季度 0-60d=OK / 60-120d=WARN / &gt;120d=STALE；
+  事件型（未來日）以年齡判斷；衍生表（derived）繼承上游 → INFO。<br>
+  <strong>說明欄</strong>：title hover 可看詳細「裡面放了什麼資料」中文長描述；ⓘ 標示有額外說明。<br>
+  <strong>資料源</strong>：TEJ-API（自動 cron）/ TEJ-訂閱包（手動 CSV）/ FinMind（API）/ TQuant-Lab（手動 dump）/
+  yfinance（macro 抓）/ Yahoo-extracted（Notion 整理）/ derived（純衍生）/ manual-RAW（其他手動）。
 </div>
 
 <script>
@@ -1118,12 +1142,22 @@ def render_html(rows: list[dict], today: dt.date) -> str:
         note_disp = (note[:78] + "…") if len(note) > 80 else note
         note_html = (f'<td class="note" data-view="{r["view"]}" '
                      f'title="{_html_escape(note)}">{_html_escape(note_disp)}</td>')
+        ld = r.get("long_description") or ""
+        # description column = short + 摺疊式長說明 tooltip + 鍵盤可達
+        desc_html = (
+            f'<td class="desc" title="{_html_escape(ld)}">{_html_escape(r["description"])}'
+            + (f' <span class="more" title="{_html_escape(ld)}">ⓘ</span>' if ld else "")
+            + '</td>'
+        )
+        ds = r.get("data_source") or "other"
+        ds_html = f'<td class="ds ds-{ds}"><span class="ds-pill">{ds}</span></td>'
         rows_html.append(
             f'<tr class="{r["severity"]}">'
             f'<td>{meta["emoji"]} {r["severity"]}</td>'
             f'<td class="tier-{r["tier"]}">{r["tier"]}</td>'
             f'<td><code>{r["view"]}</code></td>'
-            f'<td>{r["description"]}</td>'
+            f'{desc_html}'
+            f'{ds_html}'
             f'<td>{r["category"]}</td>'
             f'<td>{r["max_date"] or "—"}</td>'
             f'<td class="lag">{lag_str}</td>'

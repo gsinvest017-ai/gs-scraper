@@ -30,6 +30,59 @@
 | `derived` | 純 silver→gold transformation，無外部新資料 |
 | `manual-RAW` | 其他手動 dump（rf_daily CSV、cross_market_features 等） |
 
+## 進度日誌
+
+### M1 — 進度檔 + DATA_SOURCES enum 定義  `(M1 commit)`
+
+10 種 source enum：`TEJ-API` / `TEJ-訂閱包` / `FinMind` / `TQuant-Lab` /
+`yfinance` / `TAIFEX` / `TWSE` / `Yahoo-extracted` / `derived` / `manual-RAW` /
+`other`。
+
+### M2 — Dataset class 擴 + 50 條 metadata  `6f39acb`
+
+- Dataset dataclass 加 `data_source` + `long_description` 兩欄（default
+  `"other"` / `""`，向後相容）
+- `__post_init__` 從 module-level lookup dict `_DATASET_META` 自動填，
+  避免改 50 條 Dataset() 呼叫
+- 50/50 view 全有 metadata。Source 分布：
+  - TEJ-API ×14、derived ×23、TQuant-Lab ×5、FinMind ×2、TEJ-訂閱包 ×2、
+    yfinance ×1、manual-RAW ×2、Yahoo-extracted ×1
+
+### M3 — HTML 中文 header + source pill  `(M3 commit)`
+
+- table header 全中文化（狀態 / Tier / View 名稱 / 說明 / **資料源** /
+  類別 / 最新日期 / 延遲 / 完整度 / 填滿條 / Raw / Bronze / Silver / Gold /
+  Catalog 列數 / 建議操作 / 註解）
+- 「說明」column 加 ⓘ icon，hover title 顯示 `long_description`
+- 「資料源」column 用彩色 pill，每個 source 一色（gold/blue/green/orange/...）
+- legend 區整段中文化，加 source 速查；probe row 補 `long_description` /
+  `data_source` 兩欄
+
+## 視覺
+
+每個資料源一個 pill：
+
+| Source | 顏色 |
+|---|---|
+| TEJ-API | gold |
+| TEJ-訂閱包 | champagne |
+| FinMind | blue |
+| TQuant-Lab | green |
+| yfinance | orange |
+| TAIFEX | copper |
+| TWSE | bronze |
+| Yahoo-extracted | rose-red |
+| derived | grey |
+| manual-RAW | amber |
+
+## 後續
+
+- 加 **source filter**（dashboard 上方一排 pill button 可篩）—— 下一輪 JS 工程
+- 加 **「複製 view 清單為 markdown table」按鈕**（給 chat 貼） — 已有
+  `/copy-commits-button` skill 可參考
+- `long_description` 後續可以從 `meta/gap_comments.json` 同步進來（user
+  editable 的長描述）
+
 ## Fallback
 
 ```bash
