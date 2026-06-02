@@ -246,6 +246,18 @@ log INFO "step 3.56: ingest bars_1m (MXF) from RAW → silver/bars/bars_1m/"
 "$VENV_PY" "$REPO/scripts/ingest_bars_1m.py" >> "$LOG" 2>&1 || \
     log WARN "ingest_bars_1m.py failed (rc=$?) — non-fatal"
 
+# ---- 5.57 Ingest rf (risk-free) from RAW CSV ---------------------------
+# RAW_SOURCES/無風險利率日資料_*.csv → silver/macro/rf_daily.parquet
+log INFO "step 3.57: ingest rf_daily from RAW CSV"
+"$VENV_PY" "$REPO/scripts/ingest_rf_daily.py" >> "$LOG" 2>&1 || \
+    log WARN "ingest_rf_daily.py failed (rc=$?) — non-fatal"
+
+# ---- 5.58 Ingest TXO 1min from RAW parquet ------------------------------
+# RAW_SOURCES/TXO_1min_merged_*.parquet → silver/options/txo_1min/year=YYYY/
+log INFO "step 3.58: ingest txo_1min from RAW parquet"
+"$VENV_PY" "$REPO/scripts/ingest_txo_1min.py" >> "$LOG" 2>&1 || \
+    log WARN "ingest_txo_1min.py failed (rc=$?) — non-fatal"
+
 # ---- 5.7 Rebuild derived gold (silver → gold) ---------------------------
 # Without this, gold parquet (stock_factor_daily / inst_flow_factors /
 # margin_factors / futures_* / market_inst_aggregated / etc.) stays frozen at

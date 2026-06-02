@@ -45,9 +45,73 @@
 4. **`台指期一分鐘/`** — 內部結構畸形（含巢狀 `三大法人買賣超/` 子目錄）— 像建構錯誤；需使用者澄清。
 5. **`RS_Rating.7z`** — 7z 壓縮，內容未知；解壓後再評估。本輪不開。
 
+## 進度日誌
+
+### M1 — 盤點  `(M1 commit)`
+
+RAW_SOURCES 內 13 個 entry。掃完發現：
+- 6 個已涵蓋（macro_daily / bars_1m / bars_1d / gold/continuous / bronze/finmind 等）
+- 2 個 missing 可立刻 ingest（**rf** + **TXO 1min**）
+- 5 個 deferred（重疊、結構不清、需解壓）
+
+### M2 — `ingest_rf_daily.py` + catalog/gap_report 註冊  `(M2 commit)`
+
+`scripts/ingest_rf_daily.py`：讀 CSV → dedup → 寫 `silver/macro/rf_daily.parquet`。
+catalog.py 加 `rf_daily` view。gap_report.DATASETS 加一條 P1 entry。
+
+跑出：rows 2922、date 2019-01-01 → 2026-12-31、rf 均 0.845%（max 1.225% / min 0.350%）。
+
+### M3 — `ingest_txo_1min.py` + view + 重建 catalog  `5ac8531`
+
+`scripts/ingest_txo_1min.py`：2.19M rows TXO 1分鐘 K → `silver/options/txo_1min/year=YYYY/`
+hive partition；dedup by (trade_date, expiry_month, strike, option_type, minute)。
+
+catalog.py 加 `txo_1min` view (`hive_partitioning=TRUE` + `union_by_name=TRUE`)。
+重建 catalog：59 → **61 views**。swap 進 live catalog（duckdb -ui 用既有 fd
+讀舊 inode，不會炸）。
+
+dashboard 變化：
+- OK 31 → **32**（rf_daily OK）
+- STALE 5 → **6**（txo_1min STALE，因 RAW 自身過時，max 4/22）
+- 其餘不變
+
+`meta/gap_comments.json` 加 txo_1min 註解。
+
+### M4 — daily_refresh.sh 串接新 ingest + 收尾  `(M4 commit)`
+
+`daily_refresh.sh` 在 step 3.55/3.56 之後加 step 3.57 (rf) + 3.58 (txo_1min)，
+都 non-fatal。**未來 RAW 更新 → 隔日 cron 自動 propagate**。
+
+整段 propagate chain：
+
+```
+RAW_SOURCES update                              ← 使用者手動
+        ↓ (cron 17:30 CST)
+step 3.55  refresh_continuous_from_raw.py       → gold/continuous/{tx,mtx,個股期}
+step 3.56  ingest_bars_1m.py                    → silver/bars/bars_1m/MXF
+step 3.57  ingest_rf_daily.py                   → silver/macro/rf_daily
+step 3.58  ingest_txo_1min.py                   → silver/options/txo_1min
+step 3.7   build_all                            → 衍生 gold
+step 4     gap_dashboard 重生
+```
+
+## 為何其餘檔「無法簡單處理」（最終版）
+
+1. **`選擇權日盤逐筆 TXO`** — Chinese-header schema + 與 `finmind_txo_option_daily` 完全重疊；無新資訊。
+2. **institutional_clean.parquet** — 已被 `tw_inst_stock_daily` 完整涵蓋（2010-2026, 6.6M vs 3.8M rows）。
+3. **三大法人買賣超 .md/.png** — Notion 筆記 + 截圖，非結構化。
+4. **`台指期一分鐘/`** — 目錄結構畸形（內含巢狀 `三大法人買賣超`），需使用者整理。
+5. **`RS_Rating.7z`** — 壓縮檔，內容未知；下一輪可解壓後評估。
+
+## 下一輪建議
+
+- **txo_1min 衍生 gold**：用 1min OHLC 算 intraday vol cone / IV time-of-day pattern；補進 `derived.py`
+- **rf_daily 串進 BS-IV**：目前 `_TXO_RF` 寫死 0.015，可改為 `rf_daily` 對應日期動態取
+- 整理使用者的 `台指期一分鐘/` 目錄結構後重新評估
+
 ## Fallback
 
 ```bash
-git revert HEAD~3..HEAD
+git revert HEAD~4..HEAD
 rm -f scripts/ingest_rf_daily.py scripts/ingest_txo_1min.py
 ```
