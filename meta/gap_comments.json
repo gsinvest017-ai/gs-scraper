@@ -18,6 +18,7 @@
     "txo_1min": "RAW_SOURCES/TXO_1min_merged_*.parquet 手動 dump；目前只到 2026-04-22。下次有新 RAW 後跑 scripts/ingest_txo_1min.py。",
     "tw_inst_market_daily": "RAW_SOURCES/三大法人買賣超/institutional_yahoo_value_clean.csv（474 rows, 2024-05-02 ~ 2026-04-16）；使用者手動 dump from Notion。daily_refresh step 3.59 自動 propagate。",
     "txo_1min_intraday": "derived from silver/options/txo_1min；繼承上游 STALE（RAW 至 2026-04-22）。",
-    "inst_market_factors": "derived from silver/flows/tw_inst_market_daily；繼承上游 STALE（RAW 至 2026-04-16）。"
+    "inst_market_factors": "derived from silver/flows/tw_inst_market_daily；繼承上游 STALE（RAW 至 2026-04-16）。",
+    "accounting_raw_extended": "TEJ 訂閱包匯出 CSV（796 cols, 2005~2025, 1045 stocks）；與 accounting_raw 互補：API 抓新且精簡，訂閱包補深歷史 + IFRS9 細項。非自動 refresh — 使用者匯出新 CSV 後跑 scripts/ingest_accounting_raw_extended.py。"
   }
 }
