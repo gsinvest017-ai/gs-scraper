@@ -130,6 +130,12 @@ def build(*, db_path=None) -> None:
             CREATE OR REPLACE VIEW macro_daily AS
             SELECT * FROM read_parquet('{_rel(macro_fp)}');
         """)
+    rf_fp = SILVER / "macro" / "rf_daily.parquet"
+    if rf_fp.exists():
+        con.execute(f"""
+            CREATE OR REPLACE VIEW rf_daily AS
+            SELECT * FROM read_parquet('{_rel(rf_fp)}');
+        """)
 
     # === Gold ===
     for name, fp in [

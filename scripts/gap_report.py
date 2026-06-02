@@ -223,6 +223,12 @@ DATASETS = [
             "總體變數日資料 (VIX, USDTWD, ...)", "P1",
             silver_paths=("silver/macro/**/*.parquet",),
             gold_paths=("gold/features/macro_factors.parquet",)),
+    Dataset("rf_daily",                "date",         "daily-trading",
+            "scripts/ingest_rf_daily.py  (one-shot ingest of RAW CSV)",
+            "無風險利率日資料 (TWD rf)", "P1",
+            raw_paths=("../RAW_SOURCES/無風險利率日資料_*.csv",),
+            silver_paths=("silver/macro/rf_daily.parquet",),
+            gold_paths=("silver/macro/rf_daily.parquet",)),  # 純 silver；無需再衍生 gold
     Dataset("txo_daily_features",      "date",         "daily-trading",
             "python -m qd_ingest.sources.derived  (build_txo_daily_features ← FinMind option daily)",
             "選擇權 TXO 日特徵", "P2",
