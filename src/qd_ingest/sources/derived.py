@@ -1613,36 +1613,89 @@ def build_txo_1min_intraday_features() -> dict:
               .group_by("trade_date").agg(pl.col("minute").first().alias("peak_minute")))
     agg = agg.join(peak, on="trade_date", how="left")
 
-    # Realized vol of most-traded (strike, option_type) per day
-    # For each day: pick the (strike, option_type) with largest sum(volume),
-    # then compute stddev of log-return of `close` across minutes
+    # Realized vol via PCP-implied spot:
+    # For each (date, minute) pair, pick the ATM strike (= strike with largest
+    # sum of C+P volumes that day), grab BOTH call and put close at that minute,
+    # then derive spot ≈ C - P + K × exp(-rf × T). Compute log-return std on this
+    # spot series → annualized realized vol. Much closer to underlying TXF
+    # realized vol than using a single contract's close (which has gamma noise).
     import math
-    pick = (df.group_by(["trade_date", "strike_price", "option_type"])
-              .agg(pl.col("volume").sum().alias("v"))
-              .sort(["trade_date", "v"], descending=[False, True])
-              .group_by("trade_date").agg([
-                  pl.col("strike_price").first().alias("top_strike"),
-                  pl.col("option_type").first().alias("top_otype"),
-              ]))
-    df2 = df.join(pick, on="trade_date", how="left").filter(
-        (pl.col("strike_price") == pl.col("top_strike")) &
-        (pl.col("option_type") == pl.col("top_otype"))
-    ).select(["trade_date", "minute", "close"]).sort(["trade_date", "minute"])
 
-    # Compute log-return → stddev
-    df2 = df2.with_columns(
-        (pl.col("close") / pl.col("close").shift(1).over("trade_date")).log().alias("logret")
+    # 1) per-day ATM strike = strike with largest total (C+P) volume
+    atm = (df.group_by(["trade_date", "strike_price"])
+             .agg(pl.col("volume").sum().alias("v"))
+             .sort(["trade_date", "v"], descending=[False, True])
+             .group_by("trade_date").agg(pl.col("strike_price").first().alias("atm_strike")))
+
+    # 2) load expiry_month for T calculation. Need it grouped by (date, strike)
+    df_ext = pl.scan_parquet(str(src_root / "**" / "*.parquet")).select([
+        "trade_date", "strike_price", "option_type", "minute", "close", "expiry_month",
+    ]).collect()
+    if df_ext.schema["trade_date"] != pl.Date:
+        df_ext = df_ext.with_columns(pl.col("trade_date").cast(pl.Date))
+
+    df_at_atm = df_ext.join(atm, on="trade_date", how="left").filter(
+        pl.col("strike_price") == pl.col("atm_strike")
     )
-    rv = df2.group_by("trade_date").agg(
-        pl.col("logret").std().alias("logret_std")
-    )
-    rv = rv.with_columns(
-        # Annualize: 60 minutes/hr × 5hr/day × 252 days ≈ 75600 → √75600 ≈ 275
-        (pl.col("logret_std") * math.sqrt(75600.0)).alias("atm_close_realized_vol")
-    ).select(["trade_date", "atm_close_realized_vol"])
+    # Pivot wide: minute × (C, P)
+    cp_pivot = (df_at_atm.select(["trade_date", "minute", "atm_strike", "option_type", "close", "expiry_month"])
+                  .pivot(on="option_type", index=["trade_date", "minute", "atm_strike", "expiry_month"], values="close")
+                  .rename({"C": "call_close", "P": "put_close"} if "C" in df_at_atm["option_type"].unique() else {}))
+    # Defensive: some splits may have lowercase
+    cols = cp_pivot.columns
+    rn = {}
+    if "C" in cols and "call_close" not in cols: rn["C"] = "call_close"
+    if "P" in cols and "put_close"  not in cols: rn["P"]  = "put_close"
+    if rn:
+        cp_pivot = cp_pivot.rename(rn)
+    cp_pivot = cp_pivot.drop_nulls(subset=["call_close", "put_close"])
+
+    # 3) compute T per row. expiry_month like '202604' or '202604W1' → take month end as expiry
+    def _expiry_to_days(d_str, expiry_str):
+        # d_str = ISO date 'YYYY-MM-DD'; expiry_str = 'YYYYMM' or 'YYYYMMWn'
+        if not isinstance(expiry_str, str) or len(expiry_str) < 6:
+            return None
+        try:
+            y = int(expiry_str[:4]); m = int(expiry_str[4:6])
+            exp = _third_wednesday(y, m)  # TXO 結算為第 3 週三
+            d0 = dt.date.fromisoformat(d_str)
+            return max((exp - d0).days, 0)
+        except (ValueError, TypeError):
+            return None
+
+    # 4) For each (date, minute) compute spot via PCP, then realized vol
+    pdf = cp_pivot.to_pandas()
+    if pdf.empty:
+        rv_pd = pd.DataFrame(columns=["trade_date", "atm_close_realized_vol"])
+    else:
+        pdf["d_iso"] = pdf["trade_date"].astype(str)
+        pdf["days_to_expiry"] = pdf.apply(
+            lambda r: _expiry_to_days(r["d_iso"], r["expiry_month"]), axis=1
+        )
+        pdf = pdf.dropna(subset=["days_to_expiry"])
+        pdf["T_years"] = pdf["days_to_expiry"] / 365.0
+        # Use per-date rf curve (use atm_strike × T_years for the term)
+        pdf["rf"] = pdf.apply(
+            lambda r: _get_rf(r["trade_date"] if hasattr(r["trade_date"], "year")
+                              else dt.date.fromisoformat(r["d_iso"]), T_years=r["T_years"]),
+            axis=1
+        )
+        # spot = C - P + K*exp(-rT)
+        import numpy as np
+        pdf["pcp_spot"] = (pdf["call_close"] - pdf["put_close"]
+                           + pdf["atm_strike"].astype(float) * np.exp(-pdf["rf"] * pdf["T_years"]))
+        pdf = pdf.sort_values(["trade_date", "minute"])
+        # log-return std per day
+        pdf["logret"] = np.log(pdf["pcp_spot"] / pdf.groupby("trade_date")["pcp_spot"].shift(1))
+        rv_pd = (pdf.groupby("trade_date")["logret"].std()
+                    .mul(math.sqrt(75600.0))  # 60min × 5hr × 252d annualization
+                    .rename("atm_close_realized_vol").reset_index())
+    rv = pl.from_pandas(rv_pd)
+    if rv.schema.get("trade_date") and rv.schema["trade_date"] != pl.Date:
+        rv = rv.with_columns(pl.col("trade_date").cast(pl.Date))
     agg = agg.join(rv, on="trade_date", how="left")
     agg = agg.rename({"trade_date": "trading_date"}).sort("trading_date").with_columns([
-        pl.lit("derived_txo_1min_v1").alias("source"),
+        pl.lit("derived_txo_1min_v2_pcp").alias("source"),
         pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
     ])
 
