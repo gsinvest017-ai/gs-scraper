@@ -362,6 +362,14 @@ DATASETS = [
             "python -m qd_ingest.sources.derived  (build_market_inst_aggregated)",
             "市場層級三大法人彙總（從 tw_inst_stock_daily 衍生，含 lots + hold_pct mean）", "P1",
             gold_paths=("gold/features/market_inst_aggregated.parquet",)),
+    Dataset("txo_1min_intraday",       "trading_date", "daily-trading",
+            "python -m qd_ingest.sources.derived  (build_txo_1min_intraday_features)",
+            "TXO 1分鐘 intraday：volume/peak-minute/atm-realized-vol", "P2",
+            gold_paths=("gold/features/txo_1min_intraday.parquet",)),
+    Dataset("inst_market_factors",     "trading_date", "daily-trading",
+            "python -m qd_ingest.sources.derived  (build_inst_market_factors)",
+            "市場層級三大法人 5/20/60d 滾動 + 60d z-score", "P1",
+            gold_paths=("gold/features/inst_market_factors.parquet",)),
 ]
 
 

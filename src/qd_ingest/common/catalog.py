@@ -179,6 +179,8 @@ def build(*, db_path=None) -> None:
         ("bars_1m_daily_summary",      GOLD / "features" / "bars_1m_daily_summary.parquet"),
         ("macro_factors",              GOLD / "features" / "macro_factors.parquet"),
         ("market_inst_aggregated",     GOLD / "features" / "market_inst_aggregated.parquet"),
+        ("txo_1min_intraday",          GOLD / "features" / "txo_1min_intraday.parquet"),
+        ("inst_market_factors",        GOLD / "features" / "inst_market_factors.parquet"),
     ]:
         if fp.exists():
             con.execute(f"""
