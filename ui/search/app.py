@@ -143,6 +143,73 @@ def gap_dashboard():
     return send_file(fp, mimetype="text/html; charset=utf-8")
 
 
+# --- Gap-comments: 手動編輯每條 view 的註解 -----------------------------
+
+def _gap_comments_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "meta" / "gap_comments.json"
+
+
+def _load_gap_comments() -> dict:
+    fp = _gap_comments_path()
+    if not fp.is_file():
+        return {"_schema_version": 1, "updated_at": None, "comments": {}}
+    try:
+        return json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        return {"_schema_version": 1, "updated_at": None, "comments": {}}
+
+
+@app.route("/api/gap_comments", methods=["GET"])
+def api_gap_comments_get():
+    return jsonify(_load_gap_comments())
+
+
+@app.route("/api/gap_comments", methods=["POST"])
+def api_gap_comments_post():
+    """POST {"view": "<view_name>", "comment": "<text>"} → upsert that single entry.
+
+    Returns the updated payload. Atomically writes via tmpfile + os.replace.
+    """
+    import os
+    import tempfile
+    from datetime import datetime, timezone
+
+    payload = request.get_json(force=True, silent=True) or {}
+    view = (payload.get("view") or "").strip()
+    comment = payload.get("comment", "")
+    if not view:
+        return jsonify({"error": "missing 'view'"}), 400
+    if not isinstance(comment, str):
+        return jsonify({"error": "'comment' must be a string"}), 400
+    if len(comment) > 2000:
+        return jsonify({"error": "'comment' too long (max 2000 chars)"}), 400
+
+    data = _load_gap_comments()
+    data.setdefault("_schema_version", 1)
+    data.setdefault("comments", {})
+    if comment.strip() == "":
+        # 空字串視為刪除該 view 的註解
+        data["comments"].pop(view, None)
+    else:
+        data["comments"][view] = comment
+    data["updated_at"] = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+    fp = _gap_comments_path()
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    # atomic write
+    fd, tmp = tempfile.mkstemp(prefix=".gap_comments_", suffix=".json", dir=str(fp.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, fp)
+    except Exception:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
+
+    return jsonify(data)
+
+
 # --- Bulk download (single CSV + zip bundle) ------------------------------
 
 _CSV_CHUNK = 50_000  # rows per fetchmany batch

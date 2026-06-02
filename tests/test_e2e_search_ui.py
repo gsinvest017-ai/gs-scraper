@@ -171,6 +171,52 @@ def test_E010_download_bundle_no_views_400(app_client):
 
 # ── E-012: /gap_dashboard.html static serve ─────────────────────────────────
 
+# ── E-013: /api/gap_comments GET/POST ───────────────────────────────────────
+
+def test_E013_gap_comments_get_returns_schema(app_client):
+    """GET /api/gap_comments 一定回 dict 含 comments key（即使檔不存在也回空 schema）。"""
+    r = app_client.get("/api/gap_comments")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert "comments" in data
+    assert isinstance(data["comments"], dict)
+
+
+def test_E013_gap_comments_post_upsert_and_delete(app_client, tmp_path, monkeypatch):
+    """POST 寫一條 → GET 看得到；POST 空字串 → 該條被刪除。"""
+    # Sandbox to tmp_path so we don't touch real meta/gap_comments.json
+    import ui.search.app as ui_app
+    monkeypatch.setattr(ui_app, "_gap_comments_path", lambda: tmp_path / "gap_comments.json")
+
+    r = app_client.post("/api/gap_comments",
+                        json={"view": "e2e_view", "comment": "e2e 註解測試"})
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["comments"]["e2e_view"] == "e2e 註解測試"
+    assert data.get("updated_at")
+
+    # GET should now see it
+    r = app_client.get("/api/gap_comments")
+    assert r.get_json()["comments"]["e2e_view"] == "e2e 註解測試"
+
+    # Empty comment deletes
+    r = app_client.post("/api/gap_comments",
+                        json={"view": "e2e_view", "comment": ""})
+    assert r.status_code == 200
+    assert "e2e_view" not in r.get_json()["comments"]
+
+
+def test_E013_gap_comments_post_validation(app_client, tmp_path, monkeypatch):
+    """缺 view / comment 非 str / 超過 2000 字 → 400"""
+    import ui.search.app as ui_app
+    monkeypatch.setattr(ui_app, "_gap_comments_path", lambda: tmp_path / "gap_comments.json")
+
+    assert app_client.post("/api/gap_comments", json={}).status_code == 400
+    assert app_client.post("/api/gap_comments", json={"view": "x", "comment": 123}).status_code == 400
+    assert app_client.post("/api/gap_comments",
+                           json={"view": "x", "comment": "y" * 2001}).status_code == 400
+
+
 def test_E012_gap_dashboard_html_served(app_client):
     """nav 列那條連結要能真的開到 docs/gap_dashboard.html。"""
     r = app_client.get("/gap_dashboard.html")
