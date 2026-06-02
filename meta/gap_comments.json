@@ -1,0 +1,19 @@
+{
+  "_schema_version": 1,
+  "_doc": "Manual notes per catalog view shown in gap_dashboard. Edit via Search UI 「📝 編輯註解」 button or by hand. The Flask /api/gap_comments POST endpoint will update `updated_at` and `comments[<view>]`.",
+  "updated_at": "2026-06-02T09:35:00+08:00",
+  "comments": {
+    "revenue_monthly": "TEJ 公布上限：每月 21 日左右公布上個月資料。lag 32d 為自然週期，不是 ingest bug。下次新資料 ~6/21。",
+    "revenue_factors": "derived from revenue_monthly；隨上游公布週期更新。",
+    "accounting_raw": "TEJ 公布上限：Q1 報表 5 月底齊，Q2 約 8 月底。lag 93d 為季報週期，不是 ingest bug。fetch 仍會抓到 revisions 但 fiscal_month max 不動。",
+    "accounting_raw_snapshot": "derived from accounting_raw；隨季報週期更新。",
+    "fundamentals_q": "TEJ 訂閱包 CSV（無 API），須手動下載；下次更新預計與 accounting_raw 同步。",
+    "fundamentals_pit": "derived from fundamentals_q；隨上游手動更新週期。",
+    "bars_1m": "RAW_SOURCES/MXF_1m_clean_all.parquet 手動 re-dump；daily_refresh step 3.56 自動 propagate。",
+    "bars_1m_daily_summary": "derived from bars_1m；隨上游 RAW 重新 dump 而更新。",
+    "tx_continuous_d": "RAW_SOURCES/日k 期貨tquant lab/TX_continuous_raw.parquet 手動 re-dump；daily_refresh step 3.55 自動 propagate。",
+    "mtx_continuous_d": "RAW_SOURCES/日k 期貨tquant lab/MTX_continuous_raw.parquet 手動 re-dump；daily_refresh step 3.55 自動 propagate。",
+    "stock_futures_continuous_d": "RAW_SOURCES/股票期貨/continuous_near_month.parquet 手動 re-dump；daily_refresh step 3.55 自動 propagate。",
+    "cross_market_features": "RAW_SOURCES/SUPPLEMENT/DERIVED/cross_market_features.parquet 手動 re-dump；max_date 2026-04-28。"
+  }
+}

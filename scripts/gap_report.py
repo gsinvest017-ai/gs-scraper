@@ -656,6 +656,27 @@ HTML_TEMPLATE = """<!doctype html>
   .topnav .back:hover {{ border-color:#58a6ff; }}
   .topnav .here {{ color:#e6edf3; font-weight:600; }}
   .topnav .navsep {{ color:#3b434e; }}
+  td.note {{ font-size:11px; color:#c9b88a; max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+  td.note:hover {{ white-space:normal; word-break:break-word; }}
+  .notes-toolbar {{ display:flex; gap:10px; align-items:center; margin:12px 0 8px 0; font-size:13px; }}
+  .notes-toolbar .meta {{ color:#7d8590; }}
+  .notes-toolbar button {{ background:#161210; color:#d4af37; border:1px solid #2b2218; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:13px; }}
+  .notes-toolbar button:hover {{ border-color:#d4af37; }}
+  /* Modal */
+  .notes-modal-backdrop {{ display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:50; }}
+  .notes-modal-backdrop.show {{ display:flex; align-items:center; justify-content:center; }}
+  .notes-modal {{ background:#161c24; border:1px solid #2a323e; border-radius:8px; padding:18px; width:min(820px, 92vw); max-height:84vh; overflow:auto; }}
+  .notes-modal h2 {{ margin:0 0 6px 0; font-size:16px; color:#e6edf3; }}
+  .notes-modal .updated {{ font-size:11px; color:#7d8590; margin-bottom:14px; }}
+  .notes-modal .row {{ display:grid; grid-template-columns:200px 1fr; gap:10px; align-items:flex-start; margin-bottom:8px; }}
+  .notes-modal .row code {{ font-size:12px; color:#d4af37; }}
+  .notes-modal textarea {{ width:100%; min-height:40px; resize:vertical; background:#0c0a0d; color:#f0e8d6; border:1px solid #2b2218; border-radius:4px; padding:6px 8px; font:13px/1.4 var(--font-sans, sans-serif); }}
+  .notes-modal textarea:focus {{ outline:1px solid #d4af37; }}
+  .notes-modal .actions {{ display:flex; gap:10px; justify-content:flex-end; margin-top:14px; padding-top:12px; border-top:1px solid #2a323e; }}
+  .notes-modal .actions button.primary {{ background:#d4af37; color:#0d0a05; border:none; padding:8px 18px; border-radius:6px; font-weight:600; cursor:pointer; }}
+  .notes-modal .actions button.cancel {{ background:transparent; color:#7d8590; border:1px solid #2a323e; padding:8px 18px; border-radius:6px; cursor:pointer; }}
+  .notes-modal .saving {{ font-size:11px; color:#56d364; margin-right:auto; align-self:center; opacity:0; transition:opacity .2s; }}
+  .notes-modal .saving.show {{ opacity:1; }}
   .summary {{ display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }}
   .pill {{ padding: 10px 18px; border-radius: 10px; font-weight: 600; min-width: 90px; text-align: center; }}
   .pill.OK    {{ background: rgba(86,211,100,0.15);  color: #56d364; }}
@@ -723,6 +744,22 @@ HTML_TEMPLATE = """<!doctype html>
   <div class="ltot">🥇 Gold <b>{layer_total_gold}</b></div>
 </div>
 
+<div class="notes-toolbar">
+  <button id="edit-notes-btn" type="button">📝 編輯註解</button>
+  <span class="meta" id="notes-meta">— 註解由 <code>meta/gap_comments.json</code> 載入；點擊編輯後存回 Flask <code>POST /api/gap_comments</code></span>
+</div>
+<div id="notes-modal" class="notes-modal-backdrop" role="dialog" aria-modal="true">
+  <div class="notes-modal">
+    <h2>📝 編輯 view 註解</h2>
+    <div class="updated" id="notes-updated"></div>
+    <div id="notes-list"></div>
+    <div class="actions">
+      <span class="saving" id="notes-saving">儲存中…</span>
+      <button type="button" class="cancel" id="notes-cancel">取消</button>
+      <button type="button" class="primary" id="notes-save">儲存全部</button>
+    </div>
+  </div>
+</div>
 <table>
 <thead>
 <tr>
@@ -741,6 +778,7 @@ HTML_TEMPLATE = """<!doctype html>
   <th class="layer">🥇 Gold</th>
   <th class="layer">📊 Catalog rows</th>
   <th>Suggested action</th>
+  <th>📝 Note</th>
 </tr>
 </thead>
 <tbody>
@@ -759,6 +797,75 @@ HTML_TEMPLATE = """<!doctype html>
   Event (forward-looking): MAX&lt;today = WARN/STALE depending on age.
   Derived tables (e.g. stock_factor_daily) inherit from upstream — flagged INFO only.
 </div>
+
+<script>
+(function() {{
+  // List of views shown in dashboard — derived from rendered table rows.
+  const views = Array.from(document.querySelectorAll('td.note')).map(t => t.dataset.view);
+  const modal   = document.getElementById('notes-modal');
+  const listEl  = document.getElementById('notes-list');
+  const updEl   = document.getElementById('notes-updated');
+  const metaEl  = document.getElementById('notes-meta');
+  const saveBtn = document.getElementById('notes-save');
+  const saving  = document.getElementById('notes-saving');
+
+  async function loadComments() {{
+    try {{
+      const r = await fetch('/api/gap_comments', {{ cache: 'no-store' }});
+      if (!r.ok) throw new Error('http ' + r.status);
+      return await r.json();
+    }} catch (e) {{
+      metaEl.textContent = '⚠ 載入失敗（' + e + '）— Flask 端尚未串接？仍可看 server-rendered 註解，但無法編輯。';
+      return null;
+    }}
+  }}
+
+  function openModal(data) {{
+    listEl.innerHTML = '';
+    updEl.textContent = data && data.updated_at ? ('上次更新：' + data.updated_at) : '';
+    const map = (data && data.comments) || {{}};
+    views.forEach(v => {{
+      const row = document.createElement('div');
+      row.className = 'row';
+      const code = document.createElement('code'); code.textContent = v;
+      const ta = document.createElement('textarea');
+      ta.dataset.view = v;
+      ta.value = map[v] || '';
+      ta.placeholder = '（無註解）';
+      row.appendChild(code); row.appendChild(ta);
+      listEl.appendChild(row);
+    }});
+    modal.classList.add('show');
+  }}
+
+  async function saveAll() {{
+    const tas = Array.from(listEl.querySelectorAll('textarea'));
+    saving.classList.add('show');
+    let ok = 0, fail = 0;
+    for (const ta of tas) {{
+      try {{
+        const r = await fetch('/api/gap_comments', {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ view: ta.dataset.view, comment: ta.value }}),
+        }});
+        if (r.ok) ok++; else fail++;
+      }} catch (e) {{ fail++; }}
+    }}
+    saving.textContent = '已儲存 ' + ok + ' / ' + (ok + fail) + ' 條';
+    setTimeout(() => {{ saving.classList.remove('show'); modal.classList.remove('show'); location.reload(); }}, 800);
+  }}
+
+  document.getElementById('edit-notes-btn').addEventListener('click', async () => {{
+    const data = await loadComments();
+    if (data === null) return;  // already messaged
+    openModal(data);
+  }});
+  document.getElementById('notes-cancel').addEventListener('click', () => modal.classList.remove('show'));
+  modal.addEventListener('click', (e) => {{ if (e.target === modal) modal.classList.remove('show'); }});
+  saveBtn.addEventListener('click', saveAll);
+}})();
+</script>
 </body>
 </html>
 """
@@ -851,6 +958,19 @@ def render_html(rows: list[dict], today: dt.date) -> str:
             label = str(n)
         return f'<td class="layer has-data" title="exact: {n:,d} rows">{label}</td>'
 
+    # Load manual gap-comments (per-view notes for low completeness reasons etc.)
+    comments_path = REPO / "meta" / "gap_comments.json"
+    comments_map: dict[str, str] = {}
+    if comments_path.exists():
+        try:
+            comments_map = json.loads(comments_path.read_text(encoding="utf-8")).get("comments", {}) or {}
+        except Exception:
+            comments_map = {}
+
+    def _html_escape(s: str) -> str:
+        return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                  .replace('"', "&quot;").replace("'", "&#39;"))
+
     rows_html = []
     for r in rows_sorted:
         meta = SEVERITY[r["severity"]]
@@ -859,6 +979,11 @@ def render_html(rows: list[dict], today: dt.date) -> str:
         pct_str = f"{c * 100:.0f}%"
         action_html = f'<code>{r["fetch_cmd"]}</code>' if r["severity"] != "OK" else ""
         layers = r.get("layers", {}) or {}
+        note = comments_map.get(r["view"], "")
+        # Truncate to ~80 chars for cell display; full text in title tooltip.
+        note_disp = (note[:78] + "…") if len(note) > 80 else note
+        note_html = (f'<td class="note" data-view="{r["view"]}" '
+                     f'title="{_html_escape(note)}">{_html_escape(note_disp)}</td>')
         rows_html.append(
             f'<tr class="{r["severity"]}">'
             f'<td>{meta["emoji"]} {r["severity"]}</td>'
@@ -876,6 +1001,7 @@ def render_html(rows: list[dict], today: dt.date) -> str:
             f'{layer_cell(layers.get("gold"))}'
             f'{catalog_rows_cell(r)}'
             f'<td>{action_html}</td>'
+            f'{note_html}'
             f'</tr>'
         )
 

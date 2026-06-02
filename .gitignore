@@ -45,6 +45,8 @@ _quarantine/**
 # .gitkeep 例外
 !bronze/.gitkeep
 !silver/.gitkeep
+# gap dashboard 註解（人工維護，須入庫共享）
+!meta/gap_comments.json
 !gold/.gitkeep
 !reference/.gitkeep
 !catalog/.gitkeep
