@@ -47,10 +47,17 @@ def index():
         try:
             summaries.append(view_summary(v))
         except Exception as e:
-            summaries.append({"name": v, "row_count": 0, "error": str(e)})
+            summaries.append({"name": v, "row_count": 0, "error": str(e),
+                              "data_source": "other", "long_description": ""})
     # sort: time-series first, then by row_count desc
     summaries.sort(key=lambda s: (not s.get("is_time_series"), -(s.get("row_count") or 0)))
-    return render_template("index.html", views=summaries, catalog_path=str(CATALOG))
+    # 收集 dashboard 用的 source 清單（只列實際出現的）
+    from qd_ingest.common.dataset_meta import DATA_SOURCES
+    present_sources = sorted({s.get("data_source", "other") for s in summaries
+                              if s.get("data_source")},
+                              key=lambda x: (x not in DATA_SOURCES, x))
+    return render_template("index.html", views=summaries, sources=present_sources,
+                           catalog_path=str(CATALOG))
 
 
 @app.route("/view/<view>")
@@ -58,9 +65,13 @@ def view_page(view):
     if view not in list_views():
         abort(404)
     meta = get_view_meta(view, with_distinct=True)
+    from qd_ingest.common.dataset_meta import get_meta
+    data_source, long_description = get_meta(view)
     return render_template(
         "view.html",
         meta=meta,
+        data_source=data_source,
+        long_description=long_description,
         meta_json=json.dumps({
             "name": meta.name,
             "row_count": meta.row_count,

@@ -1,17 +1,22 @@
 {% extends "base.html" %}
 {% block title %}{{ meta.name }} — QUANTDATA Search{% endblock %}
 {% block content %}
-<h1><code>{{ meta.name }}</code></h1>
+<h1><code>{{ meta.name }}</code>
+  <span class="ds-pill ds-{{ data_source }}" style="font-size:13px; vertical-align:middle; margin-left:10px;">{{ data_source }}</span>
+</h1>
 <p class="subtitle">
-  {{ '{:,}'.format(meta.row_count) }} rows · {{ meta.columns|length }} columns ·
-  {% if meta.max_date %}max_date <code>{{ meta.max_date }}</code> · {% endif %}
-  {% if meta.is_time_series %}<span class="tag-ts">time-series</span>{% else %}<span class="tag-static">tabular</span>{% endif %}
+  共 {{ '{:,}'.format(meta.row_count) }} 列 · {{ meta.columns|length }} 欄 ·
+  {% if meta.max_date %}最新日期 <code>{{ meta.max_date }}</code> · {% endif %}
+  {% if meta.is_time_series %}<span class="tag-ts">時序</span>{% else %}<span class="tag-static">表格</span>{% endif %}
 </p>
+{% if long_description %}
+<p class="subtitle" style="color:#c9b88a; font-size:13px; margin:-12px 0 16px 0;">📝 {{ long_description }}</p>
+{% endif %}
 
 <details class="schema-details">
-  <summary>Schema ({{ meta.columns|length }} cols)</summary>
+  <summary>Schema（{{ meta.columns|length }} 欄）</summary>
   <table class="schema-table">
-    <thead><tr><th>Column</th><th>Type</th><th>Kind</th></tr></thead>
+    <thead><tr><th>欄位</th><th>型別</th><th>分類</th></tr></thead>
     <tbody>
     {% for c in meta.columns %}
       <tr><td><code>{{ c.name }}</code></td><td><code>{{ c.sql_type }}</code></td><td>{{ c.dtype }}</td></tr>

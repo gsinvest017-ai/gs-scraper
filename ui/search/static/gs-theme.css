@@ -84,3 +84,28 @@ tr:hover td   { background: rgba(212, 175, 55, 0.04); }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --- 資料源 pill（10 種 source 一色，與 gap_dashboard 一致） --------- */
+.ds-pill {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+  border: 1px solid; vertical-align: baseline;
+}
+.ds-TEJ-API         { background: rgba(212,175,55,0.18); color: #d4af37; border-color: rgba(212,175,55,0.4); }
+.ds-TEJ-訂閱包        { background: rgba(232,209,149,0.16); color: #e8d195; border-color: rgba(232,209,149,0.4); }
+.ds-FinMind         { background: rgba(88,166,255,0.18); color: #79c0ff; border-color: rgba(88,166,255,0.4); }
+.ds-TQuant-Lab      { background: rgba(86,211,100,0.18); color: #56d364; border-color: rgba(86,211,100,0.4); }
+.ds-yfinance        { background: rgba(240,136,62,0.18); color: #f0883e; border-color: rgba(240,136,62,0.4); }
+.ds-TAIFEX          { background: rgba(205,127,50,0.18); color: #cd7f32; border-color: rgba(205,127,50,0.4); }
+.ds-TWSE            { background: rgba(176,141,87,0.18); color: #b08d57; border-color: rgba(176,141,87,0.4); }
+.ds-Yahoo-extracted { background: rgba(224,98,90,0.18); color: #e0625a; border-color: rgba(224,98,90,0.4); }
+.ds-derived         { background: rgba(125,133,144,0.18); color: #c9b88a; border-color: rgba(125,133,144,0.4); }
+.ds-manual-RAW      { background: rgba(245,165,36,0.18); color: #f5a524; border-color: rgba(245,165,36,0.4); }
+.ds-other           { background: rgba(125,133,144,0.12); color: #7d8590; border-color: rgba(125,133,144,0.3); }
+
+/* index.html desc cell — 中文長描述，max-width + ellipsis */
+td.desc-cell {
+  max-width: 360px; font-size: 12px; color: #c9b88a;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+td.desc-cell:hover { white-space: normal; word-break: break-word; }

@@ -1,34 +1,68 @@
 {% extends "base.html" %}
-{% block title %}Views — QUANTDATA Search{% endblock %}
+{% block title %}資料表清單 — QUANTDATA Search{% endblock %}
 {% block content %}
-<h1>Catalog views</h1>
-<p class="subtitle">{{ views|length }} views in <code>{{ catalog_path }}</code>. Time-series views (with date column + numeric cols) listed first.</p>
+<h1>📚 Catalog views（資料表清單）</h1>
+<p class="subtitle">共 {{ views|length }} 個 view 在 <code>{{ catalog_path }}</code>。時間序列類（含日期欄 + 數值欄）優先列出。</p>
 <div class="filter-bar">
-  <input type="text" id="view-filter" placeholder="Filter views by name (e.g. tw_, factor, finmind)..." autocomplete="off">
-  <button id="refresh-btn" type="button">↻ Refresh catalog snapshot</button>
+  <input type="text" id="view-filter" placeholder="依名稱過濾（例：tw_、factor、finmind）..." autocomplete="off">
+  <select id="source-filter">
+    <option value="">所有資料源</option>
+    {% for src in sources %}
+    <option value="{{ src }}">{{ src }}</option>
+    {% endfor %}
+  </select>
+  <button id="refresh-btn" type="button">↻ 重整 catalog 快照</button>
 </div>
 <table id="views-table">
 <thead>
 <tr>
-  <th>View</th>
-  <th class="num">Rows</th>
-  <th>Max date</th>
-  <th class="num">Cols</th>
-  <th>Type</th>
+  <th>View 名稱</th>
+  <th>說明</th>
+  <th>資料源</th>
+  <th class="num">列數</th>
+  <th>最新日期</th>
+  <th class="num">欄數</th>
+  <th>類型</th>
   <th></th>
 </tr>
 </thead>
 <tbody>
 {% for v in views %}
-<tr class="view-row {{ 'ts' if v.is_time_series else 'other' }}">
+<tr class="view-row {{ 'ts' if v.is_time_series else 'other' }}" data-source="{{ v.data_source }}">
   <td><code>{{ v.name }}</code>{% if v.error %} <span class="err">⚠ {{ v.error }}</span>{% endif %}</td>
+  <td class="desc-cell" title="{{ v.long_description }}">
+    {% if v.long_description %}{{ v.long_description[:60] }}{% if v.long_description|length > 60 %}…{% endif %}
+    {% else %}—{% endif %}
+  </td>
+  <td><span class="ds-pill ds-{{ v.data_source }}">{{ v.data_source }}</span></td>
   <td class="num">{{ '{:,}'.format(v.row_count or 0) }}</td>
   <td>{{ v.max_date or '—' }}</td>
   <td class="num">{{ v.n_columns or 0 }}</td>
-  <td>{% if v.is_time_series %}<span class="tag-ts">time-series</span>{% else %}<span class="tag-static">tabular</span>{% endif %}</td>
-  <td><a class="btn" href="/view/{{ v.name }}">Query →</a></td>
+  <td>{% if v.is_time_series %}<span class="tag-ts">時序</span>{% else %}<span class="tag-static">表格</span>{% endif %}</td>
+  <td><a class="btn" href="/view/{{ v.name }}">查詢 →</a></td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
+
+<script>
+(function() {
+  const filterEl = document.getElementById('view-filter');
+  const sourceEl = document.getElementById('source-filter');
+  const rows = Array.from(document.querySelectorAll('#views-table tbody tr'));
+  function applyFilter() {
+    const q = filterEl.value.trim().toLowerCase();
+    const src = sourceEl.value;
+    rows.forEach(r => {
+      const name = r.querySelector('code').textContent.toLowerCase();
+      const rsrc = r.dataset.source || '';
+      const matchName = !q || name.includes(q);
+      const matchSrc = !src || rsrc === src;
+      r.style.display = (matchName && matchSrc) ? '' : 'none';
+    });
+  }
+  filterEl.addEventListener('input', applyFilter);
+  sourceEl.addEventListener('change', applyFilter);
+})();
+</script>
 {% endblock %}
