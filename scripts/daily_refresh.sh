@@ -231,6 +231,21 @@ log INFO "step 3.5: restore finmind / qc views"
 "$VENV_PY" "$REPO/scripts/restore_finmind_views.py" >> "$LOG" 2>&1 || \
     log WARN "restore_finmind_views.py failed (rc=$?) — non-fatal"
 
+# ---- 5.55 Refresh continuous (TX/MTX/個股期) from RAW_SOURCES dump ------
+# RAW_SOURCES/{日k 期貨tquant lab,股票期貨}/ 是使用者手動 dump 的 parquet。
+# Cron 每天跑一次：使用者更新 RAW 後，當天就 propagate 到 gold/continuous/。
+# 沒更新時腳本仍會重寫相同內容，無害；non-fatal。
+log INFO "step 3.55: refresh continuous from RAW (TX/MTX/個股期 → gold/continuous)"
+"$VENV_PY" "$REPO/scripts/refresh_continuous_from_raw.py" >> "$LOG" 2>&1 || \
+    log WARN "refresh_continuous_from_raw.py failed (rc=$?) — non-fatal"
+
+# ---- 5.56 Ingest bars_1m (MXF) from RAW_SOURCES dump --------------------
+# RAW_SOURCES/MXF_1m_clean_all.parquet → silver/bars/bars_1m/...
+# 同樣 non-fatal；下一個 step (3.7) 的 build_bars_1m_daily_summary 會自動接續。
+log INFO "step 3.56: ingest bars_1m (MXF) from RAW → silver/bars/bars_1m/"
+"$VENV_PY" "$REPO/scripts/ingest_bars_1m.py" >> "$LOG" 2>&1 || \
+    log WARN "ingest_bars_1m.py failed (rc=$?) — non-fatal"
+
 # ---- 5.7 Rebuild derived gold (silver → gold) ---------------------------
 # Without this, gold parquet (stock_factor_daily / inst_flow_factors /
 # margin_factors / futures_* / market_inst_aggregated / etc.) stays frozen at
