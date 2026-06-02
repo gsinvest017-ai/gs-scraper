@@ -167,3 +167,22 @@ def test_E010_download_bundle_unknown_view_400(app_client):
 def test_E010_download_bundle_no_views_400(app_client):
     r = app_client.get("/download/bundle.zip")
     assert r.status_code == 400
+
+
+# ── E-012: /gap_dashboard.html static serve ─────────────────────────────────
+
+def test_E012_gap_dashboard_html_served(app_client):
+    """nav 列那條連結要能真的開到 docs/gap_dashboard.html。"""
+    r = app_client.get("/gap_dashboard.html")
+    # 真實 catalog 通常已有此檔；測試環境可能沒有 → 接受 200 或 404 但兩者
+    # 都不該是「URL not found on the server」這種 Flask 預設沒 route 的 404。
+    # 用「200 OK」當 happy path，並驗 content-type；404 需來自我們的 abort。
+    if r.status_code == 200:
+        assert "text/html" in r.headers.get("Content-Type", "")
+        # 內容應是真的 dashboard（含某種 summary 字眼）
+        body = r.data.decode("utf-8", errors="replace")
+        assert "gap_dashboard" in body.lower() or "OK" in body or "STALE" in body
+    else:
+        # 404 路徑：我們的 route 該回繁體中文提示訊息
+        assert r.status_code == 404
+        assert "gap_report" in r.data.decode("utf-8", errors="replace")
