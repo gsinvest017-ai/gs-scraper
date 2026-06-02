@@ -258,6 +258,12 @@ log INFO "step 3.58: ingest txo_1min from RAW parquet"
 "$VENV_PY" "$REPO/scripts/ingest_txo_1min.py" >> "$LOG" 2>&1 || \
     log WARN "ingest_txo_1min.py failed (rc=$?) — non-fatal"
 
+# ---- 5.59 Ingest tw_inst_market_daily from RAW cleaned CSV -------------
+# RAW_SOURCES/三大法人買賣超/institutional_yahoo_value_clean.csv → silver/flows/tw_inst_market_daily/
+log INFO "step 3.59: ingest tw_inst_market_daily from yahoo cleaned CSV"
+"$VENV_PY" "$REPO/scripts/ingest_inst_market_daily.py" >> "$LOG" 2>&1 || \
+    log WARN "ingest_inst_market_daily.py failed (rc=$?) — non-fatal"
+
 # ---- 5.7 Rebuild derived gold (silver → gold) ---------------------------
 # Without this, gold parquet (stock_factor_daily / inst_flow_factors /
 # margin_factors / futures_* / market_inst_aggregated / etc.) stays frozen at

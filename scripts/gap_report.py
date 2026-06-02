@@ -244,10 +244,16 @@ DATASETS = [
             "(cross-market features — derived from VIX/SPY/macro; rebuild after macro_daily refresh)",
             "跨市場特徵（VIX-vol、SPY-corr 等）", "P2",
             gold_paths=("gold/features/cross_market_features.parquet",)),
-    # tw_inst_market_daily silver 來源已停（15 row / 2026-04-16），被
-    # market_inst_aggregated 取代（見下方 derived 區）；故從 dashboard
-    # registry 移除，避免「永遠 STALE」噪音。原 view 仍在 catalog，需要
-    # 直接 SQL 即可。
+    # tw_inst_market_daily 復活：source 改為 RAW_SOURCES/三大法人買賣超/
+    # institutional_yahoo_value_clean.csv（474 rows, 2024-05-02 ~ 2026-04-16,
+    # 市場層級三大法人 TWD 資料）；上面市場層級彙總（market_inst_aggregated）
+    # 是 lot-based stock-level aggregation，這條才是真正的 TWD 市場 flow。
+    Dataset("tw_inst_market_daily",    "trading_date", "daily-trading",
+            "scripts/ingest_inst_market_daily.py  (one-shot from yahoo cleaned CSV)",
+            "市場層級三大法人買賣超 (TWD)", "P1",
+            raw_paths=("../RAW_SOURCES/三大法人買賣超/institutional_yahoo_value_clean.csv",),
+            silver_paths=("silver/flows/tw_inst_market_daily/**/*.parquet",),
+            gold_paths=("silver/flows/tw_inst_market_daily/**/*.parquet",)),  # 純 silver；下輪可衍生 gold
 
     # --- FinMind bronze snapshot (auto-refreshed daily via fetch_finmind.py / daily_refresh step 1.7) ---
     Dataset("finmind_stock_price_norm",     "trading_date", "daily-trading",
