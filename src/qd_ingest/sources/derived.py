@@ -1484,6 +1484,163 @@ def build_market_inst_aggregated() -> dict:
     return info
 
 
+def build_txo_1min_intraday_features() -> dict:
+    """Per-day intraday features from silver/options/txo_1min.
+
+    Output cols (one row per trading_date):
+        trading_date, total_volume, n_strikes, n_minutes_active,
+        peak_minute, peak_volume, atm_close_realized_vol
+
+    `atm_close_realized_vol` = stddev(log-return of close-price across minutes,
+    for the most-traded (strike, option_type) of that day) × √(60 × 252).
+    Approx 30~40 rows from 2026-03-09 ~ 04-22.
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    src_root = SILVER / "options" / "txo_1min"
+    if not src_root.exists() or not any(src_root.rglob("*.parquet")):
+        console.log("[txo_1min_intraday] silver empty — skip")
+        return {"rows": 0, "elapsed_sec": 0.0, "skipped": True}
+
+    df = pl.scan_parquet(str(src_root / "**" / "*.parquet")).select([
+        "trade_date", "strike_price", "option_type", "minute",
+        "close", "volume",
+    ]).collect()
+    if df.height == 0:
+        return {"rows": 0, "skipped": True}
+
+    # Cast trade_date to pl.Date
+    if df.schema["trade_date"] != pl.Date:
+        df = df.with_columns(pl.col("trade_date").cast(pl.Date))
+
+    # Per-day aggregate (numeric)
+    agg = df.group_by("trade_date").agg([
+        pl.col("volume").sum().alias("total_volume"),
+        pl.col("strike_price").n_unique().alias("n_strikes"),
+        pl.col("minute").filter(pl.col("volume") > 0).n_unique().alias("n_minutes_active"),
+        pl.col("volume").max().alias("peak_volume"),
+    ])
+
+    # peak_minute: minute of max-volume row per day (join trick)
+    peak = (df.group_by(["trade_date", "minute"]).agg(pl.col("volume").sum().alias("v"))
+              .sort(["trade_date", "v"], descending=[False, True])
+              .group_by("trade_date").agg(pl.col("minute").first().alias("peak_minute")))
+    agg = agg.join(peak, on="trade_date", how="left")
+
+    # Realized vol of most-traded (strike, option_type) per day
+    # For each day: pick the (strike, option_type) with largest sum(volume),
+    # then compute stddev of log-return of `close` across minutes
+    import math
+    pick = (df.group_by(["trade_date", "strike_price", "option_type"])
+              .agg(pl.col("volume").sum().alias("v"))
+              .sort(["trade_date", "v"], descending=[False, True])
+              .group_by("trade_date").agg([
+                  pl.col("strike_price").first().alias("top_strike"),
+                  pl.col("option_type").first().alias("top_otype"),
+              ]))
+    df2 = df.join(pick, on="trade_date", how="left").filter(
+        (pl.col("strike_price") == pl.col("top_strike")) &
+        (pl.col("option_type") == pl.col("top_otype"))
+    ).select(["trade_date", "minute", "close"]).sort(["trade_date", "minute"])
+
+    # Compute log-return → stddev
+    df2 = df2.with_columns(
+        (pl.col("close") / pl.col("close").shift(1).over("trade_date")).log().alias("logret")
+    )
+    rv = df2.group_by("trade_date").agg(
+        pl.col("logret").std().alias("logret_std")
+    )
+    rv = rv.with_columns(
+        # Annualize: 60 minutes/hr × 5hr/day × 252 days ≈ 75600 → √75600 ≈ 275
+        (pl.col("logret_std") * math.sqrt(75600.0)).alias("atm_close_realized_vol")
+    ).select(["trade_date", "atm_close_realized_vol"])
+    agg = agg.join(rv, on="trade_date", how="left")
+    agg = agg.rename({"trade_date": "trading_date"}).sort("trading_date").with_columns([
+        pl.lit("derived_txo_1min_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "txo_1min_intraday.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    agg.write_parquet(dest, compression="zstd", compression_level=3)
+
+    info = {"rows": agg.height,
+            "max_date": str(agg["trading_date"].max()),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/txo_1min_intraday",
+        bronze_file="silver/options/txo_1min",
+        rows_in=agg.height, rows_out=agg.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[txo_1min_intraday] {info}")
+    return info
+
+
+def build_inst_market_factors() -> dict:
+    """Rolling sums + 60d z-score on tw_inst_market_daily TWD flows.
+
+    Output: gold/features/inst_market_factors.parquet (~414 rows; first 60 days
+    have NaN z-score). One row per trading_date.
+    """
+    t0 = time.time()
+    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    src_root = SILVER / "flows" / "tw_inst_market_daily"
+    if not src_root.exists() or not any(src_root.rglob("*.parquet")):
+        console.log("[inst_market_factors] silver empty — skip")
+        return {"rows": 0, "skipped": True}
+
+    df = pl.scan_parquet(str(src_root / "**" / "*.parquet")).select([
+        "trading_date",
+        "foreign_total_twd_bn",
+        "sitc_twd_bn",
+        "dealer_total_twd_bn",
+        "three_inst_total_twd_bn",
+        "ingestion_ts",
+    ]).collect()
+    if df.schema["trading_date"] != pl.Date:
+        df = df.with_columns(pl.col("trading_date").cast(pl.Date))
+    df = df.sort(["trading_date", "ingestion_ts"]).unique(
+        subset=["trading_date"], keep="last"
+    ).drop("ingestion_ts").sort("trading_date")
+
+    cols = ["foreign_total_twd_bn", "sitc_twd_bn", "dealer_total_twd_bn", "three_inst_total_twd_bn"]
+    out_cols = ["trading_date"] + cols
+    for c in cols:
+        for w in (5, 20, 60):
+            df = df.with_columns(pl.col(c).rolling_sum(window_size=w, min_samples=w).alias(f"{c}_{w}d_sum"))
+            out_cols.append(f"{c}_{w}d_sum")
+        # 60d z-score on the daily value itself
+        df = df.with_columns(
+            ((pl.col(c) - pl.col(c).rolling_mean(window_size=60, min_samples=60)) /
+             pl.col(c).rolling_std(window_size=60, min_samples=60)).alias(f"{c}_60d_zscore")
+        )
+        out_cols.append(f"{c}_60d_zscore")
+
+    out = df.select(out_cols).with_columns([
+        pl.lit("derived_inst_market_v1").alias("source"),
+        pl.lit(dt.datetime.now(dt.timezone.utc)).alias("ingestion_ts"),
+    ])
+
+    dest = GOLD / "features" / "inst_market_factors.parquet"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out.write_parquet(dest, compression="zstd", compression_level=3)
+
+    info = {"rows": out.height,
+            "max_date": str(out["trading_date"].max()),
+            "elapsed_sec": round(time.time() - t0, 1)}
+    write_audit(IngestRecord(
+        source="silver_derived", table="gold/features/inst_market_factors",
+        bronze_file="silver/flows/tw_inst_market_daily",
+        rows_in=out.height, rows_out=out.height, sha256="", status="ok",
+        started_at=started, ended_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        extra=info,
+    ))
+    console.log(f"[inst_market_factors] {info}")
+    return info
+
+
 def build_all() -> dict:
     summary = {
         "txo": build_txo_daily_features(),
@@ -1511,6 +1668,8 @@ def build_all() -> dict:
         "bars_1m_daily_summary": build_bars_1m_daily_summary(),
         "macro_factors": build_macro_factors(),
         "market_inst_aggregated": build_market_inst_aggregated(),
+        "txo_1min_intraday": build_txo_1min_intraday_features(),
+        "inst_market_factors": build_inst_market_factors(),
     }
     return summary
 
