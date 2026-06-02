@@ -253,16 +253,25 @@ def _stream_view_csv(view: str):
 
 @app.route("/downloads")
 def downloads_page():
+    from qd_ingest.common.dataset_meta import DATA_SOURCES, get_meta
     views = list_views()
     summaries = []
     for v in views:
+        ds, ld = get_meta(v)
         try:
             s = view_summary(v)
-            summaries.append({"name": v, "row_count": s.get("row_count") or 0})
+            summaries.append({
+                "name": v, "row_count": s.get("row_count") or 0,
+                "data_source": ds, "long_description": ld,
+            })
         except Exception:
-            summaries.append({"name": v, "row_count": 0})
+            summaries.append({"name": v, "row_count": 0,
+                              "data_source": ds, "long_description": ld})
     summaries.sort(key=lambda s: -s["row_count"])
-    return render_template("downloads.html", views=summaries, catalog_path=str(CATALOG))
+    present_sources = sorted({s["data_source"] for s in summaries},
+                              key=lambda x: (x not in DATA_SOURCES, x))
+    return render_template("downloads.html", views=summaries,
+                           sources=present_sources, catalog_path=str(CATALOG))
 
 
 @app.route("/download/view/<view>.csv")
