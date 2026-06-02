@@ -266,16 +266,21 @@ def copy_cross_market_features() -> dict:
         return {}
     dest.parent.mkdir(parents=True, exist_ok=True)
     df = pq.read_table(src).to_pandas()
-    # The bronze file has no 'date' column — the index is the date. Recover it.
-    if df.index.name is None and not isinstance(df.index, pd.RangeIndex):
-        df = df.reset_index().rename(columns={"index": "date"})
+    # Source 把 Date 存在 pandas index（不是 column）；把它拉回 column 並更名 'date'。
+    if not isinstance(df.index, pd.RangeIndex):
+        idx_name = df.index.name
+        df = df.reset_index()
+        for cand in (idx_name, "Date", "date", "index", "level_0"):
+            if cand and cand in df.columns and cand != "date":
+                df = df.rename(columns={cand: "date"})
+                break
     elif "date" not in df.columns:
-        # Sometimes pyarrow strips index; if so date isn't recoverable — use US_FUTURES NQ_F_daily as alignment
-        # Cheap fallback: count rows == nq_f_daily length; reattach
+        # Fallback：用 NQ_F_daily 的 index 對齊長度
         nq_fp = RAW_ROOT / "SUPPLEMENT" / "US_FUTURES" / "NQ_F_daily.parquet"
-        nq = pq.read_table(nq_fp).to_pandas()
-        if len(df) == len(nq):
-            df.insert(0, "date", nq.index)
+        if nq_fp.exists():
+            nq = pq.read_table(nq_fp).to_pandas()
+            if len(df) == len(nq):
+                df.insert(0, "date", nq.index)
     df["date"] = pd.to_datetime(df["date"]).dt.date if "date" in df.columns else pd.NaT
     df["source"] = "tw_derived"
     df["ingestion_ts"] = pd.Timestamp.now(tz="UTC")
@@ -1500,7 +1505,9 @@ def build_all() -> dict:
         "accounting_snapshot": materialize_accounting_snapshot(),
         "tw_inst_futures_daily_snapshot": materialize_tw_inst_futures_daily_snapshot(),
         "txo_daily_features_snapshot": materialize_txo_daily_features_snapshot(),
-        "tw_inst_market_daily_snapshot": materialize_tw_inst_market_daily_snapshot(),
+        # tw_inst_market_daily_snapshot 已停用（上游 silver 為 4/16 死 view），
+        # 由 build_market_inst_aggregated() 取代；以下行保留說明：
+        # "tw_inst_market_daily_snapshot": materialize_tw_inst_market_daily_snapshot(),
         "bars_1m_daily_summary": build_bars_1m_daily_summary(),
         "macro_factors": build_macro_factors(),
         "market_inst_aggregated": build_market_inst_aggregated(),

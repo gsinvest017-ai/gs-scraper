@@ -232,14 +232,10 @@ DATASETS = [
             "(cross-market features — derived from VIX/SPY/macro; rebuild after macro_daily refresh)",
             "跨市場特徵（VIX-vol、SPY-corr 等）", "P2",
             gold_paths=("gold/features/cross_market_features.parquet",)),
-    Dataset("tw_inst_market_daily",    "trading_date", "daily-trading",
-            "(市場層級三大法人 — 上游應由 tw_inst_stock_daily aggregated 而來)",
-            "市場層級三大法人彙總", "P2",
-            silver_paths=("silver/flows/tw_inst_market_daily/**/*.parquet",),
-            gold_paths=(
-                "gold/features/tw_inst_market_daily_snapshot.parquet",
-                "gold/features/market_inst_aggregated.parquet",
-            )),
+    # tw_inst_market_daily silver 來源已停（15 row / 2026-04-16），被
+    # market_inst_aggregated 取代（見下方 derived 區）；故從 dashboard
+    # registry 移除，避免「永遠 STALE」噪音。原 view 仍在 catalog，需要
+    # 直接 SQL 即可。
 
     # --- FinMind bronze snapshot (auto-refreshed daily via fetch_finmind.py / daily_refresh step 1.7) ---
     Dataset("finmind_stock_price_norm",     "trading_date", "daily-trading",
@@ -335,10 +331,7 @@ DATASETS = [
             "python -m qd_ingest.sources.derived  (materialize_txo_daily_features_snapshot)",
             "TXO 日特徵 snapshot（PCR / max_pain / IV proxy）", "P2",
             gold_paths=("gold/features/txo_daily_features_snapshot.parquet",)),
-    Dataset("tw_inst_market_daily_snapshot", "trading_date", "daily-trading",
-            "python -m qd_ingest.sources.derived  (materialize_tw_inst_market_daily_snapshot)",
-            "市場層級三大法人 snapshot", "P2",
-            gold_paths=("gold/features/tw_inst_market_daily_snapshot.parquet",)),
+    # tw_inst_market_daily_snapshot 已隨上游 view 退役，從 registry 移除。
     Dataset("bars_1m_daily_summary",   "trading_date", "daily-trading",
             "python -m qd_ingest.sources.derived  (build_bars_1m_daily_summary)",
             "1m bars 日彙總（per asset_class × symbol：OHLCV + bars_count）", "P2",
