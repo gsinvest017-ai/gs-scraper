@@ -370,6 +370,12 @@ DATASETS = [
             "python -m qd_ingest.sources.derived  (build_inst_market_factors)",
             "市場層級三大法人 5/20/60d 滾動 + 60d z-score", "P1",
             gold_paths=("gold/features/inst_market_factors.parquet",)),
+    Dataset("accounting_raw_extended", "fiscal_month", "quarterly",
+            "scripts/ingest_accounting_raw_extended.py  (one-shot from TEJ subscription CSV)",
+            "TEJ 訂閱包單季財報 (796 cols, 2005~2025)", "P2",
+            raw_paths=("../../Users/User/Downloads/台灣上市公司單季財報資料*.csv",),
+            silver_paths=("silver/fundamentals/accounting_raw_extended/**/*.parquet",),
+            gold_paths=("silver/fundamentals/accounting_raw_extended/**/*.parquet",)),  # 純 silver；下輪可衍生 gold
 ]
 
 
