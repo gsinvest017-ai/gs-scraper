@@ -39,4 +39,28 @@ trading_date)` 可與 `bars_1d` join。
 
 ## 進度日誌
 
-（每完成一個 milestone 追加）
+### M1 — 程式接線（commit c782129）
+
+fetch_tej.py 加 `adapt_apiprcd_to_valuation_silver`（24 欄 English schema +
+顯式 pyarrow type）+ `write_silver_stock_valuation`（year 分區）+ `stock_valuation`
+logical table + 30-day chunk fetch branch + `_silver_max_date` 接 trading_date；
+catalog.py 把 `tw_stock_valuation_daily` 加進 silver-flows view 迴圈；dataset_meta +
+gap_report（daily-trading, P2）註冊。adapter 過真實 5-day 切片 + pyarrow round-trip。
+
+探查 APIPRCD `table_info`：29 欄、PK (coid, mdate)、1999 起、日頻、對照表 APISTKAT。
+
+### M2 — 回補 + catalog + 驗證
+
+`--table stock_valuation --start 20200101 --mode overwrite`：30-day chunk 抓
+**2,636,243 rows** 落 `silver/flows/tw_stock_valuation_daily/year={2022..2026}/`。
+（2020–2021 chunks 回 0 列——API 訂閱深度約近 4.5 年，與 accounting_raw 2022~ 一致；
+深歷史可日後 `--start` 往前 top-up。）build-catalog 後 view 65→66。DuckDB 驗證：
+
+- 2,636,243 rows / 2,823 stocks / 2022-01-03 → 2026-06-02 / 27 欄
+- 非空覆蓋率：per 57.5%（ETF/權證無 PE）, pbr 74.2%, div_yield 74.3%,
+  turnover 92.1%, market_cap 100%
+- 2330：PER 32.00 / PBR 10.48 / 殖利率 0.92% / 市值 ~61.7 兆 — 數值合理
+- `pytest -q tests/` → 148 passed
+
+> 增量：`--table stock_valuation --append-since-silver` 從 silver 最大 trading_date
+> +1 起抓（view_map 已接 ("tw_stock_valuation_daily","trading_date")）。
