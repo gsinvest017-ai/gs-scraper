@@ -40,6 +40,19 @@ env 中存在、絕不落地 / 不寫 log / 不入庫 / 不回傳前端**。
   區分 password / key 兩種失敗訊息。
 - 驗過：`bash -n` 過、key-only 無 host 仍乾淨報錯、password 路徑無 sshpass 乾淨報錯。
 
+### M2 — Flask 後端
+
+- `ui/search/migrate_runner.py`：`validate()` 白名單驗證（os_type/user/host/port/
+  path/bwlimit）、`build_command()` 組 arg list、`stream_migration()` Popen 逐行
+  yield log。password 只進 subprocess `SSHPASS` env；`threading.Lock` 確保同時
+  只跑一個遷移。
+- `app.py`：`GET /migrate`（頁面）+ `POST /api/migrate`（`text/plain` chunked
+  log stream，`X-Accel-Buffering: no`）。password 從 payload 取出後不進 validate
+  回傳，不外洩。
+- 驗過：validate 接受合法 dry-run/apply，並正確 reject 6 種惡意/錯誤輸入
+  （shell injection user、壞 IP、爆 port、path 含單引號、缺 host、未知 os_type）；
+  app import OK，路由 `/migrate`、`/api/migrate` 就位。
+
 ## Fallback 指引
 
 - 整功能可獨立 rollback：移除 `ui/search/migrate_runner.py`、`templates/migrate.html`、
