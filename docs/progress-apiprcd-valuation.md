@@ -64,3 +64,25 @@ gap_report（daily-trading, P2）註冊。adapter 過真實 5-day 切片 + pyarr
 
 > 增量：`--table stock_valuation --append-since-silver` 從 silver 最大 trading_date
 > +1 起抓（view_map 已接 ("tw_stock_valuation_daily","trading_date")）。
+
+### M3 — 重生 dashboard + UI refresh
+
+`gap_report.py --format all` 重生：`tw_stock_valuation_daily` 列出現
+`P2 · latest 2026-06-02 · 0d · ✅ OK`，docs/ 與 docs-site/ 兩份 gap_dashboard.html
+皆含。`POST /api/refresh` → `{"n_views":66}`，`/view/tw_stock_valuation_daily` 回 200，
+跑著的 UI 免重啟即可見。
+
+## Fallback / 接手指引
+
+- 程式接線全在 commit c782129（M1）：scripts/fetch_tej.py、
+  src/qd_ingest/common/{catalog,dataset_meta}.py、scripts/gap_report.py。
+- 重抓 / 補深歷史：`./.venv/bin/python scripts/fetch_tej.py --table stock_valuation
+  --start <YYYYMMDD> --mode overwrite`（overwrite 會 rmtree 對應 year 分區）。
+- 增量：`--table stock_valuation --append-since-silver`。
+- 重建 view：`./.venv/bin/python -m qd_ingest.cli build-catalog`，再
+  `curl -X POST http://127.0.0.1:5050/api/refresh` 套到 UI。
+- Rollback：刪 `silver/flows/tw_stock_valuation_daily/` 後 build-catalog 即移除 view；
+  程式碼 `git revert c782129`。
+- 查詢：view 名 `tw_stock_valuation_daily`，key (stock_id, trading_date)，
+  可 join `bars_1d`（OHLCV）。欄位英文化：per/pbr/div_yield_pct/turnover_pct/
+  roi_pct/bid/offer/market_cap/per_tej/pbr_tej/psr_tej…（不需中文雙引號）。
