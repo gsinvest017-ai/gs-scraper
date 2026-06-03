@@ -114,3 +114,6 @@ meta/audit/daily_refresh_cron.log
 
 # === /set-serve-eth backup metadata (per-machine, do not commit) ===
 .claude/local/
+
+# === migrate 目標主機設定（per-machine；.example 才入庫）===
+scripts/migrate.conf

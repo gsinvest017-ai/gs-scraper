@@ -1,0 +1,19 @@
+# QUANTDATA migrate 目標主機設定範例。
+#
+# 複製成 scripts/migrate.conf（已被 .gitignore 忽略，per-machine 不入庫），
+# 填好之後就能直接 `scripts/migrate_to_host.sh --apply`，不必每次打 --host。
+#
+# CLI flag 與環境變數 (MIGRATE_*) 都會覆寫這裡的值。
+
+# ssh 目的地：user@host（host 可用 ~/.ssh/config 的 alias）
+MIGRATE_HOST="kevin@192.168.0.50"
+
+# 目標端 repo 絕對路徑；留空則沿用來源端路徑（建議同 layout，
+# DuckDB catalog 的相對路徑 view 才能原樣可用）。
+MIGRATE_PATH="/home/kevin/gs-scraper/QUANTDATA"
+
+# ssh port（預設 22）
+MIGRATE_SSH_PORT="22"
+
+# 跨 WAN 時限頻寬（KB/s）；LAN 內留空跑滿速
+# MIGRATE_BWLIMIT="20000"
