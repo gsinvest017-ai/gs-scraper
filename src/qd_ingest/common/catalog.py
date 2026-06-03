@@ -66,7 +66,8 @@ def build(*, db_path=None) -> None:
                 "tw_inst_market_daily", "tw_futures_large_trader_daily",
                 "tw_chip_dist_daily", "tw_stock_futures_corp_actions",
                 "tw_inst_futures_full_daily",
-                "tw_stock_trading_attrs_daily"):
+                "tw_stock_trading_attrs_daily",
+                "tw_stock_valuation_daily"):
         path = SILVER / "flows" / tbl
         if (path).exists():
             con.execute(f"""

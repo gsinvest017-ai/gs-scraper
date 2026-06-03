@@ -43,6 +43,7 @@ DATASET_META: dict[str, tuple[str, str]] = {
     "stock_futures_adjustments":     ("TEJ-API", "個股期日資料調整參數（除息調整、保證金倍數）。"),
     "accounting_raw":                ("TEJ-API", "TWN/AINVFINB API 抓的單季財報（121 cols, 2022~2026）。"),
     "capital_changes":               ("TEJ-API", "資本形成 / 股本變動事件（TWN/APISTK1）：現金增資 / 盈餘配股 / 減資 / CB轉換 / 庫藏股註銷 / 合併 / IPO，event-based by 除權日。"),
+    "tw_stock_valuation_daily":      ("TEJ-API", "個股每日估值 / 微結構（TWN/APIPRCD）：本益比 / 股價淨值比 / 殖利率 / 報酬率 / 周轉率 / 買賣價 / 流通股數 / 市值；OHLCV 另在 bars_1d，本表可 join。"),
     # === TEJ-訂閱包 ===
     "fundamentals_q":                ("TEJ-訂閱包", "TWN/EWIFINQ CSV 季財報精簡版；訂閱包手動下載，無 API 自動 refresh。"),
     "fundamentals_pit":              ("derived",   "fundamentals_q 的 PIT (Point-In-Time) 對齊 — 用 publish_date 而非 fiscal_month。"),

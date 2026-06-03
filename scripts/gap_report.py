@@ -289,6 +289,10 @@ DATASETS = [
             "fetch_tej.py --table capital_changes --append-since-silver",
             "資本形成 / 股本變動事件（增減資、CB轉換、庫藏股註銷、合併、IPO）", "P2",
             silver_paths=("silver/fundamentals/capital_changes/**/*.parquet",)),
+    Dataset("tw_stock_valuation_daily", "trading_date", "daily-trading",
+            "fetch_tej.py --table stock_valuation --append-since-silver",
+            "個股每日估值/微結構（本益比、淨值比、殖利率、周轉率、買賣價、市值）", "P2",
+            silver_paths=("silver/flows/tw_stock_valuation_daily/**/*.parquet",)),
 
     # --- 衍生 (downstream of stock_bars etc.) ---
     Dataset("stock_factor_daily",      "trading_date", "derived",

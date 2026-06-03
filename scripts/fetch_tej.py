@@ -46,6 +46,7 @@ LOGICAL_TABLES = [
     "chip_dist", "cash_dividend", "stock_futures_corp_actions", "inst_futures_full",
     # P2
     "security_attrs", "stock_trading_attrs", "accounting_raw", "capital_changes",
+    "stock_valuation",
 ]
 
 # Where the existing ingester reads from (must match qd_ingest.sources.tej rename maps)
@@ -376,6 +377,8 @@ def _silver_max_date(table: str) -> dt.date | None:
             "revenue_monthly":      ("revenue_monthly", "fiscal_month"),
             # P2 event-based — track max ex-right date for --append-since-silver
             "capital_changes":      ("capital_changes", "ex_right_date"),
+            # APIPRCD valuation companion (daily per stock)
+            "stock_valuation":      ("tw_stock_valuation_daily", "trading_date"),
         }
         if table not in view_map:
             return None
@@ -1292,6 +1295,115 @@ def write_silver_capital_changes(out_df: "pd.DataFrame", *, mode: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# APIPRCD valuation/microstructure (估值 + 微結構欄) — companion to bars_1d
+# ---------------------------------------------------------------------------
+
+def adapt_apiprcd_to_valuation_silver(df) -> "pd.DataFrame":
+    """TWN/APIPRCD (交易資料-股價資料) -> silver valuation table.
+
+    OHLCV already lives in bars_1d (asset_class=tw_stock); this table captures
+    the valuation + microstructure columns APIPRCD uniquely carries, keyed
+    (stock_id, trading_date) so it joins back to bars. Unlike the wide
+    accounting tables, APIPRCD is a tidy 29-col set so we map to English with
+    explicit types.
+    """
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True)
+    td = pd.to_datetime(df["資料日"]).dt.tz_localize(None)
+
+    def _num(col):
+        return pd.to_numeric(df[col], errors="coerce")
+
+    def _int(col):
+        return pd.array(pd.to_numeric(df[col], errors="coerce"), dtype="Int64")
+
+    out = pd.DataFrame({
+        "stock_id":           df["證券名稱"].astype(str).values,
+        "trading_date":       td.dt.date.values,
+        "market":             df["市場別"].astype(str).values,
+        "roi_pct":            _num("報酬率").values,             # 日報酬率 %
+        "high_low_spread_pct": _num("高低價差").values,           # (high-low)/... %
+        "turnover_pct":       _num("周轉率").values,             # 周轉率 %
+        "bid":                _num("最後揭示買價").values,
+        "offer":              _num("最後揭示賣價").values,
+        "avg_price":          _num("當日均價").values,
+        "amount":             _int("成交金額(元)"),               # 成交金額 (元)
+        "trades":             _int("成交筆數"),
+        "shares_outstanding": _int("流通在外股數(千股)"),          # 千股
+        "market_cap":         _int("個股市值(元)"),               # 元
+        "market_cap_pct":     _num("市值比重").values,
+        "amount_pct":         _num("成交金額比重").values,
+        "per":                _num("本益比").values,
+        "pbr":                _num("股價淨值比").values,
+        "div_yield_pct":      _num("股利殖利率").values,
+        "cash_div_yield_pct": _num("現金股利率(TEJ)").values,
+        "per_tej":            _num("本益比(TEJ)").values,
+        "pbr_tej":            _num("股價淨值比(TEJ)").values,
+        "psr_tej":            _num("股價營收比(TEJ)").values,
+        "adj_factor":         _num("調整係數").values,
+        "adj_factor_exright": _num("調整係數(除權)").values,
+        "source":             "tej_apiprcd",
+        "ingestion_ts":       pd.Timestamp.now(tz="UTC"),
+    })
+    out["year"] = pd.DatetimeIndex(out["trading_date"]).year.astype("int32")
+    return out
+
+
+_APIPRCD_VAL_SCHEMA = _pa.schema([
+    ("stock_id",            _pa.string()),
+    ("trading_date",        _pa.date32()),
+    ("market",              _pa.string()),
+    ("roi_pct",             _pa.float64()),
+    ("high_low_spread_pct", _pa.float64()),
+    ("turnover_pct",        _pa.float64()),
+    ("bid",                 _pa.float64()),
+    ("offer",               _pa.float64()),
+    ("avg_price",           _pa.float64()),
+    ("amount",              _pa.int64()),
+    ("trades",              _pa.int64()),
+    ("shares_outstanding",  _pa.int64()),
+    ("market_cap",          _pa.int64()),
+    ("market_cap_pct",      _pa.float64()),
+    ("amount_pct",          _pa.float64()),
+    ("per",                 _pa.float64()),
+    ("pbr",                 _pa.float64()),
+    ("div_yield_pct",       _pa.float64()),
+    ("cash_div_yield_pct",  _pa.float64()),
+    ("per_tej",             _pa.float64()),
+    ("pbr_tej",             _pa.float64()),
+    ("psr_tej",             _pa.float64()),
+    ("adj_factor",          _pa.float64()),
+    ("adj_factor_exright",  _pa.float64()),
+    ("source",              _pa.string()),
+    ("ingestion_ts",        _pa.timestamp("ns", tz="UTC")),
+    ("year",                _pa.int32()),
+])
+
+
+def write_silver_stock_valuation(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] stock_valuation: nothing to write")
+        return
+    dest_root = SILVER / "flows" / "tw_stock_valuation_daily"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        tbl = _pa.Table.from_pandas(
+            group[[f.name for f in _APIPRCD_VAL_SCHEMA]],
+            schema=_APIPRCD_VAL_SCHEMA, preserve_index=False,
+        )
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"apiprcd_val_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] stock_valuation: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
 # CSV merge
 # ---------------------------------------------------------------------------
 
@@ -1445,6 +1557,14 @@ def fetch(tables: list[str], start: str, end: str, *, mode: str) -> None:
         print(f"  -> {len(df):,} rows total", flush=True)
         out = adapt_apistk1_to_silver(df)
         write_silver_capital_changes(out, mode=mode)
+
+    if "stock_valuation" in tables:
+        print(f"[fetch] TWN/APIPRCD {start}..{end} (valuation cols, chunked 30d)", flush=True)
+        # ~1.8K rows/day full market; 30-day chunk ≈ 54K rows (tested under limit)
+        df = _tej_get_chunked("TWN/APIPRCD", start, end, chunk_days=30)
+        print(f"  -> {len(df):,} rows total", flush=True)
+        out = adapt_apiprcd_to_valuation_silver(df)
+        write_silver_stock_valuation(out, mode=mode)
 
 
 def main() -> None:
