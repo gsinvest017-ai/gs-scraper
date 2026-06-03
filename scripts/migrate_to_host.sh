@@ -90,7 +90,23 @@ done
 [[ -z "$TARGET_PATH" ]] && TARGET_PATH="$ROOT"
 
 # ---- 共用：ssh / 目的地字串 ---------------------------------------------
-SSH_CMD=(ssh -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=10)
+# 認證模式：
+#   - 預設 key-only（BatchMode=yes，不會跳密碼提示，CI / cron 安全）。
+#   - 若環境變數 SSHPASS 有值（dashboard 走這條）→ 用 sshpass -e 帶密碼，
+#     並關掉 BatchMode、改 accept-new 讓首次連線的目標 host key 不卡關。
+#   密碼只經 SSHPASS env 傳遞，絕不出現在指令列 / log。
+SSHPASS_PREFIX=()
+if [[ -n "${SSHPASS:-}" ]]; then
+  command -v sshpass >/dev/null 2>&1 \
+    || fail "需要 password 認證但本機沒裝 sshpass。請 'sudo apt install sshpass'（或用 ssh key 改走免密）。"
+  SSHPASS_PREFIX=(sshpass -e)
+  SSH_OPTS=(-p "$SSH_PORT" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+else
+  SSH_OPTS=(-p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=10)
+fi
+SSH_CMD=("${SSHPASS_PREFIX[@]}" ssh "${SSH_OPTS[@]}")
+# 給 rsync -e 用的字串（含 port 與 host-key 策略，但不含 sshpass —— sshpass 包在 rsync 外層）
+RSYNC_SSH="ssh ${SSH_OPTS[*]}"
 DEST="${HOST}:${TARGET_PATH%/}/"
 
 # ===========================================================================
@@ -104,9 +120,14 @@ preflight() {
 
   log "目標：$DEST  (ssh port $SSH_PORT)"
   log "測試 SSH 連線…"
-  "${SSH_CMD[@]}" "$HOST" true 2>/dev/null \
-    || fail "SSH 連不上 $HOST。先確認 ssh key 已設定（ssh -p $SSH_PORT $HOST true）"
-  log "SSH OK"
+  if ! "${SSH_CMD[@]}" "$HOST" true 2>/dev/null; then
+    if [[ -n "${SSHPASS:-}" ]]; then
+      fail "SSH 連不上 $HOST（password 認證）。確認 IP/port/帳號/密碼正確、目標 sshd 開放。"
+    else
+      fail "SSH 連不上 $HOST。先設好 ssh key（ssh -p $SSH_PORT $HOST true），或設 SSHPASS env 走密碼。"
+    fi
+  fi
+  log "SSH OK（$([[ -n "${SSHPASS:-}" ]] && echo password || echo key)）"
 }
 
 # DuckDB 鎖檢查（CLAUDE.md：duckdb -ui 會鎖整個 catalog）
@@ -170,8 +191,8 @@ run_rsync() {
   "${SSH_CMD[@]}" "$HOST" "mkdir -p '${TARGET_PATH%/}'" \
     || fail "無法在目標端建立 $TARGET_PATH"
 
-  rsync "${opts[@]}" "${EXCLUDES[@]}" \
-    -e "ssh -p $SSH_PORT" \
+  "${SSHPASS_PREFIX[@]}" rsync "${opts[@]}" "${EXCLUDES[@]}" \
+    -e "$RSYNC_SSH" \
     "$ROOT/" "$DEST"
 
   if [[ "$APPLY" -eq 0 ]]; then
