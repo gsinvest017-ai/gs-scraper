@@ -65,6 +65,26 @@ env 中存在、絕不落地 / 不寫 log / 不入庫 / 不回傳前端**。
   header + 腳本 preflight + SSH 失敗 + exit code；**送 password 後 grep 串流
   洩漏次數 = 0**（確認不外洩）。
 
+### M4 — 收尾（launcher + 文件 + 測試）
+
+- `run_search_ui.sh`：啟動時偵測 sshpass，缺則提示 `sudo apt install sshpass`；
+  並印出 `/migrate` 入口。
+- README 加「Migration dashboard（網頁版）」段落（含安全提醒）。
+- `tests/test_migrate_runner.py`：24 個單元測試鎖住 validate / build_command
+  的安全行為（injection / 壞格式 reject、password 不進指令列）。
+- 全測試綠：`pytest -q` → **173 passed**。
+
+## 完成狀態
+
+4 個 milestone 全完成。用法：
+
+```bash
+scripts/run_search_ui.sh          # 起 UI → http://127.0.0.1:5050/migrate
+# （要用密碼遷移先 sudo apt install sshpass；或用 ssh key 免密）
+```
+
+填表 → Dry-run 預覽 → 勾「確認執行」→ 🚀 執行遷移，log 即時串流。
+
 ## Fallback 指引
 
 - 整功能可獨立 rollback：移除 `ui/search/migrate_runner.py`、`templates/migrate.html`、

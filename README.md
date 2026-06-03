@@ -70,3 +70,16 @@ cp scripts/migrate.conf.example scripts/migrate.conf
 - **Windows**：用 `scripts\migrate_to_host.ps1`（參數相同，自動轉進 WSL 執行）。
 
 設計與進度：[`docs/progress-migrate-to-host.md`](./docs/progress-migrate-to-host.md)。
+
+### Migration dashboard（網頁版）
+
+不想記指令的話，Search UI 內建 **Migration** 頁面（`scripts/run_search_ui.sh`
+→ <http://127.0.0.1:5050/migrate>）：填目標主機 OS type / IP / hostname / 帳號 /
+密碼 / port / 目標路徑，按「🔍 Dry-run 預覽」或「🚀 執行遷移」，log 即時串流到頁面。
+
+- 密碼走 `sshpass`（需 `sudo apt install sshpass`；留空則用 ssh key 免密），
+  **只在本機 subprocess 記憶體使用，不寫檔 / 不入 git / 不寫 log / 不回傳前端**。
+- 預設 dry-run；要真的搬須勾「我確認要真的執行遷移」。
+- ⚠️ Flask 預設綁 `0.0.0.0:5050`，**請只在信任的內網開這個頁面**。
+
+設計與進度：[`docs/progress-migration-dashboard.md`](./docs/progress-migration-dashboard.md)。
