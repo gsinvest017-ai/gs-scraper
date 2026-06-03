@@ -64,3 +64,20 @@ yearly chunk 抓 2020-01-01→2026-06-03 共 **19,446 rows**（7 chunks，各 ~2
 > 增量：之後 `--table capital_changes --append-since-silver` 會從 silver 最大除權日
 > +1 起抓（view_map 已接）。注意 event 表用 plain read_parquet 無 query-time dedup，
 > 增量只抓非重疊 mdate 視窗即可（比照 cash_dividend）。
+
+### M3 — 重生 gap_dashboard
+
+`gap_report.py --format all` 重生 dashboard，capital_changes 列出現：
+`P2 · latest 2026-06-03 · 0d lag · ✅ OK`。docs/gap_dashboard.html 與
+docs-site/gap_dashboard.html（MkDocs mirror）皆已更新並各含 1 處 capital_changes。
+
+## Fallback / 接手指引
+
+- 程式接線全在 commit 2989f5b（M1）：scripts/fetch_tej.py、
+  src/qd_ingest/common/{catalog,dataset_meta}.py、scripts/gap_report.py。
+- 重抓 / 修資料：`./.venv/bin/python scripts/fetch_tej.py --table capital_changes
+  --start 20200101 --mode overwrite`（overwrite 會 rmtree 對應 year 分區再寫）。
+- 增量：`--table capital_changes --append-since-silver`。
+- 重建 view：`./.venv/bin/python -m qd_ingest.cli build-catalog`。
+- Rollback：silver/catalog 為 gitignore，刪 `silver/fundamentals/capital_changes/`
+  後重 build-catalog 即移除 view；程式碼 `git revert 2989f5b`。
