@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Data Migration — QUANTDATA{% endblock %}
+{% block content %}
+<h1>🚚 Data Migration</h1>
+<p class="subtitle">
+  把整個 repo（程式碼 + <code>.git</code> + 資料湖 bronze/silver/gold + DuckDB
+  catalog）以 rsync-over-SSH 鏡像到另一台主機。catalog 用相對路徑，目標端 repo
+  樹一致即可原樣開。
+</p>
+
+<div class="mig-warn">
+  ⚠️ 安全提醒：此頁會在<strong>本機</strong>用你填的密碼透過 <code>sshpass</code>
+  連到目標主機。密碼只在這次請求的 subprocess 記憶體中使用，<strong>不寫檔、不入
+  git、不寫 log、不回傳</strong>。Flask 預設綁 <code>0.0.0.0:5050</code>，請只在
+  <strong>信任的內網</strong>使用本頁。
+</div>
+
+<form id="mig-form" class="mig-form" autocomplete="off">
+  <div class="mig-grid">
+    <label>OS type
+      <select name="os_type" id="f-os">
+        <option value="linux">Linux</option>
+        <option value="wsl">WSL2 (Windows 上的 Linux)</option>
+        <option value="windows">Windows (需 WSL/rsync sshd)</option>
+      </select>
+    </label>
+    <label>使用者帳號 <span class="req">*</span>
+      <input type="text" name="user" id="f-user" placeholder="kevin" required>
+    </label>
+    <label>IP 位址
+      <input type="text" name="ip" id="f-ip" placeholder="192.168.0.50">
+    </label>
+    <label>Hostname（IP 二擇一）
+      <input type="text" name="hostname" id="f-hostname" placeholder="quant-node-2">
+    </label>
+    <label>密碼（留空＝用 ssh key 免密）
+      <input type="password" name="password" id="f-password" placeholder="••••••••">
+    </label>
+    <label>SSH port
+      <input type="number" name="port" id="f-port" value="22" min="1" max="65535">
+    </label>
+    <label class="wide">目標路徑（留空＝沿用來源路徑 <code>{{ default_path }}</code>）
+      <input type="text" name="target_path" id="f-path" placeholder="{{ default_path }}">
+    </label>
+    <label>頻寬上限 KB/s（跨 WAN 才填）
+      <input type="text" name="bwlimit" id="f-bwlimit" placeholder="（空＝跑滿速）">
+    </label>
+  </div>
+
+  <div class="mig-opts">
+    <label class="chk"><input type="checkbox" id="f-verify" checked> 傳完後驗證（檔數/位元組/row-count）</label>
+    <label class="chk"><input type="checkbox" id="f-nodelete"> 不刪目標多出的檔（--no-delete）</label>
+    <label class="chk danger"><input type="checkbox" id="f-confirm"> 我確認要<strong>真的執行</strong>遷移（--apply）</label>
+  </div>
+
+  <div class="mig-actions">
+    <button type="button" id="btn-dry" class="btn">🔍 Dry-run 預覽</button>
+    <button type="button" id="btn-run" class="btn btn-danger">🚀 執行遷移</button>
+    <span id="mig-status" class="mig-status"></span>
+  </div>
+</form>
+
+<pre id="mig-log" class="mig-log" aria-live="polite">（log 會顯示在這裡）</pre>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .mig-warn { background:rgba(200,140,0,.12); border:1px solid rgba(200,140,0,.5);
+    border-radius:8px; padding:.7rem 1rem; margin:.8rem 0; font-size:.9rem; line-height:1.5; }
+  .mig-form { margin:1rem 0; }
+  .mig-grid { display:grid; grid-template-columns:repeat(2,minmax(240px,1fr));
+    gap:.8rem 1.2rem; }
+  .mig-grid label, .mig-opts label { display:flex; flex-direction:column;
+    gap:.25rem; font-size:.85rem; opacity:.95; }
+  .mig-grid label.wide { grid-column:1 / -1; }
+  .mig-grid input, .mig-grid select { padding:.45rem .6rem; border-radius:6px;
+    border:1px solid var(--border, #444); background:var(--panel, #1a1a1a);
+    color:inherit; font-size:.95rem; }
+  .req { color:#e66; }
+  .mig-opts { display:flex; flex-wrap:wrap; gap:1.2rem; margin:1rem 0; }
+  .mig-opts .chk { flex-direction:row; align-items:center; gap:.4rem; }
+  .mig-opts .danger { color:#f0a; }
+  .mig-actions { display:flex; align-items:center; gap:1rem; margin:.5rem 0 1rem; }
+  .btn-danger { background:#a02; border-color:#c33; }
+  .btn[disabled] { opacity:.5; cursor:not-allowed; }
+  .mig-status { font-size:.85rem; opacity:.85; }
+  .mig-log { background:#0c0c0c; border:1px solid var(--border,#333); border-radius:8px;
+    padding:.8rem 1rem; max-height:48vh; overflow:auto; white-space:pre-wrap;
+    font-family:ui-monospace,Menlo,monospace; font-size:.82rem; line-height:1.45; }
+</style>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const logEl = $('mig-log'), statusEl = $('mig-status');
+  const btnDry = $('btn-dry'), btnRun = $('btn-run');
+  let running = false;
+
+  function collect(apply) {
+    return {
+      os_type: $('f-os').value,
+      user: $('f-user').value.trim(),
+      ip: $('f-ip').value.trim(),
+      hostname: $('f-hostname').value.trim(),
+      password: $('f-password').value,        // 只送出、不存
+      port: $('f-port').value || 22,
+      target_path: $('f-path').value.trim(),
+      bwlimit: $('f-bwlimit').value.trim(),
+      verify: $('f-verify').checked,
+      no_delete: $('f-nodelete').checked,
+      apply: apply,
+    };
+  }
+
+  function setRunning(on) {
+    running = on;
+    btnDry.disabled = on; btnRun.disabled = on;
+    statusEl.textContent = on ? '⏳ 執行中…' : '';
+  }
+
+  async function go(apply) {
+    if (running) return;
+    if (apply && !$('f-confirm').checked) {
+      alert('要真的執行遷移，請先勾選「我確認要真的執行遷移」。'); return;
+    }
+    if (!$('f-user').value.trim()) { alert('請填使用者帳號'); return; }
+    if (!$('f-ip').value.trim() && !$('f-hostname').value.trim()) {
+      alert('IP 與 hostname 至少填一個'); return;
+    }
+    logEl.textContent = '';
+    setRunning(true);
+    try {
+      const resp = await fetch('/api/migrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(collect(apply)),
+      });
+      if (!resp.ok) {
+        const j = await resp.json().catch(() => ({}));
+        logEl.textContent = '錯誤：' + (j.error || resp.status);
+        setRunning(false); return;
+      }
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        logEl.textContent += dec.decode(value, { stream: true });
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    } catch (e) {
+      logEl.textContent += '\n[前端] 連線中斷：' + e;
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  btnDry.addEventListener('click', () => go(false));
+  btnRun.addEventListener('click', () => go(true));
+})();
+</script>
+{% endblock %}

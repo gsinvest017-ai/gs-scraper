@@ -53,6 +53,18 @@ env 中存在、絕不落地 / 不寫 log / 不入庫 / 不回傳前端**。
   （shell injection user、壞 IP、爆 port、path 含單引號、缺 host、未知 os_type）；
   app import OK，路由 `/migrate`、`/api/migrate` 就位。
 
+### M3 — 前端表單
+
+- `templates/migrate.html`：OS type / user / IP / hostname / password / port /
+  target_path / bwlimit 欄 + verify / no-delete / **確認執行** 三個 checkbox +
+  「🔍 Dry-run 預覽」「🚀 執行遷移」兩顆按鈕 + log `<pre>`。安全提醒 banner
+  明標 LAN-only、password 不落地。JS 用 `fetch` + `ReadableStream` 逐塊貼 log。
+- `base.html` nav 加 `Migration` 連結。
+- 驗過（起 5055 測試實例，不動使用者既有 5050）：`/migrate` 正常 render、首頁
+  nav 有連結、`/api/migrate` 對壞 IP 回 400、dry-run 串流正確吐出 dashboard
+  header + 腳本 preflight + SSH 失敗 + exit code；**送 password 後 grep 串流
+  洩漏次數 = 0**（確認不外洩）。
+
 ## Fallback 指引
 
 - 整功能可獨立 rollback：移除 `ui/search/migrate_runner.py`、`templates/migrate.html`、
