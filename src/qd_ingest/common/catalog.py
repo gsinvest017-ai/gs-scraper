@@ -105,6 +105,15 @@ def build(*, db_path=None) -> None:
                 hive_partitioning=TRUE
             );
         """)
+    cap_path = SILVER / "fundamentals" / "capital_changes"
+    if cap_path.exists():
+        con.execute(f"""
+            CREATE OR REPLACE VIEW capital_changes AS
+            SELECT * FROM read_parquet(
+                '{_rel(cap_path)}/**/*.parquet',
+                hive_partitioning=TRUE, union_by_name=TRUE
+            );
+        """)
     acc_ext_root = SILVER / "fundamentals" / "accounting_raw_extended"
     if acc_ext_root.exists() and any(acc_ext_root.rglob("*.parquet")):
         con.execute(f"""

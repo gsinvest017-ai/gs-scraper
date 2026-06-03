@@ -45,7 +45,7 @@ LOGICAL_TABLES = [
     # P1
     "chip_dist", "cash_dividend", "stock_futures_corp_actions", "inst_futures_full",
     # P2
-    "security_attrs", "stock_trading_attrs", "accounting_raw",
+    "security_attrs", "stock_trading_attrs", "accounting_raw", "capital_changes",
 ]
 
 # Where the existing ingester reads from (must match qd_ingest.sources.tej rename maps)
@@ -374,6 +374,8 @@ def _silver_max_date(table: str) -> dt.date | None:
             "futures_daily":        ("bars_1d", "trading_date"),
             "futures_large_trader": ("tw_futures_large_trader_daily", "trading_date"),
             "revenue_monthly":      ("revenue_monthly", "fiscal_month"),
+            # P2 event-based — track max ex-right date for --append-since-silver
+            "capital_changes":      ("capital_changes", "ex_right_date"),
         }
         if table not in view_map:
             return None
@@ -1240,6 +1242,56 @@ def write_silver_accounting_raw(out_df: "pd.DataFrame", *, mode: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# P2: APISTK1 (資本形成 / 股本變動事件) — event-based, wide 75-col
+# ---------------------------------------------------------------------------
+
+def adapt_apistk1_to_silver(df) -> "pd.DataFrame":
+    """TWN/APISTK1 (資本形成) -> silver.
+
+    Event-based: one row per company per capital-change event, keyed on
+    (公司, 除權日). Covers 現金增資 / 盈餘配股 / 公積增資 / 員工分紅 / 減資 /
+    CB轉換 / 特別股轉換 / 庫藏股註銷 / 合併 / 受讓 / 員工認股權證 / IPO / 私募 等.
+
+    Like accounting_raw (AINVFINB), we DON'T remap all 75 columns — only the
+    primary key is normalized to English (stock_id, ex_right_date) and a year
+    partition column added; the remaining ~73 Chinese columns are kept as-is
+    so strategies select event fields by their documented Chinese names.
+    """
+    if len(df) == 0:
+        return df
+    df = df.reset_index(drop=True).copy()
+    df["stock_id"]      = df["公司"].astype(str)
+    df["ex_right_date"] = pd.to_datetime(df["除權日"]).dt.tz_localize(None).dt.date
+    df["source"]        = "tej_apistk1"
+    df["ingestion_ts"]  = pd.Timestamp.now(tz="UTC")
+    df["year"] = pd.DatetimeIndex(df["ex_right_date"]).year.astype("int32")
+    return df
+
+
+def write_silver_capital_changes(out_df: "pd.DataFrame", *, mode: str) -> None:
+    if out_df.empty:
+        print("[silver] capital_changes: nothing to write")
+        return
+    dest_root = SILVER / "fundamentals" / "capital_changes"
+    written = 0
+    for yr, group in out_df.groupby("year"):
+        sub_dir = dest_root / f"year={yr}"
+        if mode == "overwrite" and sub_dir.exists():
+            _shutil.rmtree(sub_dir)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        # Drop the original key cols (normalized to stock_id/ex_right_date) to
+        # avoid redundancy; let pyarrow infer schema for the wide remainder.
+        drop_cols = ["公司", "除權日"]
+        slim = group.drop(columns=[c for c in drop_cols if c in group.columns])
+        tbl = _pa.Table.from_pandas(slim, preserve_index=False)
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        fp = sub_dir / f"apistk1_{ts}.parquet"
+        _pq.write_table(tbl, fp, compression="zstd")
+        written += len(group)
+    print(f"[silver] capital_changes: wrote {written:,} rows under {dest_root}")
+
+
+# ---------------------------------------------------------------------------
 # CSV merge
 # ---------------------------------------------------------------------------
 
@@ -1385,6 +1437,14 @@ def fetch(tables: list[str], start: str, end: str, *, mode: str) -> None:
         print(f"  -> {len(df):,} rows total", flush=True)
         out = adapt_ainvfinb_to_silver(df)
         write_silver_accounting_raw(out, mode=mode)
+
+    if "capital_changes" in tables:
+        print(f"[fetch] TWN/APISTK1 {start}..{end} (event-based, chunked yearly)", flush=True)
+        # ~3K events/year across all listed stocks — yearly chunk is well under limit
+        df = _tej_get_chunked("TWN/APISTK1", start, end, chunk_days=365)
+        print(f"  -> {len(df):,} rows total", flush=True)
+        out = adapt_apistk1_to_silver(df)
+        write_silver_capital_changes(out, mode=mode)
 
 
 def main() -> None:

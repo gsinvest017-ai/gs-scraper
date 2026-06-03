@@ -285,6 +285,10 @@ DATASETS = [
                 "gold/features/accounting_raw_snapshot.parquet",
                 "gold/features/accounting_raw_yearly.parquet",
             )),
+    Dataset("capital_changes",         "ex_right_date", "event",
+            "fetch_tej.py --table capital_changes --append-since-silver",
+            "資本形成 / 股本變動事件（增減資、CB轉換、庫藏股註銷、合併、IPO）", "P2",
+            silver_paths=("silver/fundamentals/capital_changes/**/*.parquet",)),
 
     # --- 衍生 (downstream of stock_bars etc.) ---
     Dataset("stock_factor_daily",      "trading_date", "derived",
