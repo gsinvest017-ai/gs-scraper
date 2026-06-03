@@ -186,6 +186,13 @@ run_rsync() {
 # ===========================================================================
 LAYERS=(bronze silver gold reference)
 
+# 核心 view row-count smoke：證明目標端能「透過 catalog 相對路徑讀到 parquet」，
+# 不只是檔案有複製過去。挑 smoke_query.py 也用的穩定 view。
+SMOKE_SQL="SELECT 'bars_1d' v, count(*) c FROM bars_1d \
+UNION ALL SELECT 'symbol_map', count(*) FROM symbol_map \
+UNION ALL SELECT 'macro_daily', count(*) FROM macro_daily \
+UNION ALL SELECT 'stock_factor_daily', count(*) FROM stock_factor_daily"
+
 layer_stat_local() {  # $1=layer -> "<files> <bytes>"
   local d="$1"
   if [[ -d "$ROOT/$d" ]]; then
@@ -218,6 +225,8 @@ done
 if command -v duckdb >/dev/null 2>&1 && [ -f '${CATALOG}' ]; then
   v=\$(duckdb -readonly '${CATALOG}' "SELECT count(*) FROM duckdb_views() WHERE NOT internal;" -noheader -list 2>/dev/null | tr -d ' ')
   echo "__VIEWS__ \$v"
+  duckdb -readonly '${CATALOG}' "${SMOKE_SQL}" -noheader -list 2>/dev/null \
+    | while IFS='|' read -r vv cc; do echo "__ROW__ \$vv \$cc"; done || true
 else
   echo "__VIEWS__ NA"
 fi
@@ -260,8 +269,23 @@ REMOTE
   fi
   printf "%-12s | %12s %14s | %12s %14s | %s\n" "catalog_views" "$src_views" "-" "$dst_views" "-" "$vm"
 
+  # 核心 view row-count smoke：證明目標端能透過 catalog 相對路徑「讀到」parquet
+  if [[ "$dst_views" != "NA" && -f "$CATALOG" ]] && command -v duckdb >/dev/null 2>&1; then
+    printf -- "-------------+--------------------------------+--------------------------------+------\n"
+    local sql_out
+    sql_out="$(duckdb -readonly "$CATALOG" "$SMOKE_SQL" -noheader -list 2>/dev/null || true)"
+    local vv sc dc rm
+    while IFS='|' read -r vv sc; do
+      [[ -z "$vv" ]] && continue
+      dc="$(grep -E "^__ROW__ $vv " <<<"$remote_out" | awk '{print $3}')"
+      rm="OK"
+      if [[ -z "$dc" || "$sc" != "$dc" ]]; then rm="DIFF"; ok=0; fi
+      printf "%-12s | %12s %14s | %12s %14s | %s\n" "$vv" "$sc" "rows" "${dc:-?}" "rows" "$rm"
+    done <<<"$sql_out"
+  fi
+
   if [[ "$ok" -eq 1 ]]; then
-    log "驗證 PASS：來源與目標一致。"
+    log "驗證 PASS：來源與目標一致（含 catalog 可讀 parquet）。"
   else
     warn "驗證發現 DIFF。若剛跑完 --apply 仍 DIFF，多半是傳輸中斷或有平行寫入；重跑一次 --apply。"
     return 1
