@@ -81,7 +81,7 @@ while [[ $# -gt 0 ]]; do
     --no-delete)   DO_DELETE=0; shift ;;
     --verify)      DO_VERIFY=1; shift ;;
     --verify-only) VERIFY_ONLY=1; DO_VERIFY=1; shift ;;
-    -h|--help)     sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)     awk 'NR>1 && /^#/{sub(/^# ?/,"");print;next} NR>1{exit}' "$0"; exit 0 ;;
     *)             fail "未知選項：$1（用 -h 看說明）" ;;
   esac
 done
