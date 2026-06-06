@@ -103,8 +103,12 @@ Search UI 內建 **Live** 頁面（`scripts/run_search_ui.sh` →
   server 重啟自動 backfill，dedup 基準（`tlong` + 累積量）不會重複記錄。
 - **支援標的**：上市/上櫃個股與 ETF（自動偵測 tse/otc）、`TAIEX` 加權指數、
   `OTC` 櫃買指數；與 watchlist chips 連動切換。
-- 注意：MIS 為快照型行情（≈5 秒一筆最新成交），非交易所全量逐筆；台指期
-  （mis.taifex）尚未接 — 列於進度檔後續方向。
+- **歷史模式（非交易日回看）**：今日非交易日時自動切到「📼 歷史」顯示
+  **最後交易日**的逐筆成交；日期下拉可回看任一可用日。資料三層 fallback：
+  自收 JSONL → FinMind sqlite（`FINMIND資料集` repo）→ **FinMind API 即抓**
+  （`TaiwanStockPriceTick`，交易所全量逐筆，首抓數秒後自動 cache）。
+- 注意：MIS 為快照型行情（≈5 秒一筆最新成交），非交易所全量逐筆（歷史模式
+  的 FinMind 才是全量）；台指期（mis.taifex）尚未接 — 列於進度檔後續方向。
 
 - **即時更新**：SSE 推播（2s 檢查），斷線自動降級為 5s 輪詢；輪詢帶 byte offset
   只讀檔案新增部分，不重 parse 整檔。

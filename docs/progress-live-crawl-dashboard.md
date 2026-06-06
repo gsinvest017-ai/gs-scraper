@@ -195,6 +195,28 @@ deal_price/volume/Time/TickType）。
 | M12 | 前端歷史模式 | tick panel 即時/歷史 toggle + 日期下拉；非交易日自動切歷史模式（預設最後交易日） |
 | M13 | 文件收尾 | README、進度檔完結 |
 
+## M11 — tick history 後端（commit `3a8797c`）
+
+- `ui/search/tick_history.py`：三層 fallback（自收 JSONL → FinMind cache →
+  FinMind sqlite → FinMind API），API 命中自動 cache 成
+  `finmind_ticks_<date>_<sym>.jsonl`；`last_trading_day()` 取 bars_1d
+  max(trading_date)；`_prev_close_for()` 補歷史 tick 的昨收（漲跌著色基準）；
+  FinMind Time（含微秒）→ 台北時區 epoch ms。
+- routes：`/api/live/ticks/dates`、`/api/live/ticks/history?date&symbol`。
+- 11 個測試。實測：API 抓 2330@06-05 8,180 筆、二讀命中 cache、sqlite 缺
+  該檔時正確跳 API。
+
+## M12 — 前端歷史模式（commit `8874f12`）
+
+- 即時/歷史 segmented toggle；歷史模式顯示日期下拉（標示最後交易日）、
+  隱藏 collector 控制；報價列加「來源」標示。
+- **開頁自動偵測**：今日 ≠ 最後交易日 → 自動切歷史模式 + 預選最後交易日。
+- 首抓顯示「⏳ 載入…」hint；前端 `date|symbol` cache；chip 切換自動重載。
+
+## M13 — 文件收尾
+
+- README 加歷史模式說明；進度檔完結。全套 `pytest tests/` 233 passed。
+
 ## 已知限制 / 後續方向
 
 - SSE 每個連線一個 server thread（Flask dev server）；多人同看建議改 gunicorn
@@ -215,6 +237,12 @@ deal_price/volume/Time/TickType）。
   gunicorn multi-worker 要把 collector 拆成獨立 daemon（寫 JSONL，worker 只讀）。
 - 收盤後 collector 若仍在跑只是空輪詢（dedup 擋掉），不會寫垃圾；但建議
   手動停止或之後加交易時段自動啟停。
+- **歷史 tick 只覆蓋個股/ETF**（FinMind TaiwanStockPriceTick）；TAIEX 等
+  指數無歷史逐筆（前端顯示「暫不支援」hint）。
+- FinMind API 有 rate limit（免費tier 約 600 req/hr）；每標的×日首抓 1 次
+  即 cache，正常使用不會撞限。
+- FinMind sqlite 由 FINMIND資料集 repo 的 tick 任務增量回補（1 檔×1 日/
+  呼叫），覆蓋日新增中；缺的 (date, stock) 自動 fallback API。
 
 ## Fallback 指引
 
