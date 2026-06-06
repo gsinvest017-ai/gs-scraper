@@ -34,6 +34,29 @@
 <!-- source 統計 -->
 <div id="source-pills" class="source-pills"></div>
 
+<!-- 最新交易日標的時間序列 -->
+<section class="live-panel ts-panel">
+  <div class="ts-toolbar">
+    <h2 style="margin:0">📈 標的時間序列 <small id="ts-anchor" style="color:var(--muted)"></small></h2>
+    <input id="ts-symbol-input" list="ts-symbol-list" placeholder="輸入標的（2330 / TAIEX / VIX…）" autocomplete="off">
+    <datalist id="ts-symbol-list"></datalist>
+    <button id="ts-add-btn" type="button">＋ 加入</button>
+    <label style="font-size:12px;color:var(--muted)">區間
+      <select id="ts-days">
+        <option value="20">20 日</option>
+        <option value="60" selected>60 日</option>
+        <option value="120">120 日</option>
+        <option value="240">240 日</option>
+      </select>
+    </label>
+  </div>
+  <div id="ts-watchlist" class="ts-watchlist"></div>
+  <div id="ts-chart" style="height:380px"></div>
+  <div id="ts-empty" style="color:var(--muted);font-size:13px;display:none">
+    尚無資料 — 點上方 watchlist 或輸入標的代碼。
+  </div>
+</section>
+
 <div class="live-grid">
   <section class="live-panel">
     <h2>資料表狀態 <small style="color:var(--muted)">（每表取最後一次 run；失敗排最前）</small></h2>
@@ -90,6 +113,26 @@
 .ev-row .ev-time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .ev-row .ev-err { color: #f85149; word-break: break-all; }
 tr.row-fail td { background: rgba(248,81,73,.07); }
+.ts-panel { margin-bottom: 16px; }
+.ts-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.ts-toolbar input { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 13px; min-width: 240px; }
+.ts-toolbar button { padding: 6px 12px; background: var(--panel-2); color: var(--fg);
+                     border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.ts-toolbar button:hover { border-color: var(--primary); }
+.ts-watchlist { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.ts-chip { display: inline-flex; gap: 8px; align-items: baseline; background: var(--panel-2);
+           border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+           cursor: pointer; font-size: 12px; user-select: none; }
+.ts-chip:hover { border-color: var(--primary); }
+.ts-chip.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.ts-chip .c-sym { font-weight: 700; }
+.ts-chip .c-px { font-variant-numeric: tabular-nums; }
+/* 台股慣例：紅漲綠跌 */
+.ts-chip .up { color: #f85149; }
+.ts-chip .down { color: #56d364; }
+.ts-chip .flat { color: var(--muted); }
+.ts-chip .c-x { color: var(--muted); margin-left: 2px; }
+.ts-chip .c-x:hover { color: #f85149; }
 </style>
 
 <script>
@@ -203,6 +246,129 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
   } else {
     startPolling();
   }
+})();
+
+// ── 標的時間序列 panel ──────────────────────────────────────────────────
+(function () {
+  const $ = id => document.getElementById(id);
+  const LS_KEY = 'qd_live_watchlist';
+  const DEFAULTS = ['TAIEX', '2330', '0050', 'USDTWD', 'VIX'];
+  let watchlist = (() => {
+    try { const v = JSON.parse(localStorage.getItem(LS_KEY)); return Array.isArray(v) && v.length ? v : DEFAULTS.slice(); }
+    catch { return DEFAULTS.slice(); }
+  })();
+  let active = watchlist[0];
+  const cache = {};   // symbol → timeseries payload（同 days 區間內重用）
+
+  function save() { localStorage.setItem(LS_KEY, JSON.stringify(watchlist)); }
+  const fmtPx = v => v == null ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: 2});
+
+  async function fetchTs(symbol) {
+    const days = $('ts-days').value;
+    const key = symbol + '@' + days;
+    if (cache[key]) return cache[key];
+    const r = await fetch(`/api/live/timeseries?symbol=${encodeURIComponent(symbol)}&days=${days}`);
+    if (!r.ok) return null;
+    const data = await r.json();
+    cache[key] = data;
+    return data;
+  }
+
+  function chipHtml(symbol, data) {
+    const L = data && data.latest;
+    let pxCls = 'flat', arrow = '';
+    if (L && L.change_pct != null) {
+      pxCls = L.change_pct > 0 ? 'up' : (L.change_pct < 0 ? 'down' : 'flat');
+      arrow = L.change_pct > 0 ? '▲' : (L.change_pct < 0 ? '▼' : '');
+    }
+    const pct = L && L.change_pct != null ? `${arrow}${Math.abs(L.change_pct).toFixed(2)}%` : '';
+    return `<span class="c-sym">${symbol}</span>` +
+           `<span class="c-px ${pxCls}">${L ? fmtPx(L.close) : '查無'}</span>` +
+           `<span class="c-px ${pxCls}">${pct}</span>` +
+           `<span class="c-x" data-x="${symbol}" title="移除">✕</span>`;
+  }
+
+  async function renderChips() {
+    const box = $('ts-watchlist');
+    box.innerHTML = '';
+    for (const sym of watchlist) {
+      const el = document.createElement('span');
+      el.className = 'ts-chip' + (sym === active ? ' active' : '');
+      el.dataset.sym = sym;
+      el.innerHTML = `<span class="c-sym">${sym}</span><span class="c-px flat">…</span>`;
+      el.addEventListener('click', e => {
+        if (e.target.dataset.x) {                       // 移除
+          watchlist = watchlist.filter(s => s !== e.target.dataset.x);
+          save();
+          if (active === e.target.dataset.x) active = watchlist[0] || null;
+          renderChips(); drawChart();
+          return;
+        }
+        active = sym;
+        document.querySelectorAll('.ts-chip').forEach(c =>
+          c.classList.toggle('active', c.dataset.sym === sym));
+        drawChart();
+      });
+      box.appendChild(el);
+      fetchTs(sym).then(d => { el.innerHTML = chipHtml(sym, d); });
+    }
+  }
+
+  async function drawChart() {
+    const chart = $('ts-chart'), empty = $('ts-empty');
+    if (!active) { chart.style.display = 'none'; empty.style.display = ''; return; }
+    const d = await fetchTs(active);
+    if (!d) { chart.style.display = 'none'; empty.style.display = ''; empty.textContent = `查無標的：${active}`; return; }
+    chart.style.display = ''; empty.style.display = 'none';
+    const s = d.series, L = d.latest;
+    $('ts-anchor').textContent = `（最新交易日 ${L.trading_date} · ${d.asset_class} · ${d.days} 個交易日）`;
+
+    const traces = [{
+      type: 'candlestick', x: s.dates, open: s.open, high: s.high, low: s.low, close: s.close,
+      increasing: {line: {color: '#f85149'}},   // 紅漲
+      decreasing: {line: {color: '#56d364'}},   // 綠跌
+      name: active, yaxis: 'y',
+    }];
+    if (s.volume.some(v => v)) {
+      traces.push({ type: 'bar', x: s.dates, y: s.volume, name: 'volume',
+                    yaxis: 'y2', marker: {color: 'rgba(121,192,255,.4)'} });
+    }
+    Plotly.react(chart, traces, {
+      margin: {l: 55, r: 15, t: 10, b: 35},
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+      font: {color: '#8b949e', size: 11},
+      xaxis: {rangeslider: {visible: false}, type: 'category', nticks: 10, gridcolor: 'rgba(139,148,158,.15)'},
+      yaxis: {domain: [0.28, 1], gridcolor: 'rgba(139,148,158,.15)'},
+      yaxis2: {domain: [0, 0.22], gridcolor: 'rgba(139,148,158,.1)'},
+      showlegend: false,
+      shapes: [{   // 最新交易日 highlight
+        type: 'line', x0: L.trading_date, x1: L.trading_date, yref: 'paper', y0: 0, y1: 1,
+        line: {color: 'rgba(210,153,34,.6)', width: 1, dash: 'dot'},
+      }],
+    }, {responsive: true, displayModeBar: false});
+  }
+
+  function addSymbol() {
+    const sym = $('ts-symbol-input').value.trim();
+    if (!sym) return;
+    if (!watchlist.includes(sym)) { watchlist.push(sym); save(); }
+    active = sym;
+    $('ts-symbol-input').value = '';
+    renderChips(); drawChart();
+  }
+  $('ts-add-btn').addEventListener('click', addSymbol);
+  $('ts-symbol-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSymbol(); });
+  $('ts-days').addEventListener('change', () => { renderChips(); drawChart(); });
+
+  // autocomplete：symbol 清單塞進 datalist（上限 2000 避免 DOM 過大）
+  fetch('/api/live/symbols').then(r => r.json()).then(d => {
+    const dl = $('ts-symbol-list');
+    dl.innerHTML = (d.symbols || []).slice(0, 2000).map(s =>
+      `<option value="${s.symbol}">${s.asset_class} · ${s.latest_date}</option>`).join('');
+  }).catch(() => {});
+
+  renderChips();
+  drawChart();
 })();
 </script>
 {% endblock %}
