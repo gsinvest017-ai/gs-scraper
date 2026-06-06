@@ -110,6 +110,35 @@ OHLCV 與漲跌幅，作為實盤監控的行情側視圖。
 - README /live 章節補「標的時間序列」描述；進度檔完結。
 - 全套 `pytest tests/` 204 passed。
 
+---
+
+# 第三階段 — 當日逐 tick 實盤監控
+
+## 目標
+
+/live 頁面主視圖改為**當日逐 tick 交易資料**：內建 tick collector 在盤中輪詢
+TWSE MIS 即時行情 API（`mis.twse.com.tw/stock/api/getStockInfo.jsp`，免費、
+無需 key，約 5 秒快照），對 watchlist 標的持續收 tick（成交價/單量/累積量/
+五檔），寫入 `meta/realtime/ticks_<date>.jsonl`（已被 `meta/**` gitignore），
+前端即時畫當日 tick 走勢 + 逐筆明細表，作為實盤監控主模組。
+
+## 資料源驗證（2026-06-06）
+
+- `GET mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_2330.tw|tse_t00.tw&json=1`
+  ✅ 可達，回 `z`(最後成交價) `tv`(單量) `v`(累積量) `a/b`(五檔) `tlong`(ms epoch)
+- 指數：`tse_t00.tw`（加權指數）、`otc_o00.tw`（櫃買指數）
+- 上市/上櫃自動偵測：probe `tse_<sym>.tw` 失敗 fallback `otc_<sym>.tw`，結果 cache
+- 期貨（mis.taifex.com.tw）本階段不做 — 列後續方向
+
+## 計畫 milestone
+
+| # | 內容 | 預期產出 |
+|---|------|---------|
+| M7 | tick collector 後端 + unit tests | `ui/search/tick_collector.py`：MIS client、背景 thread 輪詢、dedup、ring buffer、JSONL 持久化 |
+| M8 | Flask API + e2e tests | `/api/live/ticks/{status,start,stop}`、`/api/live/ticks?symbol&since_seq`（增量） |
+| M9 | 前端 tick 主視圖 | live.html：tick 走勢圖（價格+累積量）、逐筆明細表、collector 控制、3s 自動更新 |
+| M10 | 文件收尾 | README、進度檔完結 |
+
 ## 已知限制 / 後續方向
 
 - SSE 每個連線一個 server thread（Flask dev server）；多人同看建議改 gunicorn
