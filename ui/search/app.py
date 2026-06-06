@@ -269,6 +269,31 @@ def api_ticks_stop():
     return jsonify(get_collector().stop())
 
 
+@app.route("/api/live/ticks/dates")
+def api_ticks_dates():
+    """GET → 可回看的 tick 日期清單 + 最後交易日 + FinMind 可抓性。"""
+    from ui.search import tick_history as th
+    return jsonify(th.available_dates())
+
+
+@app.route("/api/live/ticks/history")
+def api_ticks_history():
+    """GET ?date=YYYY-MM-DD&symbol=2330 → 該日該標的逐 tick（三層 fallback）。
+
+    來源依序：自收 JSONL → FinMind cache → FinMind sqlite → FinMind API
+    （API 命中後自動 cache；回應的 source 欄位標明來源）。
+    """
+    from ui.search import tick_history as th
+    date = (request.args.get("date") or "").strip()
+    symbol = (request.args.get("symbol") or "").strip()
+    if not date or not symbol:
+        return jsonify({"error": "需要 date 與 symbol"}), 400
+    try:
+        return jsonify(th.get_history_ticks(date, symbol))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
 @app.route("/api/live/ticks")
 def api_ticks():
     """GET ?symbol=2330&since_seq=N&limit=M → 增量逐 tick（ring buffer）。
