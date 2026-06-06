@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}當日爬蟲監控 — QUANTDATA Search{% endblock %}
+{% block content %}
+<h1>🛰 當日增量爬蟲監控
+  <span id="live-dot" class="live-dot" title="連線狀態">●</span>
+</h1>
+<p class="subtitle">
+  即時顯示 <code>meta/audit/ingest_{{ date }}.jsonl</code> 的增量爬蟲審計事件 —
+  實盤前/盤中資料完備度監控。SSE 即時推播，斷線自動降級為 5s 輪詢。
+</p>
+
+<div class="filter-bar">
+  <label style="font-size:13px;color:var(--muted)">日期
+    <select id="date-select">
+      {% if date not in dates %}<option value="{{ date }}" selected>{{ date }}</option>{% endif %}
+      {% for d in dates %}
+      <option value="{{ d }}" {{ 'selected' if d == date }}>{{ d }}{{ '（今天）' if d == today }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <span id="conn-status" style="font-size:12px;color:var(--muted)">connecting…</span>
+  <span style="margin-left:auto;font-size:12px;color:var(--muted)">最後事件：<b id="last-ended">—</b></span>
+</div>
+
+<!-- 統計列 -->
+<div class="live-stats">
+  <div class="stat-card"><div class="stat-num" id="st-events">0</div><div class="stat-label">事件</div></div>
+  <div class="stat-card"><div class="stat-num" id="st-tables">0</div><div class="stat-label">資料表</div></div>
+  <div class="stat-card ok"><div class="stat-num" id="st-ok">0</div><div class="stat-label">成功</div></div>
+  <div class="stat-card fail"><div class="stat-num" id="st-fail">0</div><div class="stat-label">失敗</div></div>
+  <div class="stat-card"><div class="stat-num" id="st-rows">0</div><div class="stat-label">寫入列數</div></div>
+</div>
+
+<!-- source 統計 -->
+<div id="source-pills" class="source-pills"></div>
+
+<div class="live-grid">
+  <section class="live-panel">
+    <h2>資料表狀態 <small style="color:var(--muted)">（每表取最後一次 run；失敗排最前）</small></h2>
+    <table id="tables-table">
+      <thead><tr>
+        <th>狀態</th><th>資料表</th><th>來源</th>
+        <th class="num">列數</th><th>資料最新日</th><th class="num">耗時</th>
+        <th class="num">runs</th><th>完成時間</th>
+      </tr></thead>
+      <tbody id="tables-body">
+        <tr><td colspan="8" style="color:var(--muted)">載入中…</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="live-panel">
+    <h2>即時事件 feed <small style="color:var(--muted)">（新→舊，最多保留 200 筆）</small></h2>
+    <div id="event-feed" class="event-feed"></div>
+  </section>
+</div>
+
+<style>
+.live-dot { font-size: 14px; color: var(--muted); transition: color .3s; vertical-align: middle; }
+.live-dot.on { color: #56d364; text-shadow: 0 0 6px rgba(86,211,100,.8); }
+.live-dot.poll { color: #d29922; }
+.live-stats { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+             padding: 10px 18px; min-width: 110px; text-align: center; }
+.stat-card .stat-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-card .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.stat-card.ok .stat-num { color: #56d364; }
+.stat-card.fail .stat-num { color: var(--bad, #f85149); }
+.source-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.source-pill { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+               padding: 4px 12px; font-size: 12px; }
+.source-pill b { font-variant-numeric: tabular-nums; }
+.source-pill .sp-fail { color: var(--bad, #f85149); font-weight: 700; }
+.live-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 1100px) { .live-grid { grid-template-columns: 1fr; } }
+.live-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.live-panel h2 { font-size: 15px; margin: 0 0 10px; }
+.live-panel table { font-size: 12px; }
+.st-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.st-ok { background: rgba(86,211,100,.15); color: #56d364; }
+.st-fail { background: rgba(248,81,73,.18); color: #f85149; }
+.st-other { background: rgba(210,153,34,.18); color: #d29922; }
+.event-feed { max-height: 640px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.ev-row { border-left: 3px solid var(--border); padding: 6px 10px; background: var(--panel-2);
+          border-radius: 0 6px 6px 0; font-size: 12px; }
+.ev-row.ok { border-left-color: #56d364; }
+.ev-row.fail { border-left-color: #f85149; }
+.ev-row.flash { animation: ev-flash 1.2s ease-out; }
+@keyframes ev-flash { from { background: rgba(86,211,100,.25); } to { background: var(--panel-2); } }
+.ev-row .ev-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.ev-row .ev-err { color: #f85149; word-break: break-all; }
+tr.row-fail td { background: rgba(248,81,73,.07); }
+</style>
+
+<script>
+(function () {
+  const DATE = {{ date | tojson }};
+  const fmt = n => (n == null ? '—' : Number(n).toLocaleString('en-US'));
+  const $ = id => document.getElementById(id);
+  let offset = 0;
+  const feed = $('event-feed');
+  const MAX_FEED = 200;
+
+  $('date-select').addEventListener('change', e => {
+    location.href = '/live?date=' + encodeURIComponent(e.target.value);
+  });
+
+  function hhmmss(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleTimeString('en-GB'); } catch { return iso; }
+  }
+
+  function badge(status) {
+    const cls = status === 'ok' ? 'st-ok' : (status.includes('fail') ? 'st-fail' : 'st-other');
+    return `<span class="st-badge ${cls}">${status}</span>`;
+  }
+
+  function render(summary) {
+    const t = summary.totals;
+    $('st-events').textContent = fmt(t.events);
+    $('st-tables').textContent = fmt(t.tables);
+    $('st-ok').textContent = fmt(t.ok);
+    $('st-fail').textContent = fmt(t.fail);
+    $('st-rows').textContent = fmt(t.rows_out);
+    $('last-ended').textContent = hhmmss(t.last_ended_at);
+
+    $('source-pills').innerHTML = summary.sources.map(s =>
+      `<span class="source-pill">${s.source} · <b>${fmt(s.rows_out)}</b> rows · ✓${s.ok}` +
+      (s.fail ? ` <span class="sp-fail">✗${s.fail}</span>` : '') + `</span>`
+    ).join('');
+
+    const body = $('tables-body');
+    if (!summary.tables.length) {
+      body.innerHTML = `<tr><td colspan="8" style="color:var(--muted)">今日尚無爬蟲事件 — 等待 ingest 寫入 meta/audit/ingest_${DATE}.jsonl</td></tr>`;
+      return;
+    }
+    body.innerHTML = summary.tables.map(r => `
+      <tr class="${r.status === 'ok' ? '' : 'row-fail'}">
+        <td>${badge(r.status)}</td>
+        <td><code>${r.table}</code>${r.error ? `<div class="ev-err">${r.error}</div>` : ''}</td>
+        <td>${r.source}</td>
+        <td class="num">${fmt(r.rows_out)}</td>
+        <td>${r.max_date || '—'}</td>
+        <td class="num">${r.elapsed_sec != null ? r.elapsed_sec + 's' : '—'}</td>
+        <td class="num">${r.runs}</td>
+        <td>${hhmmss(r.ended_at)}</td>
+      </tr>`).join('');
+  }
+
+  function prependEvents(events, flash) {
+    // events 按檔案順序（舊→新）；feed 要新→舊 → 反向 prepend
+    for (const ev of events) {
+      const div = document.createElement('div');
+      const ok = ev.status === 'ok';
+      div.className = 'ev-row ' + (ok ? 'ok' : 'fail') + (flash ? ' flash' : '');
+      div.innerHTML =
+        `<span class="ev-time">${hhmmss(ev.ended_at)}</span> ${badge(ev.status || '?')} ` +
+        `<code>${ev.table || '?'}</code> <span style="color:var(--muted)">${ev.source || ''}</span>` +
+        ` · ${fmt(ev.rows_out)} rows` +
+        (ev.error ? `<div class="ev-err">${ev.error}</div>` : '');
+      feed.prepend(div);
+    }
+    while (feed.children.length > MAX_FEED) feed.removeChild(feed.lastChild);
+  }
+
+  function apply(data, flash) {
+    if (data.summary) render(data.summary);
+    if (data.new_events && data.new_events.length) prependEvents(data.new_events, flash);
+    offset = data.offset || offset;
+  }
+
+  // ── SSE 優先，失敗降級輪詢 ────────────────────────────────────────────
+  let pollTimer = null;
+  function setConn(mode) {
+    const dot = $('live-dot'), st = $('conn-status');
+    dot.className = 'live-dot ' + (mode === 'sse' ? 'on' : mode === 'poll' ? 'poll' : '');
+    st.textContent = mode === 'sse' ? 'live (SSE)' : mode === 'poll' ? 'polling 5s' : 'disconnected';
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch(`/api/live/summary?date=${DATE}&offset=${offset}`);
+      if (r.ok) { apply(await r.json(), offset > 0); setConn('poll'); }
+    } catch { setConn('off'); }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    poll();
+    pollTimer = setInterval(poll, 5000);
+  }
+
+  if (window.EventSource) {
+    const es = new EventSource(`/api/live/stream?date=${DATE}`);
+    let gotFirst = false;
+    es.onmessage = e => {
+      const data = JSON.parse(e.data);
+      apply(data, gotFirst);   // 第一包是全量，不 flash
+      gotFirst = true;
+      setConn('sse');
+    };
+    es.onerror = () => { es.close(); setConn('poll'); startPolling(); };
+  } else {
+    startPolling();
+  }
+})();
+</script>
+{% endblock %}
