@@ -215,6 +215,31 @@ def api_live_summary():
     })
 
 
+@app.route("/api/live/symbols")
+def api_live_symbols():
+    """GET → 可查標的清單 [{symbol, asset_class, latest_date}]（autocomplete 用）。"""
+    from ui.search import live_timeseries as lt
+    refresh = request.args.get("refresh") == "1"
+    return jsonify({"symbols": lt.list_symbols(refresh=refresh)})
+
+
+@app.route("/api/live/timeseries")
+def api_live_timeseries():
+    """GET ?symbol=2330&days=60 → 近 N 個交易日 OHLCV + 最新交易日統計。"""
+    from ui.search import live_timeseries as lt
+    symbol = (request.args.get("symbol") or "").strip()
+    if not symbol:
+        return jsonify({"error": "missing symbol"}), 400
+    try:
+        days = int(request.args.get("days") or lt.DEFAULT_DAYS)
+    except ValueError:
+        return jsonify({"error": "days 必須是整數"}), 400
+    data = lt.get_timeseries(symbol, days)
+    if data is None:
+        return jsonify({"error": f"查無標的: {symbol}"}), 404
+    return jsonify(data)
+
+
 @app.route("/api/live/stream")
 def api_live_stream():
     """SSE — 每 2 秒檢查 audit 檔，有新事件就推一個 update。"""

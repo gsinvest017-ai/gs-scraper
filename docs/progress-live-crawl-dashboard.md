@@ -59,6 +59,33 @@
 - `scripts/run_search_ui.sh` 啟動訊息加 `/live` 行；README 新增
   「當日增量爬蟲即時監控（/live）」章節。
 
+---
+
+# 第二階段 — 最新交易日標的時間序列視圖
+
+## 目標
+
+/live 頁面加「投資標的時間序列」panel：以**最新交易日**為錨點，顯示選定標的
+（台股 / 台期 / 股期 / 總經指數）近 N 個交易日的價量時間序列 + 最新交易日
+OHLCV 與漲跌幅，作為實盤監控的行情側視圖。
+
+## 資料源盤點（2026-06-06）
+
+| view | 內容 | 最新日期 | 採用 |
+|------|------|---------|------|
+| `bars_1d` | tw_stock 2918 檔 / tw_futures 120 / tw_stock_futures 261 | 2026-06-05 | ✅ |
+| `macro_daily` | 45 個總經標的（TAIEX/SPX/VIX/USDTWD…） | 2026-06-05 | ✅ |
+| `bars_1m` | 只有 GC/NQ/ES（美期） | 2026-03-12（stale） | ❌ |
+| `tx_continuous_d` / `mtx_continuous_d` | 台指連續 | 2026-05-08（stale） | ❌ |
+
+## 計畫 milestone
+
+| # | 內容 | 預期產出 |
+|---|------|---------|
+| M4 | 後端 timeseries API + unit tests | `ui/search/live_timeseries.py`（symbol 清單 + 近 N 日序列查詢）、`/api/live/symbols`、`/api/live/timeseries` |
+| M5 | 前端 panel | live.html 加 watchlist chips（最新日報價+漲跌%）+ Plotly 價量圖 + 標的搜尋 autocomplete |
+| M6 | e2e 測試 + 文件收尾 | e2e route 測試、README 補充、進度檔完結 |
+
 ## 已知限制 / 後續方向
 
 - SSE 每個連線一個 server thread（Flask dev server）；多人同看建議改 gunicorn
