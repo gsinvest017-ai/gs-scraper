@@ -90,6 +90,22 @@ Search UI 內建 **Live** 頁面（`scripts/run_search_ui.sh` →
 <http://127.0.0.1:5050/live>）：即時顯示當日 `meta/audit/ingest_<date>.jsonl`
 的增量爬蟲審計事件，作為實盤前/盤中的資料完備度監控模組。
 
+### 逐 tick 實盤監控（主視圖）
+
+內建 tick collector，盤中輪詢 **TWSE MIS 即時行情**（`mis.twse.com.tw`，
+免費、無需 API key、約 5 秒快照粒度）對 watchlist 標的收當日逐 tick：
+
+- **即時走勢**：價格階梯線 + 單量 bars + 昨收參考線；大字報價含漲跌
+  （紅漲綠跌）；逐筆明細表（時間/成交/單量/總量/買賣一檔）。
+- **collector 控制**：頁面按鈕開始/停止；「開頁自動啟動」預設開；
+  狀態列顯示輪詢標的、poll 數、tick 數與最近錯誤。
+- **持久化**：tick 落地 `meta/realtime/ticks_<date>.jsonl`（gitignored）；
+  server 重啟自動 backfill，dedup 基準（`tlong` + 累積量）不會重複記錄。
+- **支援標的**：上市/上櫃個股與 ETF（自動偵測 tse/otc）、`TAIEX` 加權指數、
+  `OTC` 櫃買指數；與 watchlist chips 連動切換。
+- 注意：MIS 為快照型行情（≈5 秒一筆最新成交），非交易所全量逐筆；台指期
+  （mis.taifex）尚未接 — 列於進度檔後續方向。
+
 - **即時更新**：SSE 推播（2s 檢查），斷線自動降級為 5s 輪詢；輪詢帶 byte offset
   只讀檔案新增部分，不重 parse 整檔。
 - **統計列**：事件數 / 資料表數 / 成功 / 失敗 / 寫入列數；各 source pills 彙總。
