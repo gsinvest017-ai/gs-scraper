@@ -201,3 +201,55 @@ def test_stop_idempotent(rt_dir):
 def test_parse_tick_index_alias_normalized():
     t = tc.parse_tick(_msg(c="t00", n="發行量加權股價指數"))
     assert t["symbol"] == "TAIEX"
+
+
+# ── e2e: /api/live/ticks routes ─────────────────────────────────────────────
+
+@pytest.fixture
+def tick_app(app_client, rt_dir, monkeypatch):
+    """app_client + 注入 fake-fetcher collector 單例。"""
+    col, holder = _collector_with_feed(rt_dir)
+    monkeypatch.setattr(tc, "_collector", col)
+    return app_client, col, holder
+
+
+def test_api_ticks_start_status_stop(tick_app):
+    client, col, holder = tick_app
+    r = client.post("/api/live/ticks/start", json={"symbols": ["2330"]})
+    assert r.status_code == 200
+    assert r.get_json()["running"] is True
+
+    st = client.get("/api/live/ticks/status").get_json()
+    assert st["running"] is True and st["symbols"] == ["2330"]
+
+    assert client.post("/api/live/ticks/stop").get_json()["running"] is False
+
+
+def test_api_ticks_start_validation(tick_app):
+    client, _, _ = tick_app
+    assert client.post("/api/live/ticks/start", json={}).status_code == 400
+    assert client.post("/api/live/ticks/start",
+                       json={"symbols": []}).status_code == 400
+    assert client.post("/api/live/ticks/start",
+                       json={"symbols": ["  "]}).status_code == 400
+
+
+def test_api_ticks_incremental(tick_app):
+    client, col, holder = tick_app
+    client.post("/api/live/ticks/start", json={"symbols": ["2330"]})
+    client.post("/api/live/ticks/stop")
+    holder["cur"] = [_msg(tlong=1, v="10")]
+    col.poll_once()
+
+    d = client.get("/api/live/ticks?symbol=2330").get_json()
+    assert len(d["ticks"]) == 1 and d["seq"] == 1
+
+    holder["cur"] = [_msg(tlong=2, v="20", z="101.0")]
+    col.poll_once()
+    d2 = client.get(f"/api/live/ticks?symbol=2330&since_seq={d['seq']}").get_json()
+    assert len(d2["ticks"]) == 1 and d2["ticks"][0]["price"] == 101.0
+
+
+def test_api_ticks_bad_params_400(tick_app):
+    client, _, _ = tick_app
+    assert client.get("/api/live/ticks?since_seq=abc").status_code == 400

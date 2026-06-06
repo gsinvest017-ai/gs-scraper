@@ -240,6 +240,53 @@ def api_live_timeseries():
     return jsonify(data)
 
 
+# --- 逐 tick 實盤監控（TWSE MIS collector） -----------------------------
+
+@app.route("/api/live/ticks/status")
+def api_ticks_status():
+    from ui.search.tick_collector import get_collector
+    return jsonify(get_collector().status())
+
+
+@app.route("/api/live/ticks/start", methods=["POST"])
+def api_ticks_start():
+    """POST {"symbols": ["2330", "TAIEX", ...]} → 啟動/更新 collector watchlist。"""
+    from ui.search.tick_collector import get_collector
+    payload = request.get_json(force=True, silent=True) or {}
+    symbols = payload.get("symbols") or []
+    if not isinstance(symbols, list) or not symbols:
+        return jsonify({"error": "symbols 必須是非空 list"}), 400
+    symbols = [str(s).strip() for s in symbols if str(s).strip()]
+    if not symbols:
+        return jsonify({"error": "symbols 必須是非空 list"}), 400
+    res = get_collector().start(symbols)
+    return jsonify(res)
+
+
+@app.route("/api/live/ticks/stop", methods=["POST"])
+def api_ticks_stop():
+    from ui.search.tick_collector import get_collector
+    return jsonify(get_collector().stop())
+
+
+@app.route("/api/live/ticks")
+def api_ticks():
+    """GET ?symbol=2330&since_seq=N&limit=M → 增量逐 tick（ring buffer）。
+
+    回 {ticks, seq}；client 下次帶 since_seq=seq 只拿新 tick。
+    """
+    from ui.search.tick_collector import get_collector
+    symbol = request.args.get("symbol") or None
+    try:
+        since_seq = max(0, int(request.args.get("since_seq") or 0))
+        limit = min(20000, max(1, int(request.args.get("limit") or 5000)))
+    except ValueError:
+        return jsonify({"error": "since_seq/limit 必須是整數"}), 400
+    ticks, seq = get_collector().get_ticks(symbol=symbol, since_seq=since_seq,
+                                           limit=limit)
+    return jsonify({"ticks": ticks, "seq": seq})
+
+
 @app.route("/api/live/stream")
 def api_live_stream():
     """SSE — 每 2 秒檢查 audit 檔，有新事件就推一個 update。"""
