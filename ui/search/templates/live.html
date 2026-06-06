@@ -40,8 +40,13 @@
     <h2 style="margin:0">⚡ 當日逐 tick 實盤監控
       <span id="tk-dot" class="live-dot" title="collector 狀態">●</span>
     </h2>
+    <span class="tk-mode">
+      <button id="tk-mode-live" type="button" class="active">⚡ 即時</button>
+      <button id="tk-mode-hist" type="button">📼 歷史</button>
+    </span>
+    <select id="tk-hist-date" style="display:none"></select>
     <button id="tk-toggle" type="button">▶ 開始收 tick</button>
-    <label style="font-size:12px;color:var(--muted)">
+    <label id="tk-autostart-label" style="font-size:12px;color:var(--muted)">
       <input type="checkbox" id="tk-autostart"> 開頁自動啟動
     </label>
     <span id="tk-status" style="font-size:12px;color:var(--muted)"></span>
@@ -186,6 +191,11 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
 .tick-table tr.up td { color: #f85149; }
 .tick-table tr.down td { color: #56d364; }
 .tick-table tr.flash td { animation: ev-flash 1s ease-out; }
+.tk-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.tk-mode button { padding: 6px 12px; background: var(--panel-2); color: var(--muted);
+                  border: 0; cursor: pointer; font-size: 13px; }
+.tk-mode button.active { background: var(--primary); color: var(--primary-fg, #fff); }
+#tk-hist-date { padding: 6px 10px; border-radius: 6px; font-size: 13px; }
 </style>
 
 <script>
@@ -437,11 +447,18 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
 (function () {
   const $ = id => document.getElementById(id);
   const AUTO_KEY = 'qd_tick_autostart';
+  const TODAY = {{ today | tojson }};
   let active = null;                 // 顯示中的標的（跟 watchlist chips 連動）
   let sinceSeq = 0;
-  const bySym = {};                  // symbol → [tick, ...]（當日全量）
+  const bySym = {};                  // symbol → [tick, ...]（即時模式當日全量）
   const MAX_PER_SYM = 20000, TABLE_ROWS = 60;
   let running = false;
+  // 歷史模式狀態
+  let mode = 'live';                 // 'live' | 'hist'
+  let histDate = null;
+  let lastTradingDay = null;
+  const histCache = {};              // `${date}|${symbol}` → {ticks, source}
+  let histLoading = false;
 
   const fmtPx = v => v == null ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: 2});
 
@@ -495,20 +512,78 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
         if (arr.length > MAX_PER_SYM) arr.shift();
         if (t.symbol === active) touched = true;
       }
-      if (touched) renderActive(true);
+      if (touched && mode === 'live') renderActive(true);
     } catch { /* 網路抖動下次再拉 */ }
   }
 
+  // ── 歷史模式 ──────────────────────────────────────────────────────────
+  async function loadHist() {
+    if (!active || !histDate) { renderActive(false); return; }
+    const key = histDate + '|' + active;
+    if (histCache[key]) { renderActive(false); return; }
+    histLoading = true;
+    renderActive(false);   // 顯示載入中 hint
+    try {
+      const r = await fetch(`/api/live/ticks/history?date=${histDate}&symbol=${encodeURIComponent(active)}`);
+      histCache[key] = r.ok ? await r.json() : {ticks: [], source: null};
+    } catch { histCache[key] = {ticks: [], source: null}; }
+    histLoading = false;
+    renderActive(false);
+  }
+
+  function setMode(m) {
+    mode = m;
+    $('tk-mode-live').classList.toggle('active', m === 'live');
+    $('tk-mode-hist').classList.toggle('active', m === 'hist');
+    $('tk-hist-date').style.display = m === 'hist' ? '' : 'none';
+    $('tk-toggle').style.display = m === 'live' ? '' : 'none';
+    $('tk-autostart-label').style.display = m === 'live' ? '' : 'none';
+    if (m === 'hist') loadHist(); else renderActive(false);
+  }
+  $('tk-mode-live').addEventListener('click', () => setMode('live'));
+  $('tk-mode-hist').addEventListener('click', () => setMode('hist'));
+  $('tk-hist-date').addEventListener('change', e => { histDate = e.target.value; loadHist(); });
+
+  // 日期清單 + 非交易日自動切歷史模式（預設最後交易日）
+  fetch('/api/live/ticks/dates').then(r => r.json()).then(d => {
+    lastTradingDay = d.last_trading_day;
+    const sel = $('tk-hist-date');
+    const dates = d.dates || [];
+    sel.innerHTML = dates.map(x =>
+      `<option value="${x}">${x}${x === lastTradingDay ? '（最後交易日）' : ''}</option>`).join('');
+    histDate = dates.includes(lastTradingDay) ? lastTradingDay : (dates[0] || null);
+    if (histDate) sel.value = histDate;
+    if (lastTradingDay && TODAY !== lastTradingDay) {
+      setMode('hist');   // 今日非交易日 → 自動顯示最後交易日逐 tick
+    }
+  }).catch(() => {});
+
   // ── 渲染 ──────────────────────────────────────────────────────────────
+  function curArr() {
+    if (mode === 'hist') {
+      const h = histCache[histDate + '|' + active];
+      return h ? h.ticks : [];
+    }
+    return bySym[active] || [];
+  }
+
   function renderActive(flash) {
-    const arr = bySym[active] || [];
+    const arr = curArr();
     const hint = $('tk-hint'), chartEl = $('tk-chart');
-    $('tk-sym').textContent = active || '—';
+    $('tk-sym').textContent = (active || '—') + (mode === 'hist' && histDate ? ` @ ${histDate}` : '');
     if (!arr.length) {
       chartEl.style.display = 'none'; hint.style.display = '';
-      hint.textContent = running
-        ? `等待 ${active || ''} 的 tick…（非交易時段只會有最後一筆快照）`
-        : '按「▶ 開始收 tick」啟動 collector（交易時段 08:30–13:35 才有新 tick）';
+      if (mode === 'hist') {
+        const h = histCache[histDate + '|' + active];
+        hint.textContent = histLoading
+          ? `⏳ 載入 ${active} @ ${histDate} 歷史逐筆…（FinMind API 首次抓取需數秒）`
+          : (h ? `查無 ${active} @ ${histDate} 的逐筆資料（個股以外標的暫不支援歷史 tick）`
+               : '選擇日期載入歷史逐筆…');
+      } else {
+        hint.textContent = running
+          ? `等待 ${active || ''} 的 tick…（非交易時段只會有最後一筆快照）`
+          : '按「▶ 開始收 tick」啟動 collector（交易時段 08:30–13:35 才有新 tick）';
+      }
       $('tk-px').textContent = '—'; $('tk-chg').textContent = ''; $('tk-time').textContent = '';
       $('tk-rows').innerHTML = '<tr><td colspan="6" style="color:var(--muted)">尚無 tick</td></tr>';
       return;
@@ -528,7 +603,9 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
     $('tk-px').className = 'tq-px ' + cls;
     $('tk-chg').textContent = chgTxt;
     $('tk-chg').className = 'tq-chg ' + cls;
-    $('tk-time').textContent = `${last.date} ${last.time} · ${arr.length} ticks`;
+    const srcLabel = mode === 'hist'
+      ? ` · 來源 ${(histCache[histDate + '|' + active] || {}).source || '?'}` : '';
+    $('tk-time').textContent = `${last.date} ${last.time} · ${arr.length} ticks${srcLabel}`;
 
     // 走勢圖：價格階梯線 + 單量 bars
     const x = arr.map(t => new Date(t.tlong));
@@ -566,7 +643,7 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
 
   window.addEventListener('qd-active-symbol', e => {
     active = e.detail;
-    renderActive(false);
+    if (mode === 'hist') loadHist(); else renderActive(false);
   });
 
   // ts IIFE 的初始 broadcast 在本 IIFE 註冊 listener 前已發出 → 直接取初值
