@@ -97,6 +97,11 @@ Search UI 內建 **Live** 頁面（`scripts/run_search_ui.sh` →
   耗時 / runs；**失敗排最前**且整列標紅。
 - **事件 feed**：新→舊串流，最多保留 200 筆，新事件 flash 提示。
 - **回看歷史**：日期下拉切任一天（`/live?date=YYYY-MM-DD`）。
-- 純讀 `meta/audit/`，不碰 DuckDB catalog（不會與 ingest / `duckdb -ui` 搶鎖）。
+- **標的時間序列**：watchlist chips 顯示各標的最新交易日收盤 + 漲跌%（紅漲綠跌），
+  點選即出 Plotly K 線 + 成交量圖（20/60/120/240 日，最新交易日虛線標記）；
+  涵蓋 `bars_1d`（台股/台期/股期 3298 檔）+ `macro_daily`（45 個總經標的），
+  搜尋框 autocomplete 全標的；watchlist 存 localStorage。
+- 審計事件純讀 `meta/audit/`；行情查 catalog 的 read-only 快照（不會與
+  ingest / `duckdb -ui` 搶鎖）。
 
 設計與進度：[`docs/progress-live-crawl-dashboard.md`](./docs/progress-live-crawl-dashboard.md)。

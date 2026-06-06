@@ -86,6 +86,30 @@ OHLCV 與漲跌幅，作為實盤監控的行情側視圖。
 | M5 | 前端 panel | live.html 加 watchlist chips（最新日報價+漲跌%）+ Plotly 價量圖 + 標的搜尋 autocomplete |
 | M6 | e2e 測試 + 文件收尾 | e2e route 測試、README 補充、進度檔完結 |
 
+## M4 — timeseries 後端（commit `2cf9a53`）
+
+- `ui/search/live_timeseries.py`：
+  - `list_symbols()` — bars_1d + macro_daily 聯集（3343 標的），重名（如 0050）
+    bars_1d 優先、macro 版掛 `macro:` 前綴；process 內 cache。
+  - `get_timeseries(symbol, days)` — 近 N 個交易日 OHLCV（days clamp 5..365）+
+    最新交易日統計（prev_close / change / change_pct）；先試 bars_1d 再 fallback
+    macro_daily，`macro:` 前綴強制 macro 源；參數全走 binding 防注入。
+- routes：`/api/live/symbols`、`/api/live/timeseries?symbol&days`（400/404）。
+- 13 個 unit + e2e 測試（獨立 mini duckdb fixture + monkeypatch get_connection）。
+
+## M5 — 前端時間序列 panel（commit `9217c37`）
+
+- watchlist chips：最新日收盤 + 漲跌%（**台股慣例紅漲綠跌**），預設
+  TAIEX / 2330 / 0050 / USDTWD / VIX，localStorage 持久化，可增刪。
+- Plotly candlestick + volume 雙 y 軸；最新交易日金色虛線；20/60/120/240 日切換。
+- datalist autocomplete（上限 2000 筆）；per-`symbol@days` 前端 cache。
+- 已實測：/live 200、symbols 3343、TAIEX 20 日序列 + 漲跌% 正確。
+
+## M6 — 文件收尾
+
+- README /live 章節補「標的時間序列」描述；進度檔完結。
+- 全套 `pytest tests/` 204 passed。
+
 ## 已知限制 / 後續方向
 
 - SSE 每個連線一個 server thread（Flask dev server）；多人同看建議改 gunicorn
@@ -93,6 +117,10 @@ OHLCV 與漲跌幅，作為實盤監控的行情側視圖。
 - audit JSONL 只記 ingest 完成事件，「進行中」的爬蟲看不到 — 若要 in-flight
   進度，得在 fetch 腳本加 start 事件或 heartbeat。
 - 跨日不會自動切檔：頁面開過夜要手動切日期（或 F5）。
+- 時間序列是**日線**：台股無分鐘級資料（bars_1m 只有 GC/NQ/ES 且 stale 至
+  2026-03-12）；要盤中 tick/分 K 得先建 intraday ingest。
+- symbol cache 在 server process 生命週期內不失效；catalog 快照 refresh 後
+  可打 `/api/live/symbols?refresh=1` 強制重抓。
 
 ## Fallback 指引
 
