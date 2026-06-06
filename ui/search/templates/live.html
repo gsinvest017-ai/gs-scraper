@@ -34,6 +34,42 @@
 <!-- source 統計 -->
 <div id="source-pills" class="source-pills"></div>
 
+<!-- 當日逐 tick 實盤監控（主視圖） -->
+<section class="live-panel tick-panel">
+  <div class="ts-toolbar">
+    <h2 style="margin:0">⚡ 當日逐 tick 實盤監控
+      <span id="tk-dot" class="live-dot" title="collector 狀態">●</span>
+    </h2>
+    <button id="tk-toggle" type="button">▶ 開始收 tick</button>
+    <label style="font-size:12px;color:var(--muted)">
+      <input type="checkbox" id="tk-autostart"> 開頁自動啟動
+    </label>
+    <span id="tk-status" style="font-size:12px;color:var(--muted)"></span>
+  </div>
+  <div class="tick-grid">
+    <div>
+      <div class="tick-quote">
+        <span id="tk-sym" class="tq-sym">—</span>
+        <span id="tk-px" class="tq-px">—</span>
+        <span id="tk-chg" class="tq-chg"></span>
+        <span id="tk-time" class="tq-time"></span>
+      </div>
+      <div id="tk-chart" style="height:340px"></div>
+      <div id="tk-hint" style="color:var(--muted);font-size:13px;display:none"></div>
+    </div>
+    <div>
+      <h3 style="font-size:13px;margin:0 0 6px">逐筆明細 <small style="color:var(--muted)">（新→舊）</small></h3>
+      <div class="tick-table-wrap">
+        <table class="tick-table">
+          <thead><tr><th>時間</th><th class="num">成交</th><th class="num">單量</th>
+                     <th class="num">總量</th><th class="num">買進</th><th class="num">賣出</th></tr></thead>
+          <tbody id="tk-rows"><tr><td colspan="6" style="color:var(--muted)">尚無 tick</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- 最新交易日標的時間序列 -->
 <section class="live-panel ts-panel">
   <div class="ts-toolbar">
@@ -133,6 +169,23 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
 .ts-chip .flat { color: var(--muted); }
 .ts-chip .c-x { color: var(--muted); margin-left: 2px; }
 .ts-chip .c-x:hover { color: #f85149; }
+.tick-panel { margin-bottom: 16px; border-color: rgba(210,153,34,.5); }
+.tick-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1100px) { .tick-grid { grid-template-columns: 1fr; } }
+.tick-quote { display: flex; gap: 14px; align-items: baseline; margin-bottom: 4px; flex-wrap: wrap; }
+.tq-sym { font-size: 18px; font-weight: 700; }
+.tq-px { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tq-chg { font-size: 15px; font-variant-numeric: tabular-nums; }
+.tq-px.up, .tq-chg.up { color: #f85149; }      /* 紅漲 */
+.tq-px.down, .tq-chg.down { color: #56d364; }  /* 綠跌 */
+.tq-time { color: var(--muted); font-size: 12px; }
+.tick-table-wrap { max-height: 360px; overflow-y: auto; }
+.tick-table { width: 100%; font-size: 12px; }
+.tick-table th { position: sticky; top: 0; }
+.tick-table td, .tick-table th { padding: 3px 8px; }
+.tick-table tr.up td { color: #f85149; }
+.tick-table tr.down td { color: #56d364; }
+.tick-table tr.flash td { animation: ev-flash 1s ease-out; }
 </style>
 
 <script>
@@ -260,6 +313,12 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
   let active = watchlist[0];
   const cache = {};   // symbol → timeseries payload（同 days 區間內重用）
 
+  // tick panel 連動：對外暴露 watchlist 與 active 變更事件
+  window.qdGetWatchlist = () => watchlist.slice();
+  function broadcast() {
+    window.dispatchEvent(new CustomEvent('qd-active-symbol', {detail: active}));
+  }
+
   function save() { localStorage.setItem(LS_KEY, JSON.stringify(watchlist)); }
   const fmtPx = v => v == null ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: 2});
 
@@ -308,6 +367,7 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
         document.querySelectorAll('.ts-chip').forEach(c =>
           c.classList.toggle('active', c.dataset.sym === sym));
         drawChart();
+        broadcast();
       });
       box.appendChild(el);
       fetchTs(sym).then(d => { el.innerHTML = chipHtml(sym, d); });
@@ -355,6 +415,7 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
     active = sym;
     $('ts-symbol-input').value = '';
     renderChips(); drawChart();
+    broadcast();
   }
   $('ts-add-btn').addEventListener('click', addSymbol);
   $('ts-symbol-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSymbol(); });
@@ -369,6 +430,152 @@ tr.row-fail td { background: rgba(248,81,73,.07); }
 
   renderChips();
   drawChart();
+  broadcast();
+})();
+
+// ── 當日逐 tick 實盤監控 panel ──────────────────────────────────────────
+(function () {
+  const $ = id => document.getElementById(id);
+  const AUTO_KEY = 'qd_tick_autostart';
+  let active = null;                 // 顯示中的標的（跟 watchlist chips 連動）
+  let sinceSeq = 0;
+  const bySym = {};                  // symbol → [tick, ...]（當日全量）
+  const MAX_PER_SYM = 20000, TABLE_ROWS = 60;
+  let running = false;
+
+  const fmtPx = v => v == null ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: 2});
+
+  // ── collector 控制 ────────────────────────────────────────────────────
+  async function startCollector() {
+    const symbols = (window.qdGetWatchlist ? window.qdGetWatchlist() : []);
+    if (!symbols.length) return;
+    await fetch('/api/live/ticks/start', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({symbols}),
+    });
+    refreshStatus();
+  }
+  async function stopCollector() {
+    await fetch('/api/live/ticks/stop', {method: 'POST'});
+    refreshStatus();
+  }
+  async function refreshStatus() {
+    try {
+      const st = await (await fetch('/api/live/ticks/status')).json();
+      running = !!st.running;
+      $('tk-dot').className = 'live-dot' + (running ? ' on' : '');
+      $('tk-toggle').textContent = running ? '⏸ 停止收 tick' : '▶ 開始收 tick';
+      let txt = running
+        ? `輪詢中 ${st.poll_sec}s · ${st.symbols.join(' ')} · polls ${st.poll_count} · ticks ${st.ticks_in_ring}`
+        : '已停止';
+      if (st.last_error) txt += ` · ⚠ ${st.last_error}`;
+      $('tk-status').textContent = txt;
+    } catch { $('tk-status').textContent = '狀態取得失敗'; }
+  }
+  $('tk-toggle').addEventListener('click', () => running ? stopCollector() : startCollector());
+
+  // 開頁自動啟動（預設開）
+  const auto = (localStorage.getItem(AUTO_KEY) ?? '1') === '1';
+  $('tk-autostart').checked = auto;
+  $('tk-autostart').addEventListener('change', e => {
+    localStorage.setItem(AUTO_KEY, e.target.checked ? '1' : '0');
+  });
+  if (auto) startCollector();
+
+  // ── tick 拉取（since_seq 增量，3s） ───────────────────────────────────
+  async function pullTicks() {
+    try {
+      const d = await (await fetch(`/api/live/ticks?since_seq=${sinceSeq}`)).json();
+      sinceSeq = d.seq || sinceSeq;
+      if (!d.ticks.length) return;
+      let touched = false;
+      for (const t of d.ticks) {
+        const arr = bySym[t.symbol] = bySym[t.symbol] || [];
+        arr.push(t);
+        if (arr.length > MAX_PER_SYM) arr.shift();
+        if (t.symbol === active) touched = true;
+      }
+      if (touched) renderActive(true);
+    } catch { /* 網路抖動下次再拉 */ }
+  }
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────
+  function renderActive(flash) {
+    const arr = bySym[active] || [];
+    const hint = $('tk-hint'), chartEl = $('tk-chart');
+    $('tk-sym').textContent = active || '—';
+    if (!arr.length) {
+      chartEl.style.display = 'none'; hint.style.display = '';
+      hint.textContent = running
+        ? `等待 ${active || ''} 的 tick…（非交易時段只會有最後一筆快照）`
+        : '按「▶ 開始收 tick」啟動 collector（交易時段 08:30–13:35 才有新 tick）';
+      $('tk-px').textContent = '—'; $('tk-chg').textContent = ''; $('tk-time').textContent = '';
+      $('tk-rows').innerHTML = '<tr><td colspan="6" style="color:var(--muted)">尚無 tick</td></tr>';
+      return;
+    }
+    chartEl.style.display = ''; hint.style.display = 'none';
+    const last = arr[arr.length - 1];
+
+    // 報價 header（vs 昨收）
+    let cls = 'flat', chgTxt = '';
+    if (last.prev_close != null && last.price != null) {
+      const chg = last.price - last.prev_close, pct = chg / last.prev_close * 100;
+      cls = chg > 0 ? 'up' : (chg < 0 ? 'down' : 'flat');
+      const arrow = chg > 0 ? '▲' : (chg < 0 ? '▼' : '');
+      chgTxt = `${arrow}${Math.abs(chg).toFixed(2)} (${Math.abs(pct).toFixed(2)}%)`;
+    }
+    $('tk-px').textContent = fmtPx(last.price);
+    $('tk-px').className = 'tq-px ' + cls;
+    $('tk-chg').textContent = chgTxt;
+    $('tk-chg').className = 'tq-chg ' + cls;
+    $('tk-time').textContent = `${last.date} ${last.time} · ${arr.length} ticks`;
+
+    // 走勢圖：價格階梯線 + 單量 bars
+    const x = arr.map(t => new Date(t.tlong));
+    Plotly.react(chartEl, [
+      { type: 'scatter', mode: 'lines', x, y: arr.map(t => t.price),
+        line: {shape: 'hv', color: '#d29922', width: 1.5}, name: 'price', yaxis: 'y' },
+      { type: 'bar', x, y: arr.map(t => t.tick_vol),
+        marker: {color: 'rgba(121,192,255,.45)'}, name: 'vol', yaxis: 'y2' },
+    ], {
+      margin: {l: 55, r: 15, t: 8, b: 30},
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+      font: {color: '#8b949e', size: 11},
+      xaxis: {type: 'date', tickformat: '%H:%M', gridcolor: 'rgba(139,148,158,.15)'},
+      yaxis: {domain: [0.3, 1], gridcolor: 'rgba(139,148,158,.15)'},
+      yaxis2: {domain: [0, 0.24], gridcolor: 'rgba(139,148,158,.1)'},
+      showlegend: false,
+      shapes: last.prev_close != null ? [{   // 昨收參考線
+        type: 'line', xref: 'paper', x0: 0, x1: 1, y0: last.prev_close, y1: last.prev_close,
+        line: {color: 'rgba(139,148,158,.5)', width: 1, dash: 'dot'},
+      }] : [],
+    }, {responsive: true, displayModeBar: false});
+
+    // 逐筆明細（新→舊）
+    const rows = arr.slice(-TABLE_ROWS).reverse();
+    $('tk-rows').innerHTML = rows.map((t, i) => {
+      const prev = rows[i + 1];
+      const dir = prev && t.price != null && prev.price != null
+        ? (t.price > prev.price ? 'up' : (t.price < prev.price ? 'down' : '')) : '';
+      const fl = flash && i === 0 ? ' flash' : '';
+      return `<tr class="${dir}${fl}"><td>${t.time}</td><td class="num">${fmtPx(t.price)}</td>` +
+             `<td class="num">${fmtPx(t.tick_vol)}</td><td class="num">${fmtPx(t.cum_vol)}</td>` +
+             `<td class="num">${fmtPx(t.bid)}</td><td class="num">${fmtPx(t.ask)}</td></tr>`;
+    }).join('');
+  }
+
+  window.addEventListener('qd-active-symbol', e => {
+    active = e.detail;
+    renderActive(false);
+  });
+
+  // ts IIFE 的初始 broadcast 在本 IIFE 註冊 listener 前已發出 → 直接取初值
+  active = (window.qdGetWatchlist ? window.qdGetWatchlist() : [])[0] || null;
+  renderActive(false);
+  pullTicks();
+  refreshStatus();
+  setInterval(pullTicks, 3000);
+  setInterval(refreshStatus, 10000);
 })();
 </script>
 {% endblock %}
