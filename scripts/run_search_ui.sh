@@ -29,5 +29,6 @@ fi
 
 echo "[search-ui] starting at http://127.0.0.1:5050"
 echo "[search-ui]   · /         資料表清單"
+echo "[search-ui]   · /live     當日增量爬蟲即時監控（實盤監控模組）"
 echo "[search-ui]   · /migrate  Data migration dashboard"
 exec "$VENV" -m ui.search.app

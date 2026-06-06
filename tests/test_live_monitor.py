@@ -172,3 +172,55 @@ def test_available_dates_sorted_desc(audit_dir):
         _write(audit_dir, d, [_ev()])
     (audit_dir / "ingest_garbage.jsonl").write_text("", encoding="utf-8")
     assert lm.available_dates() == ["2026-06-03", "2026-06-02", "2026-06-01"]
+
+
+# ── e2e: /live routes（用 conftest 的 app_client + monkeypatch AUDIT_DIR） ──
+
+def _seed_audit(audit_dir, date):
+    _write(audit_dir, date, [
+        _ev(table="bars_1d", rows=100, ended="2026-06-06T01:00:00+00:00"),
+        _ev(table="txo_1min", status="transform_fail", rows=0,
+            ended="2026-06-06T01:05:00+00:00", error="boom"),
+    ])
+
+
+def test_live_page_200(app_client, audit_dir):
+    _seed_audit(audit_dir, "2026-06-06")
+    r = app_client.get("/live?date=2026-06-06")
+    assert r.status_code == 200
+    body = r.data.decode("utf-8")
+    assert "event-feed" in body and "tables-table" in body
+
+
+def test_live_page_bad_date_400(app_client):
+    assert app_client.get("/live?date=../etc").status_code == 400
+
+
+def test_api_live_summary_full_and_incremental(app_client, audit_dir):
+    d = "2026-06-06"
+    _seed_audit(audit_dir, d)
+    r = app_client.get(f"/api/live/summary?date={d}")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["summary"]["totals"]["events"] == 2
+    assert data["summary"]["totals"]["fail"] == 1
+    assert len(data["new_events"]) == 2
+    off = data["offset"]
+
+    # 增量：append 一筆 → 只回新事件
+    _write(audit_dir, d, [_ev(table="macro_daily", rows=7,
+                              ended="2026-06-06T02:00:00+00:00")])
+    r2 = app_client.get(f"/api/live/summary?date={d}&offset={off}")
+    data2 = r2.get_json()
+    assert [e["table"] for e in data2["new_events"]] == ["macro_daily"]
+    assert data2["summary"]["totals"]["events"] == 3
+
+
+def test_api_live_summary_bad_date_400(app_client):
+    r = app_client.get("/api/live/summary?date=DROP%20TABLE")
+    assert r.status_code == 400
+
+
+def test_api_live_stream_bad_date_400(app_client):
+    r = app_client.get("/api/live/stream?date=zzz")
+    assert r.status_code == 400

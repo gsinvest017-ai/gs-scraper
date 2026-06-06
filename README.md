@@ -83,3 +83,20 @@ cp scripts/migrate.conf.example scripts/migrate.conf
 - ⚠️ Flask 預設綁 `0.0.0.0:5050`，**請只在信任的內網開這個頁面**。
 
 設計與進度：[`docs/progress-migration-dashboard.md`](./docs/progress-migration-dashboard.md)。
+
+## 當日增量爬蟲即時監控（/live）
+
+Search UI 內建 **Live** 頁面（`scripts/run_search_ui.sh` →
+<http://127.0.0.1:5050/live>）：即時顯示當日 `meta/audit/ingest_<date>.jsonl`
+的增量爬蟲審計事件，作為實盤前/盤中的資料完備度監控模組。
+
+- **即時更新**：SSE 推播（2s 檢查），斷線自動降級為 5s 輪詢；輪詢帶 byte offset
+  只讀檔案新增部分，不重 parse 整檔。
+- **統計列**：事件數 / 資料表數 / 成功 / 失敗 / 寫入列數；各 source pills 彙總。
+- **資料表狀態**：每個 (source, table) 取最後一次 run — status / rows / 資料最新日 /
+  耗時 / runs；**失敗排最前**且整列標紅。
+- **事件 feed**：新→舊串流，最多保留 200 筆，新事件 flash 提示。
+- **回看歷史**：日期下拉切任一天（`/live?date=YYYY-MM-DD`）。
+- 純讀 `meta/audit/`，不碰 DuckDB catalog（不會與 ingest / `duckdb -ui` 搶鎖）。
+
+設計與進度：[`docs/progress-live-crawl-dashboard.md`](./docs/progress-live-crawl-dashboard.md)。
