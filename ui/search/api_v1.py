@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from flask import Blueprint, jsonify, request
 
@@ -73,7 +74,6 @@ def health():
 
 def _parse_symbols(raw: str) -> list[str]:
     """逗號/空白/分號分隔 → 去空白、大寫、去重保序。"""
-    import re
     parts = re.split(r"[,\s;]+", raw.strip())
     out: list[str] = []
     for p in parts:
@@ -124,8 +124,10 @@ def snapshot():
     ensure = (request.args.get("ensure") or "1") != "0"
 
     collector = tick_collector.get_collector()
-    collected = set(collector.status()["symbols"])
+    st = collector.status()
+    collected = set(st["symbols"])
     dropped: list[str] = []
+    started = False
 
     if ensure and any(s not in collected for s in symbols):
         merged = list(dict.fromkeys(sorted(collected) + symbols))
@@ -134,15 +136,21 @@ def snapshot():
         collector.start(merged[:MAX_SYMBOLS])
         st = collector.status()
         collected = set(st["symbols"])
-        snaps = collector.latest_snapshot(symbols)
-        if not st["running"] and not snaps:
-            return jsonify({"error": "collector 無法啟動（MIS 來源可能無回應）",
-                            "not_collected": symbols}), 503
+        started = True
+
     snaps = collector.latest_snapshot(symbols)
+    # 啟動失敗且完全沒有可回報的 tick → 503。
+    # 若有（即使過期）last-known tick 仍照常回傳，消費者用 age_sec / /health
+    # 的 seconds_since_poll 自行判斷新鮮度，比硬回 503 更有用。
+    if started and not st["running"] and not snaps:
+        return jsonify({"error": "collector 無法啟動（MIS 來源可能無回應）",
+                        "not_collected": symbols}), 503
 
     out: dict[str, dict] = {}
     not_collected: list[str] = []
     for s in symbols:
+        if s in dropped:
+            continue            # 已在 dropped 回報，不重複列入 not_collected
         if s in snaps:
             out[s] = _enrich(snaps[s])
         elif s in collected:

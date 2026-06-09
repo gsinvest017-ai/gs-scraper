@@ -157,3 +157,25 @@ def test_snapshot_503_when_cannot_start(client, monkeypatch):
     r = client.get("/api/v1/snapshot?symbols=2330&ensure=1")
     assert r.status_code == 503
     assert "error" in r.get_json()
+
+
+def test_snapshot_dropped_not_double_reported(client, monkeypatch):
+    syms = [f"{1000 + i}" for i in range(25)]
+    fake = FakeCollector(snap={}, symbols=[], running=True)
+    _patch_collector(monkeypatch, fake)
+    body = client.get("/api/v1/snapshot?symbols=" + ",".join(syms)
+                      + "&ensure=1").get_json()
+    # 被 drop 的 5 檔只出現在 dropped，不應同時出現在 not_collected
+    assert len(body["dropped"]) == 5
+    assert set(body["dropped"]) & set(body["not_collected"]) == set()
+
+
+def test_snapshot_returns_stale_tick_instead_of_503(client, monkeypatch):
+    # collector 啟動失敗(running=False)，但 ring 仍有 last-known tick →
+    # 回 200 + age_sec，而非 503（消費者自行判斷新鮮度）
+    fake = FakeCollector(snap={"2330": _TICK_2330}, symbols=["2330"], running=False)
+    fake.start = lambda s: {"running": False, "symbols": ["2330"], "unknown": []}
+    _patch_collector(monkeypatch, fake)
+    r = client.get("/api/v1/snapshot?symbols=2330&ensure=1")
+    assert r.status_code == 200
+    assert r.get_json()["snapshots"]["2330"]["price"] == 1085.0
