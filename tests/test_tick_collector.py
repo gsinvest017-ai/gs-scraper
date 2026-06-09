@@ -291,3 +291,13 @@ def test_latest_snapshot_empty_ring():
     c = tc.TickCollector(fetcher=lambda ex_chs: [])
     assert c.latest_snapshot() == {}
     assert c.latest_snapshot(["2330"]) == {}
+
+
+def test_latest_snapshot_returns_copies_not_ring_refs():
+    c = _fake_collector_with_ring([
+        {"symbol": "2330", "price": 100.0, "tlong": 1, "cum_vol": 10.0},
+    ])
+    snap = c.latest_snapshot()
+    snap["2330"]["price"] = 999.0          # 就地改回傳值
+    # ring 內原 tick 不受影響
+    assert c.latest_snapshot()["2330"]["price"] == 100.0
