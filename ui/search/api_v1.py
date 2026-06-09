@@ -14,9 +14,9 @@ import re
 
 from flask import Blueprint, jsonify, request
 
-from ui.search import live_timeseries as lt  # noqa: F401
+from ui.search import live_timeseries as lt
 from ui.search import tick_collector
-from ui.search import tick_history as th  # noqa: F401
+from ui.search import tick_history as th
 
 bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
