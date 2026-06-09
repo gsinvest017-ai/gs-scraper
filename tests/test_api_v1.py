@@ -212,3 +212,35 @@ def test_ticks_limit_clamped(client, monkeypatch):
     client.get("/api/v1/ticks?limit=99999&since_seq=3")
     assert captured["limit"] == 20000        # 上限 clamp
     assert captured["since_seq"] == 3
+
+
+def test_ticks_negative_since_seq_clamped(client, monkeypatch):
+    captured = {}
+
+    class Cap(FakeCollector):
+        def get_ticks(self, symbol=None, since_seq=0, limit=5000):
+            captured["since_seq"] = since_seq
+            return [], 0
+
+    _patch_collector(monkeypatch, Cap())
+    client.get("/api/v1/ticks?since_seq=-5")
+    assert captured["since_seq"] == 0          # max(0, -5)
+
+
+def test_ticks_zero_limit_clamped(client, monkeypatch):
+    captured = {}
+
+    class Cap(FakeCollector):
+        def get_ticks(self, symbol=None, since_seq=0, limit=5000):
+            captured["limit"] = limit
+            return [], 0
+
+    _patch_collector(monkeypatch, Cap())
+    client.get("/api/v1/ticks?limit=0")
+    assert captured["limit"] == 1              # max(1, 0)
+
+
+def test_ticks_symbol_uppercased(client, monkeypatch):
+    _patch_collector(monkeypatch, FakeCollector(ticks=[], symbols=[]))
+    body = client.get("/api/v1/ticks?symbol=tsmc").get_json()
+    assert body["symbol"] == "TSMC"

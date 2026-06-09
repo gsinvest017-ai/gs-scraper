@@ -164,7 +164,7 @@ def snapshot():
 
 @bp.route("/ticks")
 def ticks():
-    symbol = (request.args.get("symbol") or "").strip() or None
+    symbol = (request.args.get("symbol") or "").strip().upper() or None
     try:
         since_seq = max(0, int(request.args.get("since_seq") or 0))
         limit = min(20000, max(1, int(request.args.get("limit") or 5000)))
