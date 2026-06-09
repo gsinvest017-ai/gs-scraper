@@ -188,3 +188,19 @@ def ticks_history():
         return jsonify({"error": str(e)}), 400
     data["server_time"] = _server_time()
     return jsonify(data)
+
+
+@bp.route("/bars")
+def bars():
+    symbol = (request.args.get("symbol") or "").strip().upper()
+    if not symbol:
+        return jsonify({"error": "需要 symbol"}), 400
+    try:
+        days = min(lt.MAX_DAYS, max(1, int(request.args.get("days") or lt.DEFAULT_DAYS)))
+    except ValueError:
+        return jsonify({"error": "days 必須是整數"}), 400
+    data = lt.get_timeseries(symbol, days)
+    if data is None:
+        return jsonify({"error": f"查無標的: {symbol}"}), 404
+    data["server_time"] = _server_time()
+    return jsonify(data)

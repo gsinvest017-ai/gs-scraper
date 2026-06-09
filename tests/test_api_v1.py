@@ -7,6 +7,7 @@ import datetime as dt
 import pytest
 
 from ui.search import api_v1
+from ui.search import live_timeseries as lt
 
 
 TPE = dt.timezone(dt.timedelta(hours=8))
@@ -275,3 +276,42 @@ def test_ticks_history_bad_date_propagates_400(client, monkeypatch):
     r = client.get("/api/v1/ticks/history?date=xx&symbol=2330")
     assert r.status_code == 400
     assert "error" in r.get_json()
+
+
+# ── /bars ──────────────────────────────────────────────────────────────────
+
+def test_bars_happy(client, monkeypatch):
+    monkeypatch.setattr(lt, "get_timeseries",
+                        lambda symbol, days: {"symbol": symbol, "asset_class": "tw_stock",
+                                              "days": days,
+                                              "series": {"dates": ["2026-06-08"],
+                                                         "open": [1.0], "high": [2.0],
+                                                         "low": [0.5], "close": [1.5],
+                                                         "volume": [100]},
+                                              "latest": {"close": 1.5}})
+    body = client.get("/api/v1/bars?symbol=2330&days=30").get_json()
+    assert body["symbol"] == "2330"
+    assert body["days"] == 30
+    assert body["latest"]["close"] == 1.5
+    assert body["server_time"] == "2026-06-09T13:25:07+08:00"
+
+
+def test_bars_missing_symbol(client, monkeypatch):
+    r = client.get("/api/v1/bars")
+    assert r.status_code == 400
+
+
+def test_bars_not_found_404(client, monkeypatch):
+    monkeypatch.setattr(lt, "get_timeseries", lambda symbol, days: None)
+    r = client.get("/api/v1/bars?symbol=ZZZ")
+    assert r.status_code == 404
+
+
+def test_bars_days_clamped(client, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(lt, "get_timeseries",
+                        lambda symbol, days: captured.update(days=days) or
+                        {"symbol": symbol, "asset_class": "x", "days": days,
+                         "series": {}, "latest": {}})
+    client.get("/api/v1/bars?symbol=2330&days=9999")
+    assert captured["days"] == 365          # MAX_DAYS clamp
