@@ -38,6 +38,10 @@ from ui.search.query_builder import (  # noqa: E402
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["JSON_AS_ASCII"] = False
 
+from ui.search.api_v1 import bp as api_v1_bp  # noqa: E402
+
+app.register_blueprint(api_v1_bp)
+
 
 @app.route("/")
 def index():

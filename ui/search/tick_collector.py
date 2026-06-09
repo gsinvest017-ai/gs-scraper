@@ -212,6 +212,26 @@ class TickCollector:
             max_seq = self._seq
         return out[-limit:], max_seq
 
+    def latest_snapshot(self, symbols: list[str] | None = None) -> dict[str, dict]:
+        """回 {symbol: 最新 tick dict}。從 ring 由新到舊掃，每 symbol 取第一筆命中。
+
+        symbols 為 None → 回所有 symbol 的最新；給定清單則只回其中已在 ring 的。
+        回傳的是 tick 的淺拷貝，呼叫端就地修改不會污染 ring。
+        """
+        want = {s.strip().upper() for s in symbols} if symbols else None
+        out: dict[str, dict] = {}
+        with self._lock:
+            for _seq, t in reversed(self._ring):
+                sym = t.get("symbol")
+                if not sym or sym in out:
+                    continue
+                if want is not None and sym not in want:
+                    continue
+                out[sym] = dict(t)
+                if want is not None and len(out) == len(want):
+                    break
+        return out
+
     # -- 內部 ---------------------------------------------------------------
 
     def _backfill_from_file(self):
