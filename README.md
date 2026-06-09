@@ -125,3 +125,5 @@ Search UI 內建 **Live** 頁面（`scripts/run_search_ui.sh` →
   ingest / `duckdb -ui` 搶鎖）。
 
 設計與進度：[`docs/progress-live-crawl-dashboard.md`](./docs/progress-live-crawl-dashboard.md)。
+
+- 對外即時行情 API（給風控系統等跨機器消費者，只讀）：見 [`docs/api-v1.md`](docs/api-v1.md)
