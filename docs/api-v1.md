@@ -40,11 +40,11 @@ curl "http://100.104.1.39:5050/api/v1/snapshot?symbols=2330,TAIEX,0050"
 回應：`{server_time, snapshots:{<sym>:{symbol,name,price,bid,ask,open,high,low,
 prev_close,cum_vol,tick_vol,change,change_pct,time,tlong,age_sec,live,warming}},
 not_collected:[...], dropped:[...]}`
-- `change = price - prev_close`；`change_pct = change/prev_close*100`（prev_close 缺 → null）
+- `change = price - prev_close`；`change_pct = change/prev_close*100`（prev_close 缺或為 0 → 兩者皆 null）
 - `age_sec`：該 tick 距 server_time 秒數
 - `live=false, warming=true`：剛開始採集、ring 還沒資料
 - `not_collected`：`ensure=0` 時未採集的 symbol（snapshots 不含）
-- `dropped`：因超過 20 檔上限被丟掉的 symbol（只列於此，不重複列入 not_collected）
+- `dropped`：因超過 20 檔上限被丟掉的 symbol（只列於此，不重複列入 not_collected，且 snapshots 也不含）
 - collector 啟動失敗且完全無 tick 可回 → `503`；若有過期 tick 仍回 `200`，由 `age_sec` 判斷
 
 ## GET /ticks
