@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 ingest = ["yfinance>=0.2.30", "requests>=2.31", "feedparser>=6.0", "beautifulsoup4>=4.12", "tejapi>=0.1.31"]
 zipline = []  # zipline-tej installed via /home/kevin/gs-zipline-tej
+ui = ["flask>=3.0"]  # Search UI dashboard + 對外 /api/v1（含 ui.search 測試所需）
 dev = ["pytest>=7.4", "ruff>=0.4", "mypy>=1.8"]
 
 [project.scripts]
@@ -40,4 +41,6 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# repo root（".")放進 sys.path 讓 `from ui.search import ...` 在 CI（直接呼叫
+# pytest console-script、cwd 不會自動上 path）也能 import；"src" 保留給 src layout。
+pythonpath = ["src", "."]
