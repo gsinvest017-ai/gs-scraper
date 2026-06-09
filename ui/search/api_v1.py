@@ -179,7 +179,7 @@ def ticks():
 @bp.route("/ticks/history")
 def ticks_history():
     date = (request.args.get("date") or "").strip()
-    symbol = (request.args.get("symbol") or "").strip()
+    symbol = (request.args.get("symbol") or "").strip().upper()
     if not date or not symbol:
         return jsonify({"error": "需要 date 與 symbol"}), 400
     try:
