@@ -253,3 +253,41 @@ def test_api_ticks_incremental(tick_app):
 def test_api_ticks_bad_params_400(tick_app):
     client, _, _ = tick_app
     assert client.get("/api/live/ticks?since_seq=abc").status_code == 400
+
+
+# ── latest_snapshot ───────────────────────────────────────────────────────
+
+def _fake_collector_with_ring(ticks):
+    """建一個不啟動 thread 的 collector，直接灌 ring（seq 遞增）。"""
+    c = tc.TickCollector(fetcher=lambda ex_chs: [])
+    for t in ticks:
+        c._append_tick(t, persist=False)
+    return c
+
+
+def test_latest_snapshot_returns_newest_per_symbol():
+    c = _fake_collector_with_ring([
+        {"symbol": "2330", "price": 100.0, "tlong": 1, "cum_vol": 10.0},
+        {"symbol": "0050", "price": 50.0, "tlong": 2, "cum_vol": 20.0},
+        {"symbol": "2330", "price": 101.0, "tlong": 3, "cum_vol": 11.0},  # 較新
+    ])
+    snap = c.latest_snapshot()
+    assert snap["2330"]["price"] == 101.0
+    assert snap["2330"]["tlong"] == 3
+    assert snap["0050"]["price"] == 50.0
+
+
+def test_latest_snapshot_filters_to_requested_symbols():
+    c = _fake_collector_with_ring([
+        {"symbol": "2330", "price": 100.0, "tlong": 1, "cum_vol": 10.0},
+        {"symbol": "0050", "price": 50.0, "tlong": 2, "cum_vol": 20.0},
+    ])
+    snap = c.latest_snapshot(["2330", "TAIEX"])
+    assert set(snap) == {"2330"}          # TAIEX 不在 ring → 不出現
+    assert snap["2330"]["price"] == 100.0
+
+
+def test_latest_snapshot_empty_ring():
+    c = tc.TickCollector(fetcher=lambda ex_chs: [])
+    assert c.latest_snapshot() == {}
+    assert c.latest_snapshot(["2330"]) == {}
