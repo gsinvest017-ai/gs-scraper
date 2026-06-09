@@ -244,3 +244,34 @@ def test_ticks_symbol_uppercased(client, monkeypatch):
     _patch_collector(monkeypatch, FakeCollector(ticks=[], symbols=[]))
     body = client.get("/api/v1/ticks?symbol=tsmc").get_json()
     assert body["symbol"] == "TSMC"
+
+
+# ── /ticks/history ─────────────────────────────────────────────────────────
+
+def test_ticks_history_happy(client, monkeypatch):
+    from ui.search import tick_history
+    monkeypatch.setattr(tick_history, "get_history_ticks",
+                        lambda date, symbol: {"date": date, "symbol": symbol,
+                                              "source": "self_jsonl", "count": 2,
+                                              "ticks": [{"price": 1.0}, {"price": 2.0}]})
+    body = client.get("/api/v1/ticks/history?date=2026-06-06&symbol=2330").get_json()
+    assert body["source"] == "self_jsonl"
+    assert body["count"] == 2
+    assert body["server_time"] == "2026-06-09T13:25:07+08:00"
+
+
+def test_ticks_history_missing_params(client, monkeypatch):
+    r = client.get("/api/v1/ticks/history?date=2026-06-06")
+    assert r.status_code == 400
+
+
+def test_ticks_history_bad_date_propagates_400(client, monkeypatch):
+    from ui.search import tick_history
+
+    def boom(date, symbol):
+        raise ValueError("date 必須是 YYYY-MM-DD")
+
+    monkeypatch.setattr(tick_history, "get_history_ticks", boom)
+    r = client.get("/api/v1/ticks/history?date=xx&symbol=2330")
+    assert r.status_code == 400
+    assert "error" in r.get_json()

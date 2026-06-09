@@ -174,3 +174,17 @@ def ticks():
         symbol=symbol, since_seq=since_seq, limit=limit)
     return jsonify({"server_time": _server_time(),
                     "symbol": symbol, "ticks": rows, "seq": seq})
+
+
+@bp.route("/ticks/history")
+def ticks_history():
+    date = (request.args.get("date") or "").strip()
+    symbol = (request.args.get("symbol") or "").strip()
+    if not date or not symbol:
+        return jsonify({"error": "需要 date 與 symbol"}), 400
+    try:
+        data = th.get_history_ticks(date, symbol)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    data["server_time"] = _server_time()
+    return jsonify(data)
