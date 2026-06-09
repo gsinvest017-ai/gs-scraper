@@ -40,4 +40,6 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# repo root（".")放進 sys.path 讓 `from ui.search import ...` 在 CI（直接呼叫
+# pytest console-script、cwd 不會自動上 path）也能 import；"src" 保留給 src layout。
+pythonpath = ["src", "."]
