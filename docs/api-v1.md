@@ -9,6 +9,16 @@
   `Access-Control-Allow-Origin: *`
 - 錯誤：`{"error": "..."}` + HTTP 400 / 404 / 503
 
+## 互動式文件（Swagger UI）
+
+其他專案的開發者可直接開 **Swagger UI** 看所有端點、參數、回應 schema，並按
+「Try it out」直接打（CORS 已 allow-all、皆為只讀 GET）：
+
+- Swagger UI：`http://<host>:5050/api/v1/docs`
+- OpenAPI 3.0 規格（機器可讀，給 Postman / codegen 等工具）：`http://<host>:5050/api/v1/openapi.json`
+
+前端資產 vendored 在 `ui/search/static/swagger/`，**離線可用**（不依賴外網 CDN）。
+
 ## 建議用法（staleness guard）
 
 風控在信任快照前，先打 `/health` 看 `seconds_since_poll`（collector 多久沒輪詢），

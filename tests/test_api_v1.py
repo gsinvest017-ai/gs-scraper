@@ -344,3 +344,30 @@ def test_explicit_http_errors_still_pass_through(client, monkeypatch):
     r = client.get("/api/v1/snapshot")          # 缺 symbols → 400
     assert r.status_code == 400
     assert "error" in r.get_json()
+
+
+# ── OpenAPI / Swagger docs ───────────────────────────────────────────────────
+
+def test_openapi_json_served(client):
+    r = client.get("/api/v1/openapi.json")
+    assert r.status_code == 200
+    spec = r.get_json()
+    assert spec["openapi"].startswith("3.0")
+    # 5 個資料端點都在 spec 內
+    assert set(spec["paths"]) == {
+        "/health", "/snapshot", "/ticks", "/ticks/history", "/bars"}
+    assert spec["servers"][0]["url"] == "/api/v1"
+    # 對外只讀 GET 仍帶 CORS
+    assert r.headers["Access-Control-Allow-Origin"] == "*"
+
+
+def test_docs_page_served(client):
+    r = client.get("/api/v1/docs")
+    assert r.status_code == 200
+    assert r.mimetype == "text/html"
+    html = r.get_data(as_text=True)
+    # 引用 vendored 本地資產（非 CDN）+ 指向本機 openapi.json
+    assert "/static/swagger/swagger-ui-bundle.js" in html
+    assert "/static/swagger/swagger-ui.css" in html
+    assert "/api/v1/openapi.json" in html
+    assert "SwaggerUIBundle" in html

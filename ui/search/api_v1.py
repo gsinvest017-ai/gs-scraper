@@ -12,12 +12,13 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from ui.search import live_timeseries as lt
 from ui.search import tick_collector
 from ui.search import tick_history as th
+from ui.search.openapi_spec import build_spec
 
 bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
@@ -79,6 +80,44 @@ def health():
             "last_error": st["last_error"],
         },
     })
+
+
+@bp.route("/openapi.json")
+def openapi_json():
+    """OpenAPI 3.0 規格（給 Swagger UI 及其他工具讀）。"""
+    return jsonify(build_spec())
+
+
+_SWAGGER_HTML = """<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QUANTDATA 即時行情 API v1 — Swagger</title>
+  <link rel="stylesheet" href="/static/swagger/swagger-ui.css">
+  <style>body{margin:0}</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="/static/swagger/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: "/api/v1/openapi.json",
+      dom_id: "#swagger-ui",
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis],
+      layout: "BaseLayout"
+    });
+  </script>
+</body>
+</html>
+"""
+
+
+@bp.route("/docs")
+def docs():
+    """Swagger UI 頁（前端資產 vendored 在 static/swagger/，離線可用）。"""
+    return Response(_SWAGGER_HTML, mimetype="text/html")
 
 
 def _parse_symbols(raw: str) -> list[str]:
