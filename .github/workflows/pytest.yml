@@ -38,7 +38,7 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[ingest,dev]"
+          pip install -e ".[ingest,dev,ui]"
 
       - name: Lint check (non-blocking)
         run: ruff check src/ ui/ tests/ || true
@@ -62,6 +62,6 @@ jobs:
       - name: Install project
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[ingest,dev]"
+          pip install -e ".[ingest,dev,ui]"
       - name: Run pytest
         run: pytest -q tests/
