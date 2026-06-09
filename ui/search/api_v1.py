@@ -13,6 +13,7 @@ import datetime as dt
 import re
 
 from flask import Blueprint, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from ui.search import live_timeseries as lt
 from ui.search import tick_collector
@@ -50,6 +51,14 @@ def _add_cors(resp):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@bp.errorhandler(Exception)
+def _handle_unexpected(e):
+    """未預期例外 → JSON 500，不外洩 stack；明確的 HTTP 錯誤照原樣回。"""
+    if isinstance(e, HTTPException):
+        return e
+    return jsonify({"error": "internal error"}), 500
 
 
 @bp.route("/health")

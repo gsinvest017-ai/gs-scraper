@@ -97,3 +97,9 @@ latest:{trading_date,open,high,low,close,volume,prev_close,change,change_pct}}`
 - snapshot 懶啟動與 dashboard 共用同一個 process 級 collector 單例與 20 檔上限；
   兩個消費者同時要求超過 20 檔時會互相擠掉。
 - collector 資料源為 TWSE MIS（約 5 秒快照），非逐筆撮合等級；歷史逐 tick 才走 FinMind。
+- `/bars` 會把 symbol 轉大寫，因此 `macro:` 前綴的總經序列（`live_timeseries`
+  以 `macro:` 開頭 dispatch）目前無法經 `/bars` 取得；股票/期貨代碼不受影響。
+- snapshot 懶啟動呼叫 `collector.start(merged)` 時會對清單中未 cache 的 symbol
+  做同步 MIS 探測（先 tse 後 otc）；若 MIS 緩慢或無回應，該次請求會被拖住。
+  已 cache 的 symbol 會短路略過。風控對延遲敏感時，建議先用 `ensure=0` 純讀，
+  或預先暖機 watchlist。

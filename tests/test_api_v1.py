@@ -75,6 +75,7 @@ def test_health_shape_and_envelope(client, monkeypatch):
     assert c["seconds_since_poll"] == 2.0      # 13:25:07 - 13:25:05
     assert c["seq"] == 48213
     assert r.headers["Access-Control-Allow-Origin"] == "*"
+    assert r.headers["Cache-Control"] == "no-store"
 
 
 def test_health_null_last_poll(client, monkeypatch):
@@ -315,3 +316,31 @@ def test_bars_days_clamped(client, monkeypatch):
                          "series": {}, "latest": {}})
     client.get("/api/v1/bars?symbol=2330&days=9999")
     assert captured["days"] == 365          # MAX_DAYS clamp
+
+
+# ── error handling ─────────────────────────────────────────────────────────
+
+def test_unexpected_exception_returns_json_500(client, monkeypatch):
+    # 強制 /health 內部丟非預期例外 → 應回 JSON 500 而非 HTML / stack
+    client.application.config["PROPAGATE_EXCEPTIONS"] = False
+    from ui.search import tick_collector
+
+    def boom():
+        raise RuntimeError("catalog locked")
+
+    monkeypatch.setattr(tick_collector, "get_collector", boom)
+    r = client.get("/api/v1/health")
+    assert r.status_code == 500
+    body = r.get_json()
+    assert body == {"error": "internal error"}      # JSON envelope, no stack
+    # CORS still applied on the error response (after_request runs)
+    assert r.headers["Access-Control-Allow-Origin"] == "*"
+
+
+def test_explicit_http_errors_still_pass_through(client, monkeypatch):
+    # 明確的 400 不應被 Exception handler 變成 500
+    client.application.config["PROPAGATE_EXCEPTIONS"] = False
+    _patch_collector(monkeypatch, FakeCollector())
+    r = client.get("/api/v1/snapshot")          # 缺 symbols → 400
+    assert r.status_code == 400
+    assert "error" in r.get_json()
