@@ -160,3 +160,17 @@ def snapshot():
 
     return jsonify({"server_time": _server_time(), "snapshots": out,
                     "not_collected": not_collected, "dropped": dropped})
+
+
+@bp.route("/ticks")
+def ticks():
+    symbol = (request.args.get("symbol") or "").strip() or None
+    try:
+        since_seq = max(0, int(request.args.get("since_seq") or 0))
+        limit = min(20000, max(1, int(request.args.get("limit") or 5000)))
+    except ValueError:
+        return jsonify({"error": "since_seq / limit 必須是整數"}), 400
+    rows, seq = tick_collector.get_collector().get_ticks(
+        symbol=symbol, since_seq=since_seq, limit=limit)
+    return jsonify({"server_time": _server_time(),
+                    "symbol": symbol, "ticks": rows, "seq": seq})

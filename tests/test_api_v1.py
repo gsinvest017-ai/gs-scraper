@@ -179,3 +179,36 @@ def test_snapshot_returns_stale_tick_instead_of_503(client, monkeypatch):
     r = client.get("/api/v1/snapshot?symbols=2330&ensure=1")
     assert r.status_code == 200
     assert r.get_json()["snapshots"]["2330"]["price"] == 1085.0
+
+
+# ── /ticks ───────────────────────────────────────────────────────────────
+
+def test_ticks_happy(client, monkeypatch):
+    ticks = [{"symbol": "2330", "price": 100.0, "tlong": 1, "cum_vol": 10.0}]
+    _patch_collector(monkeypatch, FakeCollector(ticks=ticks, symbols=["2330"]))
+    body = client.get("/api/v1/ticks?symbol=2330&since_seq=5").get_json()
+    assert body["symbol"] == "2330"
+    assert body["seq"] == 48213
+    assert body["ticks"][0]["price"] == 100.0
+    assert body["server_time"] == "2026-06-09T13:25:07+08:00"
+
+
+def test_ticks_bad_since_seq(client, monkeypatch):
+    _patch_collector(monkeypatch, FakeCollector())
+    r = client.get("/api/v1/ticks?since_seq=abc")
+    assert r.status_code == 400
+
+
+def test_ticks_limit_clamped(client, monkeypatch):
+    captured = {}
+
+    class Cap(FakeCollector):
+        def get_ticks(self, symbol=None, since_seq=0, limit=5000):
+            captured["limit"] = limit
+            captured["since_seq"] = since_seq
+            return [], 0
+
+    _patch_collector(monkeypatch, Cap())
+    client.get("/api/v1/ticks?limit=99999&since_seq=3")
+    assert captured["limit"] == 20000        # 上限 clamp
+    assert captured["since_seq"] == 3
