@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from flask import Blueprint, jsonify, request  # noqa: F401
+from flask import Blueprint, jsonify, request
 
 from ui.search import live_timeseries as lt  # noqa: F401
 from ui.search import tick_collector
@@ -69,3 +69,86 @@ def health():
             "last_error": st["last_error"],
         },
     })
+
+
+def _parse_symbols(raw: str) -> list[str]:
+    """逗號/空白/分號分隔 → 去空白、大寫、去重保序。"""
+    import re
+    parts = re.split(r"[,\s;]+", raw.strip())
+    out: list[str] = []
+    for p in parts:
+        s = p.strip().upper()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _age_sec(tlong) -> float | None:
+    if not tlong:
+        return None
+    return round(_now().timestamp() - tlong / 1000.0, 1)
+
+
+def _enrich(t: dict) -> dict:
+    price, prev = t.get("price"), t.get("prev_close")
+    change = change_pct = None
+    if price is not None and prev not in (None, 0):
+        change = round(price - prev, 4)
+        change_pct = round(change / prev * 100, 4)
+    return {
+        "symbol": t.get("symbol"), "name": t.get("name"),
+        "price": price, "bid": t.get("bid"), "ask": t.get("ask"),
+        "open": t.get("open"), "high": t.get("high"), "low": t.get("low"),
+        "prev_close": prev, "cum_vol": t.get("cum_vol"),
+        "tick_vol": t.get("tick_vol"), "change": change,
+        "change_pct": change_pct, "time": t.get("time"),
+        "tlong": t.get("tlong"), "age_sec": _age_sec(t.get("tlong")),
+        "live": True, "warming": False,
+    }
+
+
+def _warming_stub(sym: str) -> dict:
+    return {"symbol": sym, "name": None, "price": None, "bid": None,
+            "ask": None, "open": None, "high": None, "low": None,
+            "prev_close": None, "cum_vol": None, "tick_vol": None,
+            "change": None, "change_pct": None, "time": None, "tlong": None,
+            "age_sec": None, "live": False, "warming": True}
+
+
+@bp.route("/snapshot")
+def snapshot():
+    raw = request.args.get("symbols") or ""
+    symbols = _parse_symbols(raw)
+    if not symbols:
+        return jsonify({"error": "需要 symbols 參數（逗號分隔）"}), 400
+    ensure = (request.args.get("ensure") or "1") != "0"
+
+    collector = tick_collector.get_collector()
+    collected = set(collector.status()["symbols"])
+    dropped: list[str] = []
+
+    if ensure and any(s not in collected for s in symbols):
+        merged = list(dict.fromkeys(sorted(collected) + symbols))
+        if len(merged) > MAX_SYMBOLS:
+            dropped = merged[MAX_SYMBOLS:]
+        collector.start(merged[:MAX_SYMBOLS])
+        st = collector.status()
+        collected = set(st["symbols"])
+        snaps = collector.latest_snapshot(symbols)
+        if not st["running"] and not snaps:
+            return jsonify({"error": "collector 無法啟動（MIS 來源可能無回應）",
+                            "not_collected": symbols}), 503
+    snaps = collector.latest_snapshot(symbols)
+
+    out: dict[str, dict] = {}
+    not_collected: list[str] = []
+    for s in symbols:
+        if s in snaps:
+            out[s] = _enrich(snaps[s])
+        elif s in collected:
+            out[s] = _warming_stub(s)
+        else:
+            not_collected.append(s)
+
+    return jsonify({"server_time": _server_time(), "snapshots": out,
+                    "not_collected": not_collected, "dropped": dropped})
