@@ -65,3 +65,8 @@ def test_remote_401(monkeypatch):
     qd = cl.QuantData(url="http://x:5050", token="bad")
     with pytest.raises(cl.AuthError):
         qd.views()
+
+
+def test_version():
+    import quantdata
+    assert quantdata.__version__ == "0.1.0"
