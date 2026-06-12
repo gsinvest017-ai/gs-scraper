@@ -171,3 +171,13 @@ def test_U039_order_by_must_be_whitelisted():
 def test_params_preserve_int_and_string():
     _, params = build_sql("my_view", [Filter("value", "range_min", 42)])
     assert params == [42] and isinstance(params[0], int)
+
+
+def test_max_limit_override_allows_bulk(monkeypatch):
+    import ui.search.query_builder as qb
+    monkeypatch.setattr(qb, "list_views", lambda: ["bars_1d"])
+    class _M:  # minimal ViewMeta stand-in for column validation
+        columns = []
+    monkeypatch.setattr(qb, "get_view_meta", lambda v: _M())
+    sql, params = build_sql("bars_1d", [], limit=2_000_000, max_limit=5_000_000)
+    assert "LIMIT 2000000" in sql
