@@ -70,3 +70,31 @@ def test_remote_401(monkeypatch):
 def test_version():
     import quantdata
     assert quantdata.__version__ == "0.1.0"
+
+
+def test_local_sql_rejects_table_function(local_db):
+    qd = QuantData(catalog=local_db)
+    with pytest.raises(ValueError):
+        qd.sql("SELECT * FROM read_text('/etc/hostname')")
+
+
+def test_local_get_rejects_unknown_column(local_db):
+    qd = QuantData(catalog=local_db)
+    with pytest.raises(ValueError):
+        qd.get("bars", **{'symbol" = symbol OR "close': 'x'})   # injection key
+    with pytest.raises(ValueError):
+        qd.get("bars", nonexistent_col="x")
+    with pytest.raises(ValueError):
+        qd.get("nonexistent_view", symbol="2330")
+
+
+def test_local_schema_shape(local_db):
+    qd = QuantData(catalog=local_db)
+    sch = qd.schema("bars")
+    assert "name" in sch.columns and "dtype" in sch.columns
+    assert "d" in set(sch["name"]) and "close" in set(sch["name"])
+
+
+def test_local_views_has_name(local_db):
+    qd = QuantData(catalog=local_db)
+    assert "name" in qd.views().columns and "bars" in set(qd.views()["name"])

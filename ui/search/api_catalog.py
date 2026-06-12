@@ -18,6 +18,8 @@ _FILTER_OPS = {"": "eq", "gte": "range_min", "lte": "range_max", "in": "in",
 
 @bp.before_request
 def _auth():
+    if request.method == "OPTIONS":
+        return
     if not qa.check_token(request.headers.get("Authorization")):
         abort(401, description="invalid or missing bearer token")
 

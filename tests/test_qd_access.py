@@ -48,3 +48,14 @@ def test_check_token(monkeypatch):
     assert qa3.check_token("Bearer secret") is True
     assert qa3.check_token("Bearer wrong") is False
     assert qa3.check_token(None) is False
+
+
+@pytest.mark.parametrize("bad", [
+    "SELECT * FROM read_text('/etc/hostname')",
+    "SELECT * FROM read_csv_auto('/etc/passwd')",
+    "SELECT * FROM glob('/*')",
+    "SELECT * FROM read_parquet('/tmp/x.parquet')",
+])
+def test_safe_sql_rejects_table_functions(con, bad):
+    with pytest.raises(ValueError):
+        qa.safe_sql(bad, con=con, row_cap=10)

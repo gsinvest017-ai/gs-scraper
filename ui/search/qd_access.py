@@ -17,6 +17,8 @@ _SELECT_OK = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
 _FORBIDDEN = re.compile(
     r"\b(attach|detach|copy|install|load|pragma|set|insert|update|delete|drop|"
     r"create|alter|export|import|call)\b", re.IGNORECASE)
+_TABLE_FN = re.compile(
+    r"\b(read_[a-z_]+|glob|parquet_scan|csv_scan|sniff_csv)\s*\(", re.IGNORECASE)
 DEFAULT_ROW_CAP = 5_000_000
 SQL_TIMEOUT_SEC = 30
 PARQUET_ROW_CAP = 5_000_000
@@ -30,6 +32,8 @@ def _guard(sql: str) -> str:
         raise ValueError("only SELECT / WITH queries are allowed")
     if _FORBIDDEN.search(s):
         raise ValueError("statement contains a forbidden keyword")
+    if _TABLE_FN.search(s):
+        raise ValueError("file/external table functions are not allowed")
     return s
 
 

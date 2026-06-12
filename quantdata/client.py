@@ -17,11 +17,13 @@ class APIError(QuantDataError): ...
 _SELECT_OK = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
 _FORBIDDEN = re.compile(r"\b(attach|detach|copy|install|load|pragma|set|insert|update|"
                         r"delete|drop|create|alter|export|import|call)\b", re.IGNORECASE)
+_TABLE_FN = re.compile(
+    r"\b(read_[a-z_]+|glob|parquet_scan|csv_scan|sniff_csv)\s*\(", re.IGNORECASE)
 
 
 def _guard(sql: str) -> str:
     s = sql.strip().rstrip(";")
-    if ";" in s or not _SELECT_OK.match(s) or _FORBIDDEN.search(s):
+    if ";" in s or not _SELECT_OK.match(s) or _FORBIDDEN.search(s) or _TABLE_FN.search(s):
         raise ValueError("only a single read-only SELECT/WITH statement is allowed")
     return s
 
@@ -47,19 +49,35 @@ class QuantData:
     def get(self, view, *, select=None, order=None, dir="ASC", limit=None,
             start=None, end=None, **filters) -> pd.DataFrame:
         if self._mode == "local":
-            cols = ", ".join(f'"{c}"' for c in select) if select else "*"
-            where, params = [], []
-            for k, v in filters.items():
-                where.append(f'"{k}" = ?'); params.append(v)
             con = self._con()
             try:
+                # Validate view name against actual catalog contents
+                valid_views = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+                if view not in valid_views:
+                    raise ValueError(f"unknown view: {view!r}")
+                # Get valid column names for this view
+                valid_cols = {r[0] for r in con.execute(f'DESCRIBE "{view}"').fetchall()}
+                # Validate filter keys, select cols, and order against real columns
+                for k in filters:
+                    if k not in valid_cols:
+                        raise ValueError(f"unknown column: {k!r}")
+                if select:
+                    for c in select:
+                        if c not in valid_cols:
+                            raise ValueError(f"unknown column: {c!r}")
+                if order and order not in valid_cols:
+                    raise ValueError(f"unknown column: {order!r}")
+                cols = ", ".join(f'"{c}"' for c in select) if select else "*"
+                where, params = [], []
+                for k, v in filters.items():
+                    where.append(f'"{k}" = ?'); params.append(v)
                 datecol = None
                 if start or end:
-                    datecol = next((r[0] for r in con.execute(f"DESCRIBE {view}").fetchall()
+                    datecol = next((r[0] for r in con.execute(f'DESCRIBE "{view}"').fetchall()
                                     if "DATE" in str(r[1]).upper() or "TIMESTAMP" in str(r[1]).upper()), None)
                 if start and datecol: where.append(f'"{datecol}" >= ?'); params.append(start)
                 if end and datecol: where.append(f'"{datecol}" <= ?'); params.append(end)
-                sql = f"SELECT {cols} FROM {view}"
+                sql = f'SELECT {cols} FROM "{view}"'
                 if where: sql += " WHERE " + " AND ".join(where)
                 if order: sql += f' ORDER BY "{order}" {"DESC" if dir.upper()=="DESC" else "ASC"}'
                 if limit: sql += f" LIMIT {int(limit)}"
@@ -79,6 +97,7 @@ class QuantData:
         return self._remote_sql(query)
 
     def views(self) -> pd.DataFrame:
+        """Return DataFrame with at minimum a `name` column. Remote mode returns extra metadata columns (row_count, etc.)."""
         if self._mode == "local":
             con = self._con()
             try:
@@ -88,10 +107,13 @@ class QuantData:
         return pd.DataFrame(self._remote_json("GET", "/views"))
 
     def schema(self, view: str) -> pd.DataFrame:
+        """Return DataFrame with columns `name` and `dtype` (plus extras). Remote shape matches."""
         if self._mode == "local":
             con = self._con()
             try:
-                return con.execute(f"DESCRIBE {view}").df()
+                df = con.execute(f'DESCRIBE "{view}"').df()
+                df = df.rename(columns={"column_name": "name", "column_type": "dtype"})
+                return df
             finally:
                 con.close()
         return pd.DataFrame(self._remote_json("GET", f"/views/{view}/schema")["columns"])
