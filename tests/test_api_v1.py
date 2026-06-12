@@ -353,9 +353,12 @@ def test_openapi_json_served(client):
     assert r.status_code == 200
     spec = r.get_json()
     assert spec["openapi"].startswith("3.0")
-    # 5 個資料端點都在 spec 內
-    assert set(spec["paths"]) == {
-        "/health", "/snapshot", "/ticks", "/ticks/history", "/bars"}
+    # 既有即時行情端點都在 spec 內
+    realtime_paths = {"/health", "/snapshot", "/ticks", "/ticks/history", "/bars"}
+    assert realtime_paths.issubset(set(spec["paths"]))
+    # catalog 端點（units A-E 新增）也在 spec 內
+    catalog_paths = {"/views", "/views/{view}/schema", "/data/{view}", "/sql"}
+    assert catalog_paths.issubset(set(spec["paths"]))
     assert spec["servers"][0]["url"] == "/api/v1"
     # 對外只讀 GET 仍帶 CORS
     assert r.headers["Access-Control-Allow-Origin"] == "*"
