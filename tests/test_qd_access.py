@@ -23,3 +23,19 @@ def test_safe_sql_rejects_non_select(con, bad):
 def test_safe_sql_row_cap(con):
     with pytest.raises(ValueError, match="row cap"):
         qa.safe_sql("SELECT * FROM range(100)", con=con, row_cap=10)
+
+from types import SimpleNamespace
+
+def test_query_builds_and_runs(monkeypatch, con):
+    import ui.search.qd_access as qa2
+    import ui.search.query_builder as qb
+    fake_meta = SimpleNamespace(columns=[SimpleNamespace(name="id"),
+                                         SimpleNamespace(name="name")])
+    monkeypatch.setattr(qa2, "_list_views", lambda: ["t"])
+    monkeypatch.setattr(qa2, "_view_meta", lambda v: fake_meta)
+    # build_sql validates independently against query_builder's own helpers:
+    monkeypatch.setattr(qb, "list_views", lambda: ["t"])
+    monkeypatch.setattr(qb, "get_view_meta", lambda v: fake_meta)
+    cols, rows, nxt = qa2.query("t", filters=[{"column": "id", "op": "eq", "value": 1}],
+                                con=con, limit=10, offset=0)
+    assert cols == ["id", "name"] and rows == [[1, "a"]] and nxt is None

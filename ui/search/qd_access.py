@@ -56,3 +56,53 @@ def safe_sql(sql: str, *, con, row_cap: int = DEFAULT_ROW_CAP):
         e = result["err"]
         raise ValueError(str(e)) if not isinstance(e, ValueError) else e
     return result["cols"], result["rows"]
+
+
+from ui.search.catalog_inspector import (get_connection as _get_connection,
+                                          list_views as _list_views,
+                                          get_view_meta as _view_meta,
+                                          view_summary as _view_summary)
+from ui.search.query_builder import Filter, build_sql
+
+PARQUET_ROW_CAP = 5_000_000
+
+
+def list_views() -> list[dict]:
+    return [_view_summary(v) for v in _list_views()]
+
+
+def view_schema(view: str) -> dict:
+    if view not in _list_views():
+        raise ValueError(f"unknown view: {view!r}")
+    m = _view_meta(view)
+    return {"name": m.name, "row_count": m.row_count, "max_date": m.max_date,
+            "columns": [{"name": c.name, "dtype": c.dtype, "is_date": c.is_date,
+                         "is_numeric": c.is_numeric, "is_string": c.is_string}
+                        for c in m.columns]}
+
+
+def query(view: str, *, filters=None, select=None, order_by=None, order_dir="ASC",
+          limit=1000, offset=0, con=None, max_limit=None):
+    """Filtered read. filters: list of {column,op,value,value2}. Returns
+    (columns, rows, next_offset). Pass con for tests; else opens a read-only one."""
+    if view not in _list_views():
+        raise ValueError(f"unknown view: {view!r}")
+    flts = [Filter(column=f["column"], op=f["op"], value=f.get("value"),
+                   value2=f.get("value2")) for f in (filters or [])]
+    cap = max_limit if max_limit is not None else PARQUET_ROW_CAP
+    page = max(1, int(limit))
+    sql, params = build_sql(view, flts, order_by=order_by, order_dir=order_dir,
+                            limit=page + 1, select_cols=select, max_limit=cap)
+    if int(offset) > 0:
+        sql += f" OFFSET {int(offset)}"
+    own = con is None
+    c = con or _get_connection()
+    try:
+        cur = c.execute(sql, params)
+        cols = [d[0] for d in cur.description]
+        rows = [list(r) for r in cur.fetchall()]
+    finally:
+        if own:
+            c.close()
+    nxt = (int(offset) + page) if len(rows) > page else None
+    return cols, rows[:page], nxt
