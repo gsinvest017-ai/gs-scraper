@@ -1,0 +1,12 @@
+[project]
+name = "quantdata"
+version = "0.1.0"
+description = "QUANTDATA client — local DuckDB or REST, returns pandas"
+requires-python = ">=3.10"
+dependencies = ["pandas", "pyarrow", "requests"]
+
+[project.optional-dependencies]
+local = ["duckdb"]
+
+[tool.setuptools]
+packages = ["quantdata"]
