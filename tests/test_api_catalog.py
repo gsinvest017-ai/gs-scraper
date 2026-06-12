@@ -39,3 +39,8 @@ def test_token_401(client, monkeypatch):
     monkeypatch.setenv("QUANTDATA_API_TOKEN", "secret")
     assert client.get("/api/v1/views").status_code == 401
     assert client.get("/api/v1/views", headers={"Authorization": "Bearer secret"}).status_code == 200
+
+def test_openapi_lists_catalog_paths(client):
+    spec = client.get("/api/v1/openapi.json").get_json()
+    for p in ("/views", "/data/{view}", "/sql"):
+        assert p in spec["paths"], f"{p} missing from OpenAPI"
