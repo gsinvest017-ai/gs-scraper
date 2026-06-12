@@ -3,8 +3,15 @@ the data API. Wraps the existing read-only snapshot (catalog_inspector) + safe
 query builder (query_builder); adds a guarded read-only SELECT runner."""
 from __future__ import annotations
 
+import os
 import re
 import threading
+
+from ui.search.catalog_inspector import (get_connection as _get_connection,
+                                          list_views as _list_views,
+                                          get_view_meta as _view_meta,
+                                          view_summary as _view_summary)
+from ui.search.query_builder import Filter, build_sql
 
 _SELECT_OK = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
 _FORBIDDEN = re.compile(
@@ -12,6 +19,7 @@ _FORBIDDEN = re.compile(
     r"create|alter|export|import|call)\b", re.IGNORECASE)
 DEFAULT_ROW_CAP = 5_000_000
 SQL_TIMEOUT_SEC = 30
+PARQUET_ROW_CAP = 5_000_000
 
 
 def _guard(sql: str) -> str:
@@ -58,15 +66,6 @@ def safe_sql(sql: str, *, con, row_cap: int = DEFAULT_ROW_CAP):
     return result["cols"], result["rows"]
 
 
-from ui.search.catalog_inspector import (get_connection as _get_connection,
-                                          list_views as _list_views,
-                                          get_view_meta as _view_meta,
-                                          view_summary as _view_summary)
-from ui.search.query_builder import Filter, build_sql
-
-PARQUET_ROW_CAP = 5_000_000
-
-
 def list_views() -> list[dict]:
     return [_view_summary(v) for v in _list_views()]
 
@@ -107,8 +106,6 @@ def query(view: str, *, filters=None, select=None, order_by=None, order_dir="ASC
     nxt = (int(offset) + page) if len(rows) > page else None
     return cols, rows[:page], nxt
 
-
-import os
 
 def check_token(authorization_header: str | None) -> bool:
     """True if request is authorized. If QUANTDATA_API_TOKEN unset -> open (LAN/dev)."""
