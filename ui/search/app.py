@@ -42,6 +42,9 @@ from ui.search.api_v1 import bp as api_v1_bp  # noqa: E402
 
 app.register_blueprint(api_v1_bp)
 
+from ui.search.api_catalog import bp as api_catalog_bp  # noqa: E402
+app.register_blueprint(api_catalog_bp)
+
 
 @app.route("/")
 def index():
