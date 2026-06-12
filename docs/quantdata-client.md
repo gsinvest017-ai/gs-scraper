@@ -121,7 +121,7 @@ qd.live.health()                       # collector health + seconds_since_poll
 ```
 
 `qd.live` wraps the existing realtime endpoints documented in
-[`docs/api-v1.md`](api-v1.md). A `url=` must be provided (or `QUANTDATA_API_URL`
+[`docs/realtime-api-v1.md`](realtime-api-v1.md). A `url=` must be provided (or `QUANTDATA_API_URL`
 set) — realtime is REST-only and has no local equivalent.
 
 ---
@@ -182,7 +182,7 @@ Pagination: `offset` + `limit`. `next_offset` is `null` when no more rows.
 
 ### Realtime endpoints (open)
 
-See [`docs/api-v1.md`](api-v1.md) for the full realtime contract.
+See [`docs/realtime-api-v1.md`](realtime-api-v1.md) for the full realtime contract.
 
 | Method / Path | Purpose |
 |---|---|
