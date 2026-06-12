@@ -39,3 +39,12 @@ def test_query_builds_and_runs(monkeypatch, con):
     cols, rows, nxt = qa2.query("t", filters=[{"column": "id", "op": "eq", "value": 1}],
                                 con=con, limit=10, offset=0)
     assert cols == ["id", "name"] and rows == [[1, "a"]] and nxt is None
+
+def test_check_token(monkeypatch):
+    import ui.search.qd_access as qa3
+    monkeypatch.delenv("QUANTDATA_API_TOKEN", raising=False)
+    assert qa3.check_token(None) is True
+    monkeypatch.setenv("QUANTDATA_API_TOKEN", "secret")
+    assert qa3.check_token("Bearer secret") is True
+    assert qa3.check_token("Bearer wrong") is False
+    assert qa3.check_token(None) is False

@@ -106,3 +106,16 @@ def query(view: str, *, filters=None, select=None, order_by=None, order_dir="ASC
             c.close()
     nxt = (int(offset) + page) if len(rows) > page else None
     return cols, rows[:page], nxt
+
+
+import os
+
+def check_token(authorization_header: str | None) -> bool:
+    """True if request is authorized. If QUANTDATA_API_TOKEN unset -> open (LAN/dev)."""
+    want = os.environ.get("QUANTDATA_API_TOKEN")
+    if not want:
+        return True
+    if not authorization_header:
+        return False
+    parts = authorization_header.split(None, 1)
+    return len(parts) == 2 and parts[0].lower() == "bearer" and parts[1] == want
