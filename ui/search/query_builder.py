@@ -42,6 +42,7 @@ def build_sql(
     order_dir: str = "DESC",
     limit: int = DEFAULT_LIMIT,
     select_cols: list[str] | None = None,
+    max_limit: int = MAX_LIMIT,
 ) -> tuple[str, list[Any]]:
     """Return (sql, params) for a safe parameterized query.
 
@@ -108,6 +109,6 @@ def build_sql(
         order_clause = f'ORDER BY "{order_by}" {dir_}'
 
     # Cap limit
-    lim = min(max(int(limit), 1), MAX_LIMIT)
+    lim = min(max(int(limit), 1), max_limit)
     sql = f'SELECT {col_expr} FROM {view} {where_clause} {order_clause} LIMIT {lim}'
     return sql, params
