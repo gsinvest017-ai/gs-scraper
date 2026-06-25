@@ -1,4 +1,4 @@
-# QUANTDATA 一鍵跨主機 migrate — Windows wrapper。
+﻿# QUANTDATA 一鍵跨主機 migrate — Windows wrapper。
 #
 # 真正的搬運邏輯在 scripts/migrate_to_host.sh（rsync + ssh + duckdb，全是 Linux
 # 工具，而 18G 資料湖也住在 WSL 的 ext4）。本 wrapper 只負責把參數轉進 WSL 執行。

@@ -1,4 +1,4 @@
-# Backup the QUANTDATA lakehouse to a snapshot directory (Windows).
+﻿# Backup the QUANTDATA lakehouse to a snapshot directory (Windows).
 # Linux / macOS / WSL2: use backup_snapshot.sh (rsync).
 #
 # Usage:

@@ -1,4 +1,4 @@
-# Manage a read-only DuckDB UI session against a snapshot of the catalog,
+﻿# Manage a read-only DuckDB UI session against a snapshot of the catalog,
 # for exposure through ngrok / Tailscale Funnel (Windows).
 # Linux / macOS / WSL2: use duckdb_public_ui.sh.
 #

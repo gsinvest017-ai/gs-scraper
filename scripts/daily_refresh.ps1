@@ -1,4 +1,4 @@
-# daily_refresh.ps1 — pull latest TEJ data + ingest to silver + rebuild catalog
+﻿# daily_refresh.ps1 — pull latest TEJ data + ingest to silver + rebuild catalog
 # (Windows port of daily_refresh.sh). Designed for Windows Scheduled Task.
 # Linux / macOS / WSL2: use daily_refresh.sh.
 #

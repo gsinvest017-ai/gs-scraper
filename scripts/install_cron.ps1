@@ -1,4 +1,4 @@
-# install_cron.ps1 — register the QUANTDATA daily refresh as a Windows
+﻿# install_cron.ps1 — register the QUANTDATA daily refresh as a Windows
 # Scheduled Task (the Windows equivalent of install_cron.sh's crontab entry).
 # Linux / macOS / WSL2: use install_cron.sh (crontab).
 #

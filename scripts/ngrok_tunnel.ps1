@@ -1,4 +1,4 @@
-# Public DuckDB UI tunnel via ngrok (Windows). Linux/WSL2: ngrok_tunnel.sh.
+﻿# Public DuckDB UI tunnel via ngrok (Windows). Linux/WSL2: ngrok_tunnel.sh.
 #
 # One-time setup (USER MUST DO ONCE):
 #   1. Sign up at https://dashboard.ngrok.com/signup (free tier OK)

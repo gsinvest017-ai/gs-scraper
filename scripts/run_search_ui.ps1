@@ -1,4 +1,4 @@
-# QUANTDATA Search UI launcher (Windows) — runs Flask on 0.0.0.0:5050.
+﻿# QUANTDATA Search UI launcher (Windows) — runs Flask on 0.0.0.0:5050.
 # Linux / macOS / WSL2: use run_search_ui.sh.
 
 [CmdletBinding()]

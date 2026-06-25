@@ -1,4 +1,4 @@
-# Public DuckDB UI tunnel via Tailscale Funnel (Windows). Linux/WSL2: tailscale_funnel.sh.
+﻿# Public DuckDB UI tunnel via Tailscale Funnel (Windows). Linux/WSL2: tailscale_funnel.sh.
 #
 # Prerequisites (one-time, done by USER on the tailnet admin + this node):
 #   1. Tailnet admin: enable Funnel  https://login.tailscale.com/admin/acls

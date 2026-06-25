@@ -1,4 +1,4 @@
-# migrate_to_windows.ps1 — 一鍵把 QUANTDATA 從 WSL2 遷移到 Windows native。
+﻿# migrate_to_windows.ps1 — 一鍵把 QUANTDATA 從 WSL2 遷移到 Windows native。
 #
 # 本腳本「在 Windows 端執行」，從 \\wsl$\<distro>\... 把整個 repo（程式碼 +
 # .git + 資料湖 bronze/silver/gold + catalog）robocopy 過來，然後重建 venv、

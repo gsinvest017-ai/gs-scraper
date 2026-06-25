@@ -1,4 +1,4 @@
-# QUANTDATA one-button launcher (Windows PowerShell 5.1+ / pwsh 7+).
+﻿# QUANTDATA one-button launcher (Windows PowerShell 5.1+ / pwsh 7+).
 # Linux / macOS / WSL2: use run.sh.
 #
 # Usage:
