@@ -6,8 +6,7 @@
 #   .\run.ps1 setup            # create .venv + install pyproject
 #   .\run.ps1 ui               # start Search UI on http://0.0.0.0:5050
 #   .\run.ps1 dashboard        # regen gap_dashboard.html
-#   .\run.ps1 ingest           # NOT SUPPORTED on Windows (Linux cron path);
-#                              # use WSL2 and ./run.sh ingest
+#   .\run.ps1 ingest           # run daily refresh (scripts\daily_refresh.ps1)
 #   .\run.ps1 test             # pytest -q
 #   .\run.ps1 -h | -help
 
@@ -66,7 +65,7 @@ function Ensure-Venv {
 function Cmd-Setup     { Ensure-Venv; Log "setup complete — venv at $Venv" }
 function Cmd-UI        { Ensure-Venv; & $VenvPy -m ui.search.app }
 function Cmd-Dashboard { Ensure-Venv; & $VenvPy scripts\gap_report.py --format all }
-function Cmd-Ingest    { Fail 'ingest is Linux-only (uses /tmp lock + bash); run in WSL2: ./run.sh ingest' }
+function Cmd-Ingest    { Ensure-Venv; & (Join-Path $Root 'scripts\daily_refresh.ps1') }
 function Cmd-Test      { Ensure-Venv; & $VenvPy -m pytest -q tests\ }
 
 function Show-Usage {
@@ -77,7 +76,7 @@ Subcommands:
   setup       create .venv + install pyproject
   ui          start Search UI on http://0.0.0.0:5050
   dashboard   regen docs\gap_dashboard.html
-  ingest      Linux-only — use WSL2 + ./run.sh ingest
+  ingest      run daily refresh (TEJ + macro + ingest + catalog rebuild)
   test        pytest -q
 
 Examples:
