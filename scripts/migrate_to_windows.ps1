@@ -12,6 +12,11 @@
 #   .\scripts\migrate_to_windows.ps1 -Apply          # 真的執行
 #   .\scripts\migrate_to_windows.ps1 -Apply -Distro Ubuntu -Target D:\QUANTDATA
 #   .\scripts\migrate_to_windows.ps1 -Apply -SkipVenv -SkipCatalog   # 只搬檔
+#   .\scripts\migrate_to_windows.ps1 -Install        # 裝 qd-migrate 捷徑(免 cd)
+#
+# 便利捷徑：跑一次 -Install 後，開新 PowerShell 視窗即可任何位置直接打：
+#   qd-migrate            # dry-run
+#   qd-migrate -Apply     # 真的遷移
 #
 # 安全網：預設 DRY-RUN；robocopy /MIR 會「精確鏡像」（刪除目標多出來的檔），
 # 所以 -Apply 前務必確認 -Target 是對的空目錄或既有 QUANTDATA。
@@ -25,13 +30,46 @@ param(
     [switch]$Apply,                                    # 不加 = dry-run
     [switch]$SkipVenv,                                 # 跳過 venv 重建
     [switch]$SkipCatalog,                              # 跳過 catalog 重生
-    [switch]$RunTests                                  # 收尾跑 pytest
+    [switch]$RunTests,                                 # 收尾跑 pytest
+    [switch]$Install                                   # 裝 qd-migrate 捷徑到 $PROFILE 後退出
 )
 
 $ErrorActionPreference = 'Stop'
 function Log  ([string]$m) { Write-Host "[migrate-win] $m" }
 function Warn ([string]$m) { Write-Host "[migrate-win] WARN: $m" -ForegroundColor Yellow }
 function Fail ([string]$m) { Write-Host "[migrate-win] ERROR: $m" -ForegroundColor Red; exit 1 }
+
+# ---- -Install：把 qd-migrate function 寫進 $PROFILE，之後任何位置可直接呼叫 ----
+if ($Install) {
+    $self = $PSCommandPath
+    if (-not $self) { Fail '無法取得腳本自身路徑（請用 -File 方式呼叫）' }
+    $begin = '# >>> qd-migrate <<<'
+    $end   = '# <<< qd-migrate >>>'
+    $block = @"
+$begin
+function qd-migrate {
+    Set-ExecutionPolicy -Scope Process Bypass -Force -ErrorAction SilentlyContinue
+    & '$self' @args
+}
+$end
+"@
+    if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }
+    # 移除舊 block（idempotent），再附上新的
+    $lines = Get-Content $PROFILE -ErrorAction SilentlyContinue
+    $kept = @(); $skip = $false
+    foreach ($ln in $lines) {
+        if ($ln -eq $begin) { $skip = $true; continue }
+        if ($ln -eq $end)   { $skip = $false; continue }
+        if (-not $skip) { $kept += $ln }
+    }
+    Set-Content -Path $PROFILE -Value ($kept + ($block -split "`r?`n")) -Encoding utf8
+    Log "已安裝 qd-migrate 到 $PROFILE"
+    Log "  指向: $self"
+    Log "開新的 PowerShell 視窗（或執行  . `$PROFILE  ）後即可任何位置使用:"
+    Log "    qd-migrate            # dry-run 預覽"
+    Log "    qd-migrate -Apply     # 真的遷移"
+    exit 0
+}
 
 # ---- 0. 解析來源（\\wsl$\<distro>\home\<user>\gs-scraper\QUANTDATA）--------
 if (-not $Source) {

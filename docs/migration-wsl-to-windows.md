@@ -13,6 +13,18 @@
 > 預設自動偵測 WSL distro,目標 `C:\QUANTDATA`(可用 `-Target` / `-Distro` 覆寫)。
 > 下面的逐步說明保留作為手動 / 排錯參考。
 
+> **最方便版(免 cd、免長路徑)**:跑一次 `-Install` 把 `qd-migrate` 捷徑寫進
+> `$PROFILE`,之後開新 PowerShell 視窗即可在任何位置直接呼叫:
+> ```powershell
+> # 一次安裝(在 Windows PowerShell 貼這行)
+> powershell -ExecutionPolicy Bypass -File "\\wsl$\Ubuntu-24.04\home\kevin\gs-scraper\QUANTDATA\scripts\migrate_to_windows.ps1" -Install
+> # 之後(開新視窗)任何位置:
+> qd-migrate            # dry-run
+> qd-migrate -Apply     # 真的遷移
+> ```
+> `-Install` 會自動設定 process-scope ExecutionPolicy Bypass,免去 UNC 網路路徑
+> 的執行限制;idempotent,重跑只更新 `# >>> qd-migrate <<<` 區塊,不動既有 profile。
+
 ---
 
 ## 0. 前置認知
