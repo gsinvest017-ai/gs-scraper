@@ -4,6 +4,15 @@
 > 每一段指令都標了「在哪邊跑」(WSL bash / Windows PowerShell)。實際執行前
 > 請逐段確認,尤其是 robocopy / venv 重建那兩步。
 
+> **一鍵版**:本檔第 3~7 步(robocopy → 重建 venv → 重生 catalog → 驗收)
+> 已包成 `scripts/migrate_to_windows.ps1`。在 **Windows PowerShell** 跑:
+> ```powershell
+> .\scripts\migrate_to_windows.ps1            # DRY-RUN 預覽(預設)
+> .\scripts\migrate_to_windows.ps1 -Apply     # 真的執行
+> ```
+> 預設自動偵測 WSL distro,目標 `C:\QUANTDATA`(可用 `-Target` / `-Distro` 覆寫)。
+> 下面的逐步說明保留作為手動 / 排錯參考。
+
 ---
 
 ## 0. 前置認知
