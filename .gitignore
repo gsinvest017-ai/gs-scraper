@@ -112,6 +112,9 @@ meta/audit/daily_refresh_cron.log
 *.duckdb.wal
 *.duckdb.tmp
 
+# === scratch / runtime temp (logs, throwaway catalog) ===
+tmp/
+
 # === /set-serve-eth backup metadata (per-machine, do not commit) ===
 .claude/local/
 
