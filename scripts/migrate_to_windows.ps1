@@ -53,19 +53,31 @@ function qd-migrate {
 }
 $end
 "@
-    if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }
-    # 移除舊 block（idempotent），再附上新的
-    $lines = Get-Content $PROFILE -ErrorAction SilentlyContinue
-    $kept = @(); $skip = $false
-    foreach ($ln in $lines) {
-        if ($ln -eq $begin) { $skip = $true; continue }
-        if ($ln -eq $end)   { $skip = $false; continue }
-        if (-not $skip) { $kept += $ln }
+    # 同時裝進 Windows PowerShell 5.1 與 PowerShell 7 的 profile，
+    # 兩者路徑只差 WindowsPowerShell <-> PowerShell 一段，由目前 $PROFILE 推出兄弟路徑。
+    $targets = @($PROFILE)
+    if ($PROFILE -match 'WindowsPowerShell') {
+        $targets += ($PROFILE -replace 'WindowsPowerShell','PowerShell')      # 5.1 跑時也補 7
+    } else {
+        $targets += ($PROFILE -replace '\\PowerShell\\','\WindowsPowerShell\') # 7 跑時也補 5.1
     }
-    Set-Content -Path $PROFILE -Value ($kept + ($block -split "`r?`n")) -Encoding utf8
-    Log "已安裝 qd-migrate 到 $PROFILE"
+    $targets = $targets | Select-Object -Unique
+    foreach ($prof in $targets) {
+        $dir = Split-Path -Parent $prof
+        if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+        # 移除舊 block（idempotent），再附上新的
+        $lines = if (Test-Path $prof) { Get-Content $prof } else { @() }
+        $kept = @(); $skip = $false
+        foreach ($ln in $lines) {
+            if ($ln -eq $begin) { $skip = $true; continue }
+            if ($ln -eq $end)   { $skip = $false; continue }
+            if (-not $skip) { $kept += $ln }
+        }
+        Set-Content -Path $prof -Value ($kept + ($block -split "`r?`n")) -Encoding utf8
+        Log "已安裝 qd-migrate 到 $prof"
+    }
     Log "  指向: $self"
-    Log "開新的 PowerShell 視窗（或執行  . `$PROFILE  ）後即可任何位置使用:"
+    Log "開新的 PowerShell 視窗（5.1 或 7 皆可；或執行  . `$PROFILE  ）後即可任何位置使用:"
     Log "    qd-migrate            # dry-run 預覽"
     Log "    qd-migrate -Apply     # 真的遷移"
     exit 0
