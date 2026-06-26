@@ -116,10 +116,16 @@ if (-not $Apply) { $rcArgs += '/L' }   # /L = list only（dry-run，不寫任何
 
 Log "robocopy $($rcArgs -join ' ')"
 & robocopy.exe @rcArgs | Out-Host
-# robocopy exit code 0-7 視為成功（8+ 才是錯誤）
+# robocopy exit code 是 bitmask：bit1=複製,bit2=多餘,bit4=不符,bit8=有檔失敗,bit16=嚴重錯誤
+# 0-7 = 成功；>=16 = 嚴重錯誤(無法複製)；bit8 = 部分檔失敗(通常是 WSL symlink 無法跨 \\wsl$)
 $rc = $LASTEXITCODE
-if ($rc -ge 8) { Fail "robocopy 失敗（exit=$rc，見上方輸出）" }
-Log "robocopy 完成（exit=$rc）"
+if ($rc -ge 16) { Fail "robocopy 嚴重錯誤（exit=$rc，見上方輸出）— 來源/目標不可達或權限問題" }
+elseif ($rc -band 8) {
+    Warn "robocopy 有檔案複製失敗（exit=$rc）。最常見原因:WSL symlink 無法透過 \\wsl`$ 複製"
+    Warn "  例如 .git\hooks\commit-msg(symlink)— 無害,下面會在 Windows 端重建。其餘檔已成功鏡像。"
+} else {
+    Log "robocopy 完成（exit=$rc）"
+}
 
 if (-not $Apply) {
     Log 'DRY-RUN 結束。確認上面的檔案清單無誤後，加 -Apply 真的執行。'
@@ -167,6 +173,13 @@ if (Test-Path (Join-Path $Target '.git')) {
         Log "  git HEAD: $(& git rev-parse --short HEAD 2>$null)"
         Warn 'robocopy 帶來的 .git 在 Windows 上可能因 EOL 顯示變更；可跑 git status / git checkout -- . 校正'
     } finally { Pop-Location }
+    # 重建 commit-msg hook（WSL 是 symlink，robocopy 無法跨 \\wsl$ 複製 → 改實體複製）
+    $hookSrc = Join-Path $Target 'scripts\git-hooks\commit-msg'
+    $hookDst = Join-Path $Target '.git\hooks\commit-msg'
+    if (Test-Path $hookSrc) {
+        Copy-Item -Force $hookSrc $hookDst
+        Log "  已重建 git hook: .git\hooks\commit-msg（複製自 scripts\git-hooks\commit-msg）"
+    }
 }
 if ($RunTests -and (Test-Path $VenvPy)) {
     Log '  pytest:'
