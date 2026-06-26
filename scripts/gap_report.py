@@ -865,6 +865,22 @@ HTML_TEMPLATE = """<!doctype html>
   .tier-P0 {{ font-weight: 700; }}
   .tier-P2 {{ opacity: 0.7; }}
   .legend {{ font-size: 12px; color: #7d8590; margin-top: 16px; }}
+  .manual {{ margin: 16px 0; border: 1px solid #21262d; border-radius: 8px;
+             background: #0f141a; font-size: 13px; color: #adbac7; }}
+  .manual > summary {{ cursor: pointer; padding: 12px 16px; font-weight: 700;
+                       font-size: 14px; color: #f5a524; list-style: none;
+                       user-select: none; outline: none; }}
+  .manual > summary::-webkit-details-marker {{ display: none; }}
+  .manual > summary::before {{ content: "\\25B8  "; color: #7d8590; }}
+  .manual[open] > summary::before {{ content: "\\25BE  "; }}
+  .manual[open] > summary {{ border-bottom: 1px solid #21262d; }}
+  .manual .manual-body {{ padding: 14px 18px 18px; line-height: 1.75; }}
+  .manual h3 {{ font-size: 13px; color: #d2a8ff; margin: 16px 0 6px; }}
+  .manual h3:first-child {{ margin-top: 0; }}
+  .manual ol, .manual ul {{ margin: 4px 0 6px 22px; padding: 0; }}
+  .manual li {{ margin: 4px 0; }}
+  .manual code {{ font-size: 12px; }}
+  .manual .tip {{ color: #7d8590; }}
 </style>
 </head>
 <body>
@@ -874,9 +890,47 @@ HTML_TEMPLATE = """<!doctype html>
   <a href="/downloads">Downloads</a>
   <span class="navsep">·</span>
   <span class="here">Gap dashboard</span>
+  <span class="navsep">·</span>
+  <a href="#manual">📖 Manual</a>
 </nav>
 <h1>📊 QUANTDATA Gap Dashboard</h1>
 <div class="subtitle">Generated {generated_at} · catalog: <code>catalog/quant.duckdb</code> · {total} datasets monitored</div>
+
+<details class="manual" id="manual">
+  <summary>📖 使用手冊（怎麼讀這張表、stale 了怎麼補資料）</summary>
+  <div class="manual-body">
+    <h3>① 這張表在看什麼</h3>
+    監控 catalog 裡每一張 view 的「新鮮度」：最新一筆資料離今天多遠、各層（Raw/Bronze/Silver/Gold）有沒有料、完整度夠不夠。一列 = 一個 dataset。
+
+    <h3>② 怎麼判讀一列</h3>
+    <ul>
+      <li><b>狀態燈</b>：🔴 STALE（太舊，要補）／⚠️ WARN（開始落後）／✅ OK（新鮮）／❓ EMPTY（完全沒料）／ℹ️ INFO（衍生表，跟著上游）。判定門檻依頻率不同（日／月／季），詳見底部圖例。</li>
+      <li><b>Tier</b>：P0 最重要（粗體置頂）、P2 次要（淡化）。</li>
+      <li><b>完整度／填滿條</b>：<code>clamp(1 − lag_days/90, 0, 1)</code>，條完全填滿 = 最新。</li>
+      <li><b>延遲</b>：日交易類已 trading-day-aware（週末／盤前不算）。</li>
+      <li><b>說明欄</b>：滑鼠停在標題可看「裡面放了什麼」的中文長描述；ⓘ 表示有額外註解。</li>
+      <li><b>Raw/Bronze/Silver/Gold 欄</b>：該層檔案大小／catalog 列數，空白 = 該層尚無資料。</li>
+    </ul>
+
+    <h3>③ 看到 STALE / WARN 怎麼補資料</h3>
+    <ol>
+      <li>看該列 <b>「建議操作」</b>欄——非 OK 的列會直接給出該跑的 <code>fetch_cmd</code> 指令，照著貼到終端機跑即可。</li>
+      <li>不確定該跑哪個增量爬蟲時，可直接叫我「跑增量爬蟲補 &lt;view 名&gt;」，會走 incremental-crawler 流程並自動重生本表。</li>
+      <li>原始檔放 <code>bronze/</code>（不可變）；重抓只能往 <code>silver/</code> 寫，dedup 用 <code>unique(subset=key, keep='last')</code>。</li>
+    </ol>
+
+    <h3>④ 怎麼加／改某張 view 的註解</h3>
+    點上方 <b>📝 編輯註解</b> 按鈕，在彈窗裡逐列填寫低完整度原因等備註，按「儲存全部」會存回 Flask <code>POST /api/gap_comments</code>（落地 <code>meta/gap_comments.json</code>）。<span class="tip">需 Search UI 後端在跑才能存。</span>
+
+    <h3>⑤ 怎麼重生這張 dashboard</h3>
+    補完資料後，在 repo 根目錄跑：
+    <ul>
+      <li><code>python scripts/gap_report.py --format html</code> — 重生本頁（同時寫 <code>docs/</code> 與 <code>docs-site/</code> mirror）。</li>
+      <li><code>python scripts/gap_report.py --format all</code> — 另含 text + json 輸出。</li>
+    </ul>
+    <span class="tip">⚠ DuckDB 鎖：若 <code>duckdb -ui</code> CLI 正開著會鎖住整個 catalog，重生前先確認沒人佔用。</span>
+  </div>
+</details>
 
 <div class="summary">
   <div class="pill STALE">🔴 STALE<br><b>{count_STALE}</b></div>
@@ -1017,6 +1071,19 @@ HTML_TEMPLATE = """<!doctype html>
   document.getElementById('notes-cancel').addEventListener('click', () => modal.classList.remove('show'));
   modal.addEventListener('click', (e) => {{ if (e.target === modal) modal.classList.remove('show'); }});
   saveBtn.addEventListener('click', saveAll);
+}})();
+
+// Auto-open the 使用手冊 panel when arrived via #manual deep-link (e.g. from Search UI nav).
+(function() {{
+  function openManual() {{
+    if (location.hash !== '#manual') return;
+    var d = document.getElementById('manual');
+    if (!d) return;
+    d.open = true;
+    d.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+  }}
+  window.addEventListener('hashchange', openManual);
+  openManual();
 }})();
 </script>
 </body>
@@ -1219,17 +1286,17 @@ def main() -> int:
 
     if args.format in ("json", "all"):
         Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out_json).write_text(json.dumps(payload, indent=2, default=str))
+        Path(args.out_json).write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         print(f"\n[json] wrote {args.out_json}", file=sys.stderr)
 
     if args.format in ("html", "all"):
         html_body = render_html(rows, today)
         Path(args.out_html).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out_html).write_text(html_body)
+        Path(args.out_html).write_text(html_body, encoding="utf-8")
         print(f"[html] wrote {args.out_html}", file=sys.stderr)
         if args.out_html_mirror:
             Path(args.out_html_mirror).parent.mkdir(parents=True, exist_ok=True)
-            Path(args.out_html_mirror).write_text(html_body)
+            Path(args.out_html_mirror).write_text(html_body, encoding="utf-8")
             print(f"[html] mirrored to {args.out_html_mirror}", file=sys.stderr)
 
     # Exit code reflects severity for use in cron / CI

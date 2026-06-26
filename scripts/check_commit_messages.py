@@ -29,6 +29,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows 預設 cp950 stdout 印 ✅/❌ 等 emoji 會炸 UnicodeEncodeError；強制 utf-8。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 # CJK Unified Ideographs (U+4E00..U+9FFF) + CJK Extension A (U+3400..U+4DBF)
 _CJK = re.compile(r"[㐀-䶿一-鿿]")
 
