@@ -48,8 +48,8 @@ ensure_venv() {
   if ! "$VENV/bin/python" -c "import qd_ingest" 2>/dev/null; then
     log "installing project (editable + ingest extras)"
     "$VENV/bin/pip" install --quiet --upgrade pip
-    "$VENV/bin/pip" install --quiet -e ".[ingest]" || \
-      fail "pip install failed — run '$VENV/bin/pip install -e .[ingest]' manually to see error"
+    "$VENV/bin/pip" install --quiet -e ".[ingest,ui]" || \
+      fail "pip install failed — run '$VENV/bin/pip install -e .[ingest,ui]' manually to see error"
   fi
 }
 

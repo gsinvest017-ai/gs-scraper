@@ -137,14 +137,14 @@ $VenvPy = Join-Path $Target '.venv\Scripts\python.exe'
 if ($SkipVenv) {
     Log 'SkipVenv：跳過 venv 重建'
 } else {
-    Log '重建 venv（py -3.12 -m venv .venv → pip install -e ".[ingest]")'
+    Log '重建 venv（py -3.12 -m venv .venv → pip install -e ".[ingest,ui]")'
     Push-Location $Target
     try {
         $py = if (Get-Command py -ErrorAction SilentlyContinue) { 'py -3.12' } else { 'python' }
         Invoke-Expression "$py -m venv .venv"
         & $VenvPy -m pip install --quiet --upgrade pip
-        & $VenvPy -m pip install --quiet -e ".[ingest]"
-        if ($LASTEXITCODE -ne 0) { Fail "pip install 失敗 — 手動跑 '$VenvPy -m pip install -e .[ingest]' 看錯誤" }
+        & $VenvPy -m pip install --quiet -e ".[ingest,ui]"
+        if ($LASTEXITCODE -ne 0) { Fail "pip install 失敗 — 手動跑 '$VenvPy -m pip install -e .[ingest,ui]' 看錯誤" }
         & $VenvPy -c 'import duckdb, pyarrow, pandas; print("deps OK")'
     } finally { Pop-Location }
 }

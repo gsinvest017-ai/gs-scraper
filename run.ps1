@@ -57,8 +57,8 @@ function Ensure-Venv {
   if ($rc -ne 0) {
     Log 'installing project (editable + ingest extras)'
     & $VenvPip install --quiet --upgrade pip
-    & $VenvPip install --quiet -e ".[ingest]"
-    if ($LASTEXITCODE -ne 0) { Fail "pip install failed — run '$VenvPip install -e .[ingest]' manually" }
+    & $VenvPip install --quiet -e ".[ingest,ui]"
+    if ($LASTEXITCODE -ne 0) { Fail "pip install failed — run '$VenvPip install -e .[ingest,ui]' manually" }
   }
 }
 
