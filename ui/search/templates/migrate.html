@@ -4,9 +4,17 @@
 <h1>🚚 Data Migration</h1>
 <p class="subtitle">
   把整個 repo（程式碼 + <code>.git</code> + 資料湖 bronze/silver/gold + DuckDB
-  catalog）以 rsync-over-SSH 鏡像到另一台主機。catalog 用相對路徑，目標端 repo
-  樹一致即可原樣開。
+  catalog）鏡像到另一台主機。catalog 用相對路徑，目標端 repo 樹一致即可原樣開。
+  依 <strong>OS type</strong> 選傳輸方式：<code>Linux/WSL</code> 走 rsync-over-SSH，
+  <code>Windows</code> 走 robocopy-over-SMB。
 </p>
+<div class="mig-warn">
+  ℹ️ <strong>Windows 目標</strong>：本頁需從<strong>來源 Windows 的 Git Bash</strong>
+  服務（<code>run.ps1 ui</code> 即可，robocopy/net 在 system32），密碼欄改作 SMB 認證；
+  目標路徑可填 <code>C:\QUANTDATA</code>（自動轉管理共享 <code>\\HOST\C$\…</code>）或
+  自填 <code>\\HOST\share\…</code> UNC。<strong>Linux 目標</strong>：本頁需從有
+  <code>rsync</code> 的環境服務（WSL）。
+</div>
 
 <div class="mig-warn">
   ⚠️ 安全提醒：此頁會在<strong>本機</strong>用你填的密碼透過 <code>sshpass</code>
@@ -19,9 +27,9 @@
   <div class="mig-grid">
     <label>OS type
       <select name="os_type" id="f-os">
-        <option value="linux">Linux</option>
-        <option value="wsl">WSL2 (Windows 上的 Linux)</option>
-        <option value="windows">Windows (需 WSL/rsync sshd)</option>
+        <option value="linux">Linux (rsync over SSH)</option>
+        <option value="wsl">WSL2 (Windows 上的 Linux；rsync over SSH)</option>
+        <option value="windows">Windows (robocopy over SMB)</option>
       </select>
     </label>
     <label>使用者帳號 <span class="req">*</span>

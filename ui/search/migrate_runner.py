@@ -23,6 +23,25 @@ OS_TYPES = {"linux", "wsl", "windows"}
 _USER_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")  # hostname label chars
 
+# windows 分支要用 Git Bash（有 cygpath + 原生 robocopy）；linux/wsl 要用會落到 WSL
+# 的 bash（有 rsync）。在 Windows 上 PATH 的 `bash` 常是 WSL bash（無 cygpath），故
+# windows 目標需明確指向 Git Bash，否則腳本第一步 cygpath 檢查就會失敗。
+_GIT_BASH_CANDIDATES = (
+    r"C:\Program Files\Git\bin\bash.exe",
+    r"C:\Program Files\Git\usr\bin\bash.exe",
+    r"C:\Program Files (x86)\Git\bin\bash.exe",
+)
+
+
+def _bash_for(os_type: str) -> str:
+    """依目標 OS 選 bash：windows→Git Bash，其餘→PATH 上的 bash（Windows 上即 WSL）。"""
+    if os_type == "windows":
+        for cand in _GIT_BASH_CANDIDATES:
+            if os.path.isfile(cand):
+                return cand
+    return "bash"
+
+
 # 同時只允許一個遷移在跑（避免兩個 rsync 互相打架）
 _run_lock = threading.Lock()
 
@@ -98,8 +117,12 @@ def validate(payload: dict) -> dict:
 
 
 def build_command(p: dict) -> list[str]:
-    """組 migrate_to_host.sh 的 arg list（不含 password）。"""
-    cmd = ["bash", str(SCRIPT), "--host", f"{p['user']}@{p['host']}", "--port", str(p["port"])]
+    """組 migrate_to_host.sh 的 arg list（不含 password）。
+
+    os_type 會原樣轉發給腳本：linux/wsl 走 rsync-over-SSH，windows 走 robocopy/SMB。
+    """
+    cmd = [_bash_for(p["os_type"]), str(SCRIPT), "--os-type", p["os_type"],
+           "--host", f"{p['user']}@{p['host']}", "--port", str(p["port"])]
     if p["target_path"]:
         cmd += ["--path", p["target_path"]]
     if p["apply"]:

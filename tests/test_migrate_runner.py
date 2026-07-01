@@ -9,6 +9,7 @@ import pytest
 
 from ui.search.migrate_runner import (
     ValidationError,
+    _bash_for,
     build_command,
     validate,
 )
@@ -104,6 +105,46 @@ def test_build_command_bwlimit_numeric_ok():
 def test_build_command_bwlimit_nonnumeric_rejected():
     with pytest.raises(ValidationError):
         build_command(validate({"user": "kevin", "ip": "1.2.3.4", "bwlimit": "fast"}))
+
+
+# ── os_type 轉發：linux→rsync / windows→robocopy ──────────────────────────
+
+def test_build_command_forwards_os_type_default_linux():
+    cmd = build_command(validate({"user": "kevin", "ip": "1.2.3.4"}))
+    i = cmd.index("--os-type")
+    assert cmd[i + 1] == "linux"
+
+
+def test_build_command_forwards_os_type_windows():
+    cmd = build_command(validate({
+        "user": "kevin", "ip": "1.2.3.4", "os_type": "windows",
+    }))
+    i = cmd.index("--os-type")
+    assert cmd[i + 1] == "windows"
+
+
+def test_bash_for_linux_uses_path_bash():
+    # linux/wsl 用 PATH 上的 bash（Windows 上落到 WSL，有 rsync）
+    assert _bash_for("linux") == "bash"
+    assert _bash_for("wsl") == "bash"
+
+
+def test_bash_for_windows_prefers_git_bash(monkeypatch):
+    # windows 找得到 Git Bash 時要用它（有 cygpath）；找不到才退回 "bash"
+    monkeypatch.setattr("ui.search.migrate_runner.os.path.isfile", lambda p: True)
+    assert _bash_for("windows").lower().endswith("bash.exe")
+    monkeypatch.setattr("ui.search.migrate_runner.os.path.isfile", lambda p: False)
+    assert _bash_for("windows") == "bash"
+
+
+def test_validate_windows_allows_drive_path():
+    # windows 目標可填 X:\ 或 \\UNC（非 / 開頭不應被擋）
+    p = validate({
+        "user": "kevin", "ip": "1.2.3.4", "os_type": "windows",
+        "target_path": r"C:\QUANTDATA",
+    })
+    assert p["os_type"] == "windows"
+    assert p["target_path"] == r"C:\QUANTDATA"
 
 
 # ── 安全：password 不進指令列 ─────────────────────────────────────────────

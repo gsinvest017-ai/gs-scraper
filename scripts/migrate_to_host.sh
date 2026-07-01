@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# QUANTDATA 一鍵跨主機 migrate — Approach A：單一 rsync-over-SSH 鏡像。
+# QUANTDATA 一鍵跨主機 migrate。
 #
 # 把整個 repo（程式碼 + .git + 18G 資料湖 bronze/silver/gold + DuckDB catalog）
-# idempotent 鏡像到一台 SSH 可達的目標主機。DuckDB catalog 的 view 全用相對路徑
+# idempotent 鏡像到目標主機。DuckDB catalog 的 view 全用相對路徑
 # (read_parquet('silver/...'))，所以目標端不需改任何 SQL，repo 樹一致即可開。
+#
+# 依目標 OS 走兩條傳輸路徑（--os-type 決定）：
+#   - linux / wsl ：Approach A — rsync-over-SSH 鏡像到 SSH 可達的 Linux 主機。
+#   - windows     ：robocopy over SMB 鏡像到內網 Windows 主機（無需 sshd/rsync）。
+#                   此分支需在「能呼叫 robocopy.exe 的環境」執行——在來源 Windows
+#                   用 Git Bash 服務 dashboard（run.ps1 ui）即滿足。
 #
 # Usage:
 #   scripts/migrate_to_host.sh [options]            # DRY-RUN 預覽（預設，不動目標）
-#   scripts/migrate_to_host.sh --apply              # 真的傳輸
+#   scripts/migrate_to_host.sh --apply              # 真的傳輸（Linux 目標）
 #   scripts/migrate_to_host.sh --apply --verify     # 傳輸後做來源 vs 目標驗證
 #   scripts/migrate_to_host.sh --verify-only        # 只比對，不傳輸
+#   scripts/migrate_to_host.sh --os-type windows --host user@HOST --apply   # Windows 目標(robocopy/SMB)
 #
 # 目標主機設定（優先序）：
 #   1. CLI flag：   --host user@host   --path /remote/path   --port 22
@@ -17,9 +24,10 @@
 #   3. 環境變數：   MIGRATE_HOST / MIGRATE_PATH / MIGRATE_SSH_PORT
 #
 # 選項：
-#   --host U@H        目標 ssh 目的地（user@host）
-#   --path P          目標端 repo 絕對路徑（預設沿用來源端絕對路徑）
-#   --port N          ssh port（預設 22）
+#   --os-type T       目標 OS：linux|wsl|windows（預設 linux）。windows=robocopy/SMB
+#   --host U@H        目標目的地（user@host）；windows 時 user 用於 SMB 認證
+#   --path P          目標端 repo 路徑（預設沿用來源端路徑；windows 接受 X:\ 或 \\UNC）
+#   --port N          ssh port（預設 22；windows 分支忽略）
 #   --apply           真的執行（不加則 dry-run）
 #   --no-delete       不做 --delete（保留目標端多出來的檔；預設是精確鏡像）
 #   --bwlimit N       rsync 頻寬上限（KB/s），跨 WAN 時用
@@ -51,6 +59,7 @@ DO_DELETE=1
 BWLIMIT=""
 DO_VERIFY=0
 VERIFY_ONLY=0
+OS_TYPE="linux"
 
 CATALOG="catalog/quant.duckdb"
 
@@ -73,6 +82,7 @@ BWLIMIT="${MIGRATE_BWLIMIT:-$BWLIMIT}"
 # ---- 解析 CLI（最高優先）------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --os-type)     OS_TYPE="$2"; shift 2 ;;
     --host)        HOST="$2"; shift 2 ;;
     --path)        TARGET_PATH="$2"; shift 2 ;;
     --port)        SSH_PORT="$2"; shift 2 ;;
@@ -86,8 +96,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# 目標端路徑預設沿用來源端絕對路徑（同 layout，relative-path view 直接可用）
-[[ -z "$TARGET_PATH" ]] && TARGET_PATH="$ROOT"
+case "$OS_TYPE" in
+  linux|wsl|windows) ;;
+  *) fail "未知 --os-type：$OS_TYPE（只接受 linux|wsl|windows）" ;;
+esac
+
+# 目標端路徑預設沿用來源端絕對路徑（同 layout，relative-path view 直接可用）。
+# windows 分支不在這裡套預設（空字串 → 由來源磁碟推管理共享），故僅非 windows 套用。
+[[ -z "$TARGET_PATH" && "$OS_TYPE" != "windows" ]] && TARGET_PATH="$ROOT"
 
 # ---- 共用：ssh / 目的地字串 ---------------------------------------------
 # 認證模式：
@@ -314,8 +330,184 @@ REMOTE
 }
 
 # ===========================================================================
+#  Windows 目標分支（robocopy over SMB）
+#  -------------------------------------------------------------------------
+#  目標是一台內網 Windows 主機（沒有 sshd / rsync），改用 Windows 原生 robocopy
+#  透過 SMB（具名共享或管理共享 C$）鏡像。需在能呼叫 robocopy.exe 的環境執行——
+#  在來源 Windows 用 Git Bash 服務 dashboard（run.ps1 ui）即滿足（PATH 含 system32）。
+#
+#  認證：
+#    - 未帶密碼 → 用「執行 dashboard 的 Windows 帳號」現有工作階段認證（同帳號/
+#      同網域即免密）。
+#    - 帶密碼（GUI 密碼欄 → SSHPASS env）→ 先 net use \\HOST\IPC$ 建立認證工作階段，
+#      收尾再 net use /delete。
+#  robocopy 不會重建 venv / catalog；搬完需在目標端 run.ps1 setup + build-catalog
+#  （收尾會印出指令）。
+# ===========================================================================
+WIN_NET_AUTHED=0
+WIN_IPC=""
+
+win_cleanup() {
+  if [[ "$WIN_NET_AUTHED" -eq 1 && -n "$WIN_IPC" ]]; then
+    net.exe use "$WIN_IPC" /delete >/dev/null 2>&1 || true
+    WIN_NET_AUTHED=0
+  fi
+}
+
+# 解析目標 UNC：
+#   空      → 由來源磁碟推管理共享 \\HOST\<drive>$\<rest>
+#   X:\path → \\HOST\X$\path（管理共享）
+#   \\...   → 原樣（使用者自填的 UNC / 具名共享）
+win_resolve_dest() {
+  local host="$1" src_win="$2" tp="$3" drive rest
+  if [[ -z "$tp" ]]; then
+    drive="${src_win:0:1}"; rest="${src_win:2}"
+    printf '\\\\%s\\%s$%s' "$host" "$drive" "$rest"
+  elif [[ "$tp" == '\\'* ]]; then
+    printf '%s' "$tp"
+  elif [[ "$tp" =~ ^[A-Za-z]:\\ ]]; then
+    drive="${tp:0:1}"; rest="${tp:2}"
+    printf '\\\\%s\\%s$%s' "$host" "$drive" "$rest"
+  else
+    printf '\\\\%s\\%s' "$host" "$tp"
+  fi
+}
+
+windows_verify() {
+  local dest_unc="$1" dest_bash
+  # UNC → Git Bash 走訪路徑：\\HOST\C$\path → //HOST/C$/path
+  dest_bash="$(printf '%s' "$dest_unc" | sed 's#^\\\\#//#; s#\\#/#g')"
+  log "=== 驗證（Windows）：來源 vs 目標 per-layer 檔數 / 位元組 ==="
+  printf "%-12s | %10s %14s | %10s %14s | %s\n" "layer" "src_files" "src_bytes" "dst_files" "dst_bytes" "match"
+  printf -- "-------------+-----------------------------+-----------------------------+------\n"
+  local ok=1 d sn sb dn db m
+  for d in "${LAYERS[@]}"; do
+    if [[ -d "$ROOT/$d" ]]; then
+      sn="$(find "$ROOT/$d" -type f 2>/dev/null | wc -l | tr -d ' ')"
+      sb="$(du -sb "$ROOT/$d" 2>/dev/null | cut -f1)"
+    else sn=0; sb=0; fi
+    if [[ -d "$dest_bash/$d" ]]; then
+      dn="$(find "$dest_bash/$d" -type f 2>/dev/null | wc -l | tr -d ' ')"
+      db="$(du -sb "$dest_bash/$d" 2>/dev/null | cut -f1)"
+    else dn=0; db=0; fi
+    m="OK"; [[ "$sn" != "$dn" || "$sb" != "$db" ]] && { m="DIFF"; ok=0; }
+    printf "%-12s | %10s %14s | %10s %14s | %s\n" "$d" "$sn" "$sb" "$dn" "$db" "$m"
+  done
+  local cm="OK"
+  [[ -f "$dest_bash/$CATALOG" ]] || { cm="缺 catalog 檔"; ok=0; }
+  printf "%-12s | %10s %14s | %10s %14s | %s\n" "catalog" "-" "-" "-" "-" "$cm"
+  if [[ "$ok" -eq 1 ]]; then
+    log "驗證 PASS：來源與目標 per-layer 檔數/位元組一致。"
+    return 0
+  fi
+  warn "驗證發現 DIFF；若剛跑完 apply 仍 DIFF，多半是傳輸中斷或有平行寫入，重跑一次即可收斂。"
+  return 1
+}
+
+windows_main() {
+  # Git Bash/MSYS 會把看起來像路徑的引數（如 robocopy 的 /MIR、net 的 /delete）
+  # 改寫成 'C:\Program Files\Git\MIR' 之類，導致原生 .exe 收到錯誤參數。對本分支內
+  # 所有原生程式（robocopy.exe / net.exe / duckdb）關閉這個自動轉換。
+  export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+
+  command -v robocopy.exe >/dev/null 2>&1 || fail "找不到 robocopy.exe（Windows 分支需在能呼叫 robocopy 的環境執行，例如來源 Windows 的 Git Bash）。"
+  command -v cygpath      >/dev/null 2>&1 || fail "找不到 cygpath（需在 Git Bash/MSYS 環境執行 Windows 分支）。"
+  command -v net.exe      >/dev/null 2>&1 || fail "找不到 net.exe。"
+  [[ -n "$HOST" ]] || fail "未指定目標主機。用 --host user@host（user 用於 SMB 認證）。"
+
+  local win_user win_host src_win dest_unc
+  win_user="${HOST%@*}"; win_host="${HOST##*@}"
+  [[ "$win_user" == "$win_host" ]] && win_user=""   # 沒有 @ → 用現有工作階段
+  src_win="$(cygpath -w "$ROOT")"
+  dest_unc="$(win_resolve_dest "$win_host" "$src_win" "$TARGET_PATH")"
+
+  log "OS 目標：Windows（robocopy/SMB）"
+  log "來源：$src_win"
+  log "目標：$dest_unc"
+  if [[ "$VERIFY_ONLY" -eq 1 ]]; then log "模式：VERIFY-ONLY（只比對）"
+  elif [[ "$APPLY" -eq 1 ]]; then log "模式：APPLY（真的搬）"
+  else log "模式：DRY-RUN（robocopy /L，僅列不寫）"; fi
+  [[ -n "$BWLIMIT" ]] && warn "robocopy 不支援 KB/s 限速，--bwlimit 在 Windows 分支忽略。"
+
+  # SMB 認證（IPC$）
+  WIN_IPC="$(printf '\\\\%s\\IPC$' "$win_host")"
+  trap win_cleanup EXIT
+  if [[ -n "${SSHPASS:-}" ]]; then
+    [[ -n "$win_user" ]] || fail "有帶密碼但沒給 SMB 帳號，請在 --host 用 user@host。"
+    log "SMB 認證：net use $WIN_IPC /user:$win_user（密碼經 env，不顯示）"
+    if ! net.exe use "$WIN_IPC" "$SSHPASS" /user:"$win_user" >/dev/null 2>&1; then
+      fail "SMB 認證失敗（net use $WIN_IPC）。確認帳號/密碼、目標開啟「檔案及印表機共享」、防火牆放行 445。"
+    fi
+    WIN_NET_AUTHED=1
+  else
+    log "SMB 認證：用目前 Windows 工作階段帳號（未帶密碼）。"
+  fi
+
+  if [[ "$VERIFY_ONLY" -eq 1 ]]; then
+    windows_verify "$dest_unc"; local vrc=$?
+    win_cleanup; trap - EXIT
+    return $vrc
+  fi
+
+  # DuckDB CHECKPOINT（best-effort；*.duckdb.wal 已排除不搬）
+  if [[ "$APPLY" -eq 1 ]]; then
+    if command -v duckdb >/dev/null 2>&1; then
+      log "CHECKPOINT $CATALOG（落盤 WAL）…"
+      timeout 60 duckdb "$CATALOG" "CHECKPOINT;" >/dev/null 2>&1 \
+        || warn "CHECKPOINT 失敗（catalog 可能被鎖）；確認沒有 run.ps1 ui / duckdb -ui 開著。"
+    else
+      warn "找不到 duckdb CLI，跳過 CHECKPOINT；請先關掉開著 catalog 的程式再搬。"
+    fi
+  fi
+
+  # robocopy 參數（對齊 rsync EXCLUDES）
+  local rc=( "$src_win" "$dest_unc" )
+  if [[ "$DO_DELETE" -eq 1 ]]; then rc+=(/MIR); else rc+=(/E); fi
+  rc+=( /XD .venv venv site __pycache__ .pytest_cache .mypy_cache .ruff_cache tmp _staging
+        "$src_win\\.claude\\local"
+        /XF "*.pyc" "*.duckdb.wal" "*.duckdb.tmp" "*.duckdb.bak*"
+        "$src_win\\catalog\\.ngrok.log" "$src_win\\catalog\\.duckdb_public_ui.log"
+        /R:2 /W:5 /MT:16 /NP /NDL )
+  [[ "$APPLY" -eq 0 ]] && rc+=(/L)
+
+  log "robocopy ${rc[*]}"
+  if [[ "$APPLY" -eq 0 ]]; then log "=== DRY-RUN（robocopy /L，不會改目標）==="
+  else log "=== APPLY：robocopy 鏡像到 $dest_unc ==="; fi
+
+  set +e
+  robocopy.exe "${rc[@]}"
+  local code=$?
+  set -e
+  # robocopy exit code 是 bitmask：0-7 成功；bit8(>=8) 有檔失敗；bit16(>=16) 嚴重錯誤
+  if   [[ "$code" -ge 16 ]]; then fail "robocopy 嚴重錯誤（exit=$code）— 目標不可達 / 權限 / 共享未開。"
+  elif [[ "$code" -ge 8  ]]; then fail "robocopy 有檔案複製失敗（exit=$code，見上方輸出）。"
+  else log "robocopy 完成（exit=$code；bit1=已複製 bit2=多餘已刪 bit4=不符）。"; fi
+
+  if [[ "$APPLY" -eq 0 ]]; then
+    log "DRY-RUN 結束。確認上面清單後，勾「確認執行」再跑。"
+    win_cleanup; trap - EXIT
+    return 0
+  fi
+
+  [[ "$DO_VERIFY" -eq 1 ]] && windows_verify "$dest_unc"
+
+  win_cleanup; trap - EXIT
+  log "搬檔完成 ✅。目標端收尾（在目標 Windows 上執行）："
+  log "    cd <目標 repo> ; .\\run.ps1 setup        # 重建 .venv + 安裝套件"
+  log "    .\\.venv\\Scripts\\python.exe -m qd_ingest.cli build-catalog   # 重生 catalog"
+  log "    Copy-Item -Force scripts\\git-hooks\\commit-msg .git\\hooks\\commit-msg"
+  log "    .\\run.ps1 ui   →  http://127.0.0.1:5050/"
+  log "驗收通過前，來源端資料先別刪。"
+}
+
+# ===========================================================================
 #  main
 # ===========================================================================
+if [[ "$OS_TYPE" == "windows" ]]; then
+  windows_main
+  exit $?
+fi
+
 preflight
 
 if [[ "$VERIFY_ONLY" -eq 1 ]]; then
