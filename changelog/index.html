@@ -1,0 +1,2089 @@
+
+<!doctype html>
+<html lang="zh-TW" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="QUANTDATA — 台股 / 期 / 選 量化資料 medallion lakehouse 架構與操作說明">
+      
+      
+      
+      
+        <link rel="prev" href="../ops/troubleshooting/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>變更紀錄 - QUANTDATA 文檔</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#_1" class="md-skip">
+          跳轉到
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="頁首">
+    <a href=".." title="QUANTDATA 文檔" class="md-header__button md-logo" aria-label="QUANTDATA 文檔" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QUANTDATA 文檔
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              變更紀錄
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切換到深色"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切換到深色" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切換到淺色"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切換到淺色" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜尋" placeholder="搜尋" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="搜尋">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清除" aria-label="清除" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜尋引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="導覽列" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="QUANTDATA 文檔" class="md-nav__button md-logo" aria-label="QUANTDATA 文檔" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QUANTDATA 文檔
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首頁
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    架構總覽
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    架構總覽
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    系統地圖
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/medallion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Medallion 三層
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/cleaning-criteria/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    資料清洗準則
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/dataflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    資料流
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DB / Catalog
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    DB / Catalog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../db/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    概覽
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../db/views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Catalog views
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../db/schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canonical schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../db/finmind/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FinMind 整合
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../db/rs-rating/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RS_Rating gold 規格
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    UI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    概覽
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/duckdb-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DuckDB Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/search/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Search Web UI（form-based）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/gap-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gap dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/funnel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tailscale Funnel 遠端存取
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gap_dashboard.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Live Dashboard ↗
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    操作手冊
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    操作手冊
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ops/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安裝與環境
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ops/daily-refresh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    日常維運（daily refresh）
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ops/manual-ingest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    手動 ingest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ops/cron/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cron 排程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ops/automation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    自動化 (Agents & /update-doc)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ops/goldify-routine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Goldify routine (silver→gold)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ops/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    常見問題
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    變更紀錄
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    變更紀錄
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目錄">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目錄
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-taifex-cron-full-view-bottleneck-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — TAIFEX 期貨三大法人 接 cron：從 full view 衍生（bottleneck #4）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-finmind-cronby-date-fetcherbottleneck-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — FinMind 接 cron：by-date 增量 fetcher（bottleneck #3）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-yfinance-macro-scraper-macro_daily-macro_factors-bottleneck-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — yfinance macro scraper：解開 macro_daily → macro_factors 鏈（bottleneck #2）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-cron-daily_refresh-derived-gold-rebuild-step-gold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — cron daily_refresh 加 derived gold rebuild step（關掉「衍生 gold 隔天落後」結構問題）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-afternoon-goldify-100-100-goldify-gold-goldify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 (afternoon) — /goldify-100 範圍修正：從「100% 完整度才 goldify」改成「所有非 gold 都 goldify」
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-early-afternoon-goldify-100-loop-slash-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 (early afternoon) — 新增 /goldify-100 一鍵 loop slash command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-morning-cleanup-97-views-dashboard-tolerance-stale-silver-rebuild" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 (morning) — Cleanup 97% views: dashboard tolerance 校準 + STALE silver rebuild
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-cron-daily_refresh-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 — Cron 自動 daily_refresh 證實生效（昨日首次完整 4 步綠燈）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-night-goldify-routine-agent-audit-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (night) — Goldify routine 自動化（agent + audit script）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-evening-goldify-100-view3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (evening) — Goldify 全部 100% 完整度 view（3 輪收尾）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-late-pm-goldify-100-silver-trading-day-aware-lag-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (late PM) — Goldify 100% silver + trading-day-aware lag v2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-pm-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (PM) — Dashboard 三大改進
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-am-stale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (AM) — 自動化 + 大量 STALE 補完
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-21-v01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-21 — 文檔站上線（v0.1）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-21-gap-dashboard-finmind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-21 — Gap dashboard 加 FinMind 系列
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-21-finmind-sqlite-snapshot-m4-m7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-21 — FinMind sqlite snapshot 整合（M4-M7）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-rs_rating-m1-m3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — RS_Rating 整合規格（M1-M3）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-daily-refresh-orchestrator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — Daily refresh orchestrator
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-duckdb-public-url" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — DuckDB public URL 嘗試
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-tej-p0p1p2-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — TEJ P0+P1+P2 dataset 全部接通
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-13-medallion-lakehouse-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-13 — Medallion lakehouse 初始 schema 鎖定
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目錄">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目錄
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-taifex-cron-full-view-bottleneck-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — TAIFEX 期貨三大法人 接 cron：從 full view 衍生（bottleneck #4）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-finmind-cronby-date-fetcherbottleneck-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — FinMind 接 cron：by-date 增量 fetcher（bottleneck #3）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-yfinance-macro-scraper-macro_daily-macro_factors-bottleneck-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — yfinance macro scraper：解開 macro_daily → macro_factors 鏈（bottleneck #2）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-27-cron-daily_refresh-derived-gold-rebuild-step-gold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-27 — cron daily_refresh 加 derived gold rebuild step（關掉「衍生 gold 隔天落後」結構問題）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-afternoon-goldify-100-100-goldify-gold-goldify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 (afternoon) — /goldify-100 範圍修正：從「100% 完整度才 goldify」改成「所有非 gold 都 goldify」
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-early-afternoon-goldify-100-loop-slash-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 (early afternoon) — 新增 /goldify-100 一鍵 loop slash command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-morning-cleanup-97-views-dashboard-tolerance-stale-silver-rebuild" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 (morning) — Cleanup 97% views: dashboard tolerance 校準 + STALE silver rebuild
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-26-cron-daily_refresh-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-26 — Cron 自動 daily_refresh 證實生效（昨日首次完整 4 步綠燈）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-night-goldify-routine-agent-audit-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (night) — Goldify routine 自動化（agent + audit script）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-evening-goldify-100-view3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (evening) — Goldify 全部 100% 完整度 view（3 輪收尾）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-late-pm-goldify-100-silver-trading-day-aware-lag-v2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (late PM) — Goldify 100% silver + trading-day-aware lag v2
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-pm-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (PM) — Dashboard 三大改進
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-25-am-stale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-25 (AM) — 自動化 + 大量 STALE 補完
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-21-v01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-21 — 文檔站上線（v0.1）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-21-gap-dashboard-finmind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-21 — Gap dashboard 加 FinMind 系列
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-21-finmind-sqlite-snapshot-m4-m7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-21 — FinMind sqlite snapshot 整合（M4-M7）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-rs_rating-m1-m3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — RS_Rating 整合規格（M1-M3）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-daily-refresh-orchestrator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — Daily refresh orchestrator
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-duckdb-public-url" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — DuckDB public URL 嘗試
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-18-tej-p0p1p2-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-18 — TEJ P0+P1+P2 dataset 全部接通
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-05-13-medallion-lakehouse-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2026-05-13 — Medallion lakehouse 初始 schema 鎖定
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="_1">變更紀錄<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h1>
+<p>本頁只記錄<strong>面向使用者 / 文件 / 介面契約</strong>的變動。內部 refactor / 重命名變數請看 <code>git log</code>。</p>
+<hr />
+<h2 id="2026-05-27-taifex-cron-full-view-bottleneck-4">2026-05-27 — TAIFEX 期貨三大法人 接 cron：從 full view 衍生（bottleneck #4）<a class="headerlink" href="#2026-05-27-taifex-cron-full-view-bottleneck-4" title="Permanent link">&para;</a></h2>
+<p>2 個 P0 view（<code>tw_inst_futures_daily</code> + <code>tw_inst_futures_daily_snapshot</code>）卡在 2026-05-08（18d STALE），舊路徑靠手動 dump <code>SUPPLEMENT/TAIFEX/foreign_oi_daily.parquet</code>。</p>
+<p><strong>沒有寫新的 TAIFEX 官網爬蟲</strong> —— 勘查發現 <code>tw_inst_futures_full_daily</code>（TEJ <code>TWN/AFINST</code>）<strong>已經每天自動刷新</strong>（fresh 到 2026-05-26），而且是 stale view 的<strong>超集</strong>（162 個 identity_code × 商品）。所以直接從它衍生：</p>
+<ul>
+<li><strong><code>src/qd_ingest/sources/taifex.py::derive_inst_futures_daily()</code></strong>：讀 full view silver（polars），filter 9 個 code → 3 商品 × 3 法人，dedup（keep last by ingestion_ts，full view 每筆有 6 個重複 ingest），rename 欄位，重算 60d net-OI z-score，寫 <code>silver/flows/tw_inst_futures_daily</code>（year partition，delete_matching）。</li>
+<li><strong>對應</strong>（逐筆驗證相同）：TXF←<code>{11,12,13}TX</code>、MXF←<code>{11,12,13}MTX</code>、TXO←<code>{21,22,23}TXO</code>（期權前綴 2x）；<code>11/21</code>=自營、<code>12/22</code>=投信、<code>13/23</code>=外資。</li>
+<li><strong>涵蓋更廣</strong>：full view 9-code 從 <strong>2008</strong> 起，比舊 view（2023 起）多 15 年歷史；衍生時全史覆寫，provenance 統一 <code>tej_afinst_derived</code>。</li>
+<li><strong><code>scripts/daily_refresh.sh</code></strong>：加 <strong>step 2.6</strong>（TEJ ingest 後、derived gold rebuild 3.7 前），non-fatal。</li>
+<li>效果：silver 從 2026-05-08 → <strong>2026-05-26</strong>（40,644 rows）；2 個 P0 view STALE→OK。</li>
+</ul>
+<blockquote>
+<p><strong>為何不寫官網爬蟲</strong>：full view 已經是 fresh 的權威來源，衍生零新增外部依賴、零新 failure mode，且值已驗證逐筆相同。獨立 TAIFEX 爬蟲留作未來「TEJ 斷線時的備援」backlog。</p>
+</blockquote>
+<p>commit <code>aa415bc..</code>（M1-M4 鏈）。進度檔：<code>docs/progress-taifex-inst-futures.md</code>。</p>
+<h2 id="2026-05-27-finmind-cronby-date-fetcherbottleneck-3">2026-05-27 — FinMind 接 cron：by-date 增量 fetcher（bottleneck #3）<a class="headerlink" href="#2026-05-27-finmind-cronby-date-fetcherbottleneck-3" title="Permanent link">&para;</a></h2>
+<p>5 個 FinMind-derived view（<code>finmind_stock_price_norm</code> / <code>finmind_price_canonical</code> / <code>finmind_stock_price_adj_norm</code> / <code>qc_stock_price_diff</code> / <code>qc_stock_price_diff_snapshot</code>）長期停在舊日期（INFO），因為 <code>bronze/finmind/finmind_*.sqlite</code> snapshot 沒排程刷新——只有「restore view」(step 3.5) 和「materialize gold」(step 3.7) 接了 cron，<strong>fetch 是手動</strong>。</p>
+<ul>
+<li><strong><code>scripts/fetch_finmind.py</code></strong>：用 FinMind <strong>by-date bulk</strong> 端點（不帶 <code>data_id</code> → 單呼叫回整個市場單日資料）逐日補 <code>[max_date..today]</code> 的缺口，而非 catalog 的 <code>per_stock</code> 模式（~3,088 檔 × 2 ≈ 4h）。增量只需數秒。重用 FinMind repo 的 <code>client</code> + <code>Storage</code>（retry / rate-limit / <code>INSERT OR REPLACE</code> 去重），rows 過濾到 twse/tpex/emerging universe（避免 by-date bulk 夾帶數萬筆權證污染既有表）。寫完 <code>PRAGMA wal_checkpoint</code> 後 <code>cp</code> live sqlite → <code>bronze/finmind/finmind_&lt;DATE&gt;.sqlite</code> + sha256，GC 只留最新 5 份。<code>--dry-run</code> / <code>--only</code> / <code>--full</code> / <code>--keep</code>。</li>
+<li><strong><code>scripts/daily_refresh.sh</code></strong>：加 <strong>step 1.7</strong>（在 macro fetch 1.5 之後、dry-run 早退之前），用 <strong>FinMind venv</strong> 跑 fetcher，non-fatal；找不到 venv 則 skip 並 log WARN。產出的 snapshot 被既有 step 3.5 <code>restore_finmind_views</code> glob 為最新，3.7 materialize gold 自動跟上。</li>
+<li>效果：首跑把 snapshot 從 2026-05-22 推到 <strong>2026-05-26</strong>（補 05-22/05-25/05-26 三個交易日；05-27 當日資料尚未發布，自動 skip）。</li>
+</ul>
+<blockquote>
+<p><strong>為何不改 crawler 的 <code>per_stock</code> → <code>global_date</code></strong>：full backfill 用 per_stock 較省呼叫；增量用 by-date 較省。維持分工，且不動 sibling repo。</p>
+</blockquote>
+<p>commit <code>e4f3bd4..</code>（M1-M4 鏈）。進度檔：<code>docs/progress-finmind-cron.md</code>。</p>
+<h2 id="2026-05-27-yfinance-macro-scraper-macro_daily-macro_factors-bottleneck-2">2026-05-27 — yfinance macro scraper：解開 macro_daily → macro_factors 鏈（bottleneck #2）<a class="headerlink" href="#2026-05-27-yfinance-macro-scraper-macro_daily-macro_factors-bottleneck-2" title="Permanent link">&para;</a></h2>
+<p><code>macro_daily</code>（silver）原本停在上次手動 dump 的日期（19d STALE），因為沒有任何排程刷 <code>RAW_SOURCES/SUPPLEMENT/&lt;cat&gt;/*_daily.parquet</code>。新增一支 yfinance scraper 把 45 個 macro symbol（VIX / USDTWD / WTI / 美 10Y / SPX / SOX / 各國指數 / 商品 / 信用 ETF）刷到當日。</p>
+<ul>
+<li><strong><code>scripts/fetch_macro.py</code></strong>：顯式 <code>(category, stem) → yfinance ticker</code> map（45 個），append-since-last（讀現有 parquet 找 max date，只抓增量），寫前 <code>.bak</code> 備份。<code>--only</code> / <code>--full</code> / <code>--dry-run</code>。USDTWD 特例 schema（<code>usdtwd_*</code> 前綴）統一還原成標準 OHLCV。</li>
+<li><strong><code>src/qd_ingest/sources/macro.py</code></strong>：加 <code>__main__</code>，可 <code>python -m qd_ingest.sources.macro [--dry-run]</code> 把 SUPPLEMENT parquets aggregate 進 silver。</li>
+<li><strong><code>scripts/daily_refresh.sh</code></strong>：加 step 1.5（fetch_macro，non-fatal）+ step 2.5（macro→silver ingest），接在既有 step 3.7 derived rebuild 之前，讓 <code>macro_factors</code> gold 每天自動跟上。</li>
+<li>效果：首跑刷進 854 新 row，<code>macro_daily</code> / <code>macro_factors</code> 從 STALE → <strong>OK（2026-05-27, 0d lag）</strong>；dashboard OK 30 → 32。</li>
+<li><code>cross_market_features</code> 仍 EMPTY（來自手動 <code>SUPPLEMENT/DERIVED/</code> dump，非直接由 macro_daily 衍生）— 留 backlog，需另寫 cross-market builder。</li>
+</ul>
+<p>commit <code>19b29a4</code>（+ M1-M4 鏈）。進度檔：<code>docs/progress-macro-scraper.md</code>。</p>
+<h2 id="2026-05-27-cron-daily_refresh-derived-gold-rebuild-step-gold">2026-05-27 — cron daily_refresh 加 derived gold rebuild step（關掉「衍生 gold 隔天落後」結構問題）<a class="headerlink" href="#2026-05-27-cron-daily_refresh-derived-gold-rebuild-step-gold" title="Permanent link">&para;</a></h2>
+<p>bottleneck recap 發現最高槓桿的修補：<code>scripts/daily_refresh.sh</code> 原本只跑 fetch → ingest → build-catalog → restore_finmind → gap_report，<strong>漏掉重生衍生 gold</strong>。每天 TEJ silver 更新後，17 支 derived gold parquet 仍停在上次手動 <code>build_all()</code> 的日期 → 隔天 dashboard 上 <code>stock_factor_daily</code> / <code>inst_flow_factors</code> / <code>margin_factors</code> / <code>futures_*</code> / <code>market_inst_aggregated</code> 等全變 INFO（lag）。</p>
+<ul>
+<li>加 <strong>step 3.7</strong>：<code>python -m qd_ingest.sources.derived</code>（= <code>build_all()</code>，~40s），插在 restore_finmind（3.5）之後、gap_report（4）之前</li>
+<li><strong>non-fatal</strong>：silver-based polars builders 不受 catalog 鎖影響；catalog-reading <code>materialize_*</code> 若遇 DuckDB UI 鎖失敗也只 log WARN，不中止 refresh</li>
+<li>效果：往後每個工作日 17:30 cron 跑完，gold 自動跟上當日 silver，不再需要人工 <code>/goldify-100</code> 補 rebuild</li>
+</ul>
+<p>commit <code>2e0ef53..ebe7634</code>。進度檔：<code>docs/progress-cron-derived-rebuild.md</code>。</p>
+<h2 id="2026-05-26-afternoon-goldify-100-100-goldify-gold-goldify">2026-05-26 (afternoon) — <code>/goldify-100</code> 範圍修正：從「100% 完整度才 goldify」改成「所有非 gold 都 goldify」<a class="headerlink" href="#2026-05-26-afternoon-goldify-100-100-goldify-gold-goldify" title="Permanent link">&para;</a></h2>
+<p>User feedback：原 <code>/goldify-100</code> 描述「process 100%-complete views」與真實目標「<strong>所有 raw/bronze/silver 都應該有對應 gold</strong>」不符。STALE 但有 silver 的 view 也是 goldification 對象。</p>
+<p>修正範圍（commits <code>fcfb145..8fc4d66</code>，5 commits）：</p>
+<ul>
+<li><strong><code>scripts/goldify_audit.py</code></strong> 預設過濾條件改成 <code>row_count &gt; 0 AND empty gold_paths</code>，不再用完整度卡。加 <code>--complete-only</code> flag 保留舊行為（向後相容）。報告多顯示 <code>severity</code> + 完整度 %，分「100% fresh」與「partial」兩群。</li>
+<li><strong><code>.claude/commands/goldify-100.md</code></strong> description rewrite：「Goldify EVERY catalog view that has non-gold data (silver/bronze/raw) and no gold_paths — regardless of completeness.」"100" reinterpreted as 100% catalog coverage of gold（不是 100% per-view completeness）。</li>
+<li><strong>5 新 gold builders</strong> for STALE silvers：</li>
+<li><code>tw_inst_futures_daily_snapshot</code> (6,561 rows, DuckDB COPY)</li>
+<li><code>txo_daily_features_snapshot</code> (1,481 rows, DuckDB COPY)</li>
+<li><code>tw_inst_market_daily_snapshot</code> (15 rows, DuckDB COPY)</li>
+<li><code>bars_1m_daily_summary</code> (15.6M → <strong>14,859 daily aggregates</strong>, DuckDB GROUP BY)</li>
+<li><code>macro_factors</code> (91,048 rows × 45 symbols, polars: ret/vol/atr factors for VIX/USDTWD/...)</li>
+<li><strong>Re-audit 結果</strong>：0 candidates → catalog <strong>100% gold coverage 達成</strong></li>
+<li><strong><code>docs-site/ops/goldify-routine.md</code></strong> "ripe candidate" 定義從 3 條件（severity OK / no gold_paths / DESCRIBE-able）改成 (row_count&gt;0 / no gold_paths / DESCRIBE-able)，完整度不再卡。</li>
+</ul>
+<p>Dashboard 變化：OK 25 → 28 / WARN 0 → 0 / STALE 6 → 11（新增 5 個 gold snapshot 條目繼承 silver 的 max_date，因此被 dashboard 標 STALE — 設計如此：gold 是「截至 silver max_date」的快照）/ 總 datasets 40 → 45 / catalog views 51 → 56。</p>
+<p>進度檔：<code>docs/progress-goldify-100-scope-fix.md</code>、<code>docs/progress-cleanup-97pct.md</code>、<code>docs/progress-goldify-100-2026-05-26-iter1.md</code>。</p>
+<h2 id="2026-05-26-early-afternoon-goldify-100-loop-slash-command">2026-05-26 (early afternoon) — 新增 <code>/goldify-100</code> 一鍵 loop slash command<a class="headerlink" href="#2026-05-26-early-afternoon-goldify-100-loop-slash-command" title="Permanent link">&para;</a></h2>
+<p>Repo-scoped slash command <code>/goldify-100</code>（commits <code>9d73562..9f937f8</code>，3 commits）：</p>
+<ul>
+<li><strong><code>.claude/commands/goldify-100.md</code></strong> — <code>/goldify-100</code> 觸發即跑 audit → goldify → re-audit 直到 0 candidates 或 5 輪 cap / stuck</li>
+<li>與 <code>.claude/agents/goldify-100pct.md</code> 的分工：agent 是自然語言路由的「單輪 worker」；command 是「多輪 loop controller」。</li>
+<li><code>docs-site/ops/automation.md</code> 從 3-agent → 4-asset table</li>
+</ul>
+<p>亦於同日跑了該 command 的 iter1（commits <code>2c60fd8..c19b10c</code>）新增 3 個 gold：<code>chip_dist_factors</code>、<code>revenue_factors</code>、<code>accounting_raw_snapshot</code> (+ <code>_yearly</code>)。</p>
+<h2 id="2026-05-26-morning-cleanup-97-views-dashboard-tolerance-stale-silver-rebuild">2026-05-26 (morning) — Cleanup 97% views: dashboard tolerance 校準 + STALE silver rebuild<a class="headerlink" href="#2026-05-26-morning-cleanup-97-views-dashboard-tolerance-stale-silver-rebuild" title="Permanent link">&para;</a></h2>
+<p>針對 dashboard 上一票卡在 97%（3d lag）的 view 做分類處理（commits <code>a4f3308..d759848</code>，4 commits）：</p>
+<ul>
+<li>9 個 derived gold 從 silver 5/22 rebuild 到 5/25：<code>stock_factor_daily</code> (+2.7K)、<code>inst_flow_factors</code>、<code>margin_factors</code>、<code>futures_large_trader_factors</code> (+35K！)、<code>futures_inst_factors</code>、<code>futures_bar_factors</code> 等</li>
+<li><code>extend_continuous.py</code> 從 bars_1d 衍生 TX/MTX continuous 5/22 → 5/25</li>
+<li><strong>Dashboard category tolerance 校準</strong>：</li>
+<li>新增 <code>weekly</code> category (7d OK / 14d WARN)：<code>tw_chip_dist_daily</code> 從 daily-trading → weekly（TEJ APISHRACTW 是週公告）</li>
+<li>monthly OK threshold 15d → 60d（fiscal_month date_col 結構性 lag ~30d）</li>
+<li>quarterly OK 60d → 100d（Q1 publish 後 lag ~45d 才算 fresh）</li>
+<li><code>fundamentals_pit</code> category derived → quarterly（pub cadence 跟上游 fundamentals_q）</li>
+<li><code>fetch_tej.py --table chip_dist --append-since-silver</code> refresh：+46K 列到 silver（但 TEJ 來源本身只到 5/22）</li>
+<li>Dashboard summary <code>OK 13 → 25 / WARN 4 → 0</code> 起跳</li>
+</ul>
+<p>進度檔：<code>docs/progress-cleanup-97pct.md</code>。</p>
+<h2 id="2026-05-26-cron-daily_refresh-4">2026-05-26 — Cron 自動 daily_refresh 證實生效（昨日首次完整 4 步綠燈）<a class="headerlink" href="#2026-05-26-cron-daily_refresh-4" title="Permanent link">&para;</a></h2>
+<p>不是新功能、而是「自動化證實生效」的里程碑：</p>
+<ul>
+<li><strong>昨日 2026-05-25 17:30 CST cron 第一次跑完整 4 階段</strong>（含 step 3.5 <code>restore_finmind_views</code>，這是 5/25 上午才加的步驟）並結尾 <code>daily_refresh OK</code></li>
+<li>TEJ 4 個主表 max_date 從 2026-05-22 → <strong>2026-05-25</strong>：<code>tw_stock_bars</code> / <code>tw_inst_stock_daily</code> / <code>tw_margin_daily</code> / <code>tw_stock_trading_attrs_daily</code> / <code>bars_1d</code></li>
+<li>仍有 STALE（<code>macro_daily</code> / <code>tw_inst_futures_daily</code> / <code>bars_1m</code> / <code>txo_daily_features</code> / <code>tw_inst_market_daily</code> 等），這些 dataset 不在 cron <code>fetch_tej.py --table all</code> 範圍，要手動或加 scraper</li>
+<li><strong>已知 gap</strong>：cron step 沒包 <code>python -m qd_ingest.sources.derived</code>，所以新 silver 不會自動 propagate 到 gold parquet。Dashboard 在 cron 跑完後 derived gold 全變 INFO（lag 3d）；下次跑 goldify routine 或在 cron 加 step 5 可關掉這個 gap</li>
+</ul>
+<p>日誌：<code>meta/audit/daily_refresh_2026-05-25.log</code>，cron wrapper <code>meta/audit/daily_refresh_cron.log</code>。</p>
+<h2 id="2026-05-25-night-goldify-routine-agent-audit-script">2026-05-25 (night) — Goldify routine 自動化（agent + audit script）<a class="headerlink" href="#2026-05-25-night-goldify-routine-agent-audit-script" title="Permanent link">&para;</a></h2>
+<p>把過去 3 輪手動執行的 silver→gold 流程包成可重複呼叫的工具，未來新 silver view 滿格時不再依賴人類掃 dashboard：</p>
+<ul>
+<li><strong><code>scripts/goldify_audit.py</code></strong> — 偵測 100% 完整度但 <code>gold_paths</code> 為空的 view，輸出 stdout / <code>--json</code> / <code>--markdown</code> 三種格式；用 9 個 factor template（time_series_bar / flow_rolling / balance_zscore / per_entity_oi / event_panel / boolean_panel / pit_fundamentals / view_materialize / left_join_merge）heuristically 對應 silver schema → 建議仿哪支既有 builder。當前 catalog 跑出 0 candidates（已 fully goldified）。</li>
+<li><strong><code>.claude/agents/goldify-100pct.md</code></strong> — repo-scoped agent，使用者說「跑 goldify routine / 處理剩下的 silver→gold」就觸發；強制 4-milestone 流程（plan / builder / registry+catalog / rebuild+dashboard+push），silver multi-ingest dedup 為 builder 責任、progress doc 不可省。</li>
+<li><strong><code>docs-site/ops/goldify-routine.md</code></strong> — 使用者文檔，含 ripe candidate 定義、9 個 template 對應表、與 incremental-crawler / <code>/update-doc</code> 的分工。</li>
+<li><code>docs-site/ops/automation.md</code> 從 2 agent → 3 agent 表格。</li>
+</ul>
+<p>commits <code>b12d924..b9df543</code>。進度檔：<code>docs/progress-goldify-agent.md</code>。</p>
+<h2 id="2026-05-25-evening-goldify-100-view3">2026-05-25 (evening) — Goldify 全部 100% 完整度 view（3 輪收尾）<a class="headerlink" href="#2026-05-25-evening-goldify-100-view3" title="Permanent link">&para;</a></h2>
+<p>把 dashboard 上 <strong>所有 100% 完整度但沒有 gold artifact 的 view</strong> 全部 goldify，分 3 輪推進；最終 dashboard <code>OK=17 → 24</code>、總 datasets <code>30 → 37</code>、Gold 總量 <code>~140 MB → ~830 MB</code>、catalog <code>36 views → 49 views</code>。</p>
+<p><strong>Round 1</strong>（commits <code>a8b6c55..6b71e93</code>）— 第一批 100% silver：補 5 個 silver→gold backlink + 1 個新 gold</p>
+<p><strong>Round 2</strong>（commits <code>1bcfce6..0c27ffa</code>）— 剩下 4 個 silver-only 加 gold builder：</p>
+<table>
+<thead>
+<tr>
+<th>新 gold view</th>
+<th>來源 silver</th>
+<th style="text-align: right;">rows</th>
+<th>主要因子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>margin_factors</code></td>
+<td><code>tw_margin_daily</code></td>
+<td style="text-align: right;">3.7M</td>
+<td>6 個融資融券時序因子</td>
+</tr>
+<tr>
+<td><code>fundamentals_pit</code></td>
+<td><code>fundamentals_q</code> (Q+consolidated)</td>
+<td style="text-align: right;">93K</td>
+<td>PIT panel + TTM/YoY</td>
+</tr>
+<tr>
+<td><code>futures_large_trader_factors</code></td>
+<td><code>tw_futures_large_trader_daily</code></td>
+<td style="text-align: right;">99K</td>
+<td>top10 net, OI Δ</td>
+</tr>
+<tr>
+<td><code>futures_inst_factors</code></td>
+<td><code>tw_inst_futures_full_daily</code></td>
+<td style="text-align: right;">466K</td>
+<td>per-identity net_oi, L/S ratio</td>
+</tr>
+<tr>
+<td><code>stock_attrs_status</code></td>
+<td><code>tw_stock_trading_attrs_daily</code></td>
+<td style="text-align: right;">3.16M</td>
+<td>11 個 bool flag + 30d 計數</td>
+</tr>
+<tr>
+<td><code>dividend_calendar</code></td>
+<td><code>cash_dividend_events</code></td>
+<td style="text-align: right;">10.5K</td>
+<td>per-share + yield + TTM + YoY</td>
+</tr>
+<tr>
+<td><code>stock_futures_adjustments</code></td>
+<td><code>tw_stock_futures_corp_actions</code></td>
+<td style="text-align: right;">56K</td>
+<td>cum cash/stock div + seq</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Round 3</strong>（commits <code>e936402..80e2f7e</code>）— view 層級剩下 4 個 100% 但無 gold 的 view：</p>
+<table>
+<thead>
+<tr>
+<th>新 gold view</th>
+<th>來源</th>
+<th style="text-align: right;">rows</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>futures_bar_factors</code></td>
+<td><code>bars_1d</code> (tw_futures+tw_stock_futures)</td>
+<td style="text-align: right;">1.74M</td>
+<td>期貨/個股期日 K 衍生（mom/vol/ATR/OI Δ），補齊 stock_factor_daily 期貨對應</td>
+</tr>
+<tr>
+<td><code>qc_stock_price_diff_snapshot</code></td>
+<td><code>qc_stock_price_diff</code> view</td>
+<td style="text-align: right;">6.4M</td>
+<td>TEJ vs FinMind 對帳結果 parquet 持久化</td>
+</tr>
+<tr>
+<td><code>qc_stock_price_diff_yearly</code></td>
+<td>同上</td>
+<td style="text-align: right;">17</td>
+<td>逐年 mean/max abs diff（2011+ 完全 zero diff，確認對帳一致）</td>
+</tr>
+<tr>
+<td><code>finmind_price_canonical</code></td>
+<td><code>finmind_stock_price_norm</code> + <code>*_adj_norm</code></td>
+<td style="text-align: right;">10.6M</td>
+<td>raw OHLCV + adj OHLC merged，下游不需 sqlite</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Backlink 大整理</strong>：所有有 derived 對應的 silver/view 都新增 <code>gold_paths</code> 條目，<code>bars_1d</code> 一次掛 5 個 backlink（stock_factor + futures_bar + tx/mtx/sf continuous）。</p>
+<p><strong>Silver dedup 副產品</strong>：本輪 builder 順手把 silver multi-ingest 重覆列在 gold 層去重（trading_attrs 19%、其他 6-8%）。每個 builder 統一 <code>unique(subset=key, keep='last' by ingestion_ts)</code>，所以 gold rows 通常 &lt; silver rows，這是 feature 不是 bug。</p>
+<p>剩下的 dashboard STALE/WARN/EMPTY 都是<strong>上游完整度本身 &lt; 100%</strong> 的 dataset（macro/chip_dist/revenue_monthly/tw_inst_futures_daily 等），非 silver→gold 結構性缺口。</p>
+<p>進度文件：<a href="https://github.com/gsinvest017-ai/gs-scraper/blob/main/docs/progress-goldify-remaining-silver.md"><code>docs/progress-goldify-remaining-silver.md</code></a> / <a href="https://github.com/gsinvest017-ai/gs-scraper/blob/main/docs/progress-goldify-final-silver.md"><code>progress-goldify-final-silver.md</code></a> / <a href="https://github.com/gsinvest017-ai/gs-scraper/blob/main/docs/progress-goldify-bars-qc-finmind.md"><code>progress-goldify-bars-qc-finmind.md</code></a></p>
+<h2 id="2026-05-25-late-pm-goldify-100-silver-trading-day-aware-lag-v2">2026-05-25 (late PM) — Goldify 100% silver + trading-day-aware lag v2<a class="headerlink" href="#2026-05-25-late-pm-goldify-100-silver-trading-day-aware-lag-v2" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Goldify</strong>：重新整批跑 <code>python -m qd_ingest.sources.derived</code>：</li>
+<li><code>stock_factor_daily</code> 從 142d 過時 → 6.6M 列 / 2,911 stocks / max 2026-05-22</li>
+<li><code>cross_market_features</code> 從 EMPTY → 2,080 列 / 27 cols</li>
+<li>新增 <code>gold/features/inst_flow_factors.parquet</code>（6.57M 列，2,615 stocks，2010-2026，9 個法人流量因子）；builder 列入 <code>build_all()</code></li>
+<li><strong>Trading-day-aware lag v2</strong>：</li>
+<li><code>TRADING_DAY_CATEGORIES</code> 加入 <code>snapshot</code> + <code>derived</code> — 修正 <code>finmind_*_norm</code> / <code>qc_stock_price_diff</code> / <code>stock_factor_daily</code> 等 view 在週末 / 盤中時誤判 lag 的 bug</li>
+<li><code>EOD_CUTOFF_HOUR_TPE</code> 從 15:00 推到 <strong>18:00</strong>（對齊 cron 17:30 + buffer）— 13:30-17:30 之間不會誤標今日為 expected</li>
+<li><strong>FinMind 2026-05-25 snapshot</strong> 上 bronze：<code>finmind_stock_price_norm</code> / <code>*_adj_norm</code> max 從 5/15 / 5/13 推到 <strong>5/22</strong></li>
+<li>Dashboard summary：<code>OK=4 WARN=9 STALE=8 INFO=4 → OK=15 WARN=1 STALE=8 INFO=2</code></li>
+</ul>
+<h2 id="2026-05-25-pm-dashboard">2026-05-25 (PM) — Dashboard 三大改進<a class="headerlink" href="#2026-05-25-pm-dashboard" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>完整度排序</strong>：gap_dashboard 預設按 <code>clamp(1 − lag/90, 0, 1)</code> 完整度 DESC 排（同分 P0 優先），補進 lag-bar 顯示「填滿 = 完整」。新增「完整度」百分比欄</li>
+<li><strong>Trading-day-aware lag</strong>：<code>daily-trading</code> category 對齊到 <code>expected_latest_trading_day</code>（calendar_xtai + Mon-Fri fallback + 15:00 TPE EOD cutoff），週末與盤中時段不再誤判 lag。effect: OK=4 → OK=12</li>
+<li><strong>Storage layer columns</strong>：每筆 row 新增 5 個欄（📦 Raw / 🥉 Bronze / 🥈 Silver / 🥇 Gold / 📊 Catalog rows）含 size·file-count + path tooltip；頂部 4 個 layer-total pill 用 pattern union 去重計總；可作為資料遷移 checklist</li>
+<li><strong>架構頁 cleaning-criteria.md</strong>：新增 raw → bronze / bronze → silver / silver → gold 三段 transition 的完整規則 + checklist + 失敗模式速查表</li>
+</ul>
+<h2 id="2026-05-25-am-stale">2026-05-25 (AM) — 自動化 + 大量 STALE 補完<a class="headerlink" href="#2026-05-25-am-stale" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>新增 <code>incremental-crawler</code> repo agent</strong>（<code>.claude/agents/incremental-crawler.md</code>）：每次跑增量爬蟲都強制 regen gap_dashboard 並 commit</li>
+<li><strong>新增 <code>/update-doc</code> 全域 skill</strong>（<code>~/.claude/skills/update-doc/</code>）：任何 repo 都能用，根據 git log 提案 doc 更新</li>
+<li><strong>新增 <code>scripts/restore_finmind_views.py</code></strong>：<code>qd-ingest build-catalog</code> 後自動還原 9 個 FinMind / qc views，daily_refresh.sh 在 step 3.5 自動呼叫</li>
+<li><strong>TX / MTX 連續期延伸到 2026-05-22</strong>：從 <code>bars_1d</code> 衍生（每日 max(volume) 月份合約為 front），不依賴 <code>RAW_SOURCES/日k 期貨tquant lab/</code> 手動檔；新列 <code>source='qd_{tx|mtx}_continuous_extended_from_bars1d'</code>，<code>adj_factor=NULL</code></li>
+<li><strong>新增 docs-site/ops/automation.md</strong> 一頁說明上述兩個自動化</li>
+<li><strong>TEJ catch-up 大規模補洞</strong>：<code>stock_trading_attrs +244,557</code> / <code>chip_dist +44,086</code> / <code>inst_futures_full +10,260</code> / <code>accounting_raw +6,290</code> / <code>security_attrs +3,405</code> / <code>stock_futures_corp_actions +1,865</code> / <code>cash_dividend +698</code> 列</li>
+<li><strong>啟動 FinMind tick crawler</strong>（PID-managed background process）：8 trading days × 3,088 stocks ≈ 24,704 calls / sponsor tier 1500/hr ≈ ETA ~16 hr；首 30 秒驗證 +224K rows</li>
+<li><strong><code>gap_report.py</code> 新增 <code>snapshot</code> category</strong>：bronze one-shot 資料（如 finmind_*）surface as INFO 而非 STALE</li>
+</ul>
+<h2 id="2026-05-21-v01">2026-05-21 — 文檔站上線（v0.1）<a class="headerlink" href="#2026-05-21-v01" title="Permanent link">&para;</a></h2>
+<ul>
+<li>加 <code>docs-site/</code> 完整 MkDocs Material 站台</li>
+<li>加 <code>.github/workflows/docs.yml</code>，每次 push 監聽 <code>docs-site/ / mkdocs.yml / scripts/ / src/</code>，build → push 到 <code>gh-pages</code></li>
+<li>nav 分四大支柱：架構 / DB / UI / Ops</li>
+<li>進度文件：<code>docs/progress-docsite.md</code></li>
+</ul>
+<h2 id="2026-05-21-gap-dashboard-finmind">2026-05-21 — Gap dashboard 加 FinMind 系列<a class="headerlink" href="#2026-05-21-gap-dashboard-finmind" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>scripts/gap_report.py</code> 加 <code>snapshot</code> category 分支（bronze one-shot dump → INFO，不觸發 alert）</li>
+<li>在 <code>DATASETS</code> 註冊 3 個 view：<code>finmind_stock_price_norm</code>、<code>finmind_stock_price_adj_norm</code>、<code>qc_stock_price_diff</code></li>
+</ul>
+<h2 id="2026-05-21-finmind-sqlite-snapshot-m4-m7">2026-05-21 — FinMind sqlite snapshot 整合（M4-M7）<a class="headerlink" href="#2026-05-21-finmind-sqlite-snapshot-m4-m7" title="Permanent link">&para;</a></h2>
+<ul>
+<li>從 <code>RAW_SOURCES/FINMIND資料集.zip</code> 解出 2.5 GB sqlite 到 <code>bronze/finmind/finmind_2026-05-18.sqlite</code>（含 SHA256）</li>
+<li>在 <code>catalog/quant.duckdb</code> 與 <code>quant_public.duckdb</code> 各建 8 個 <code>finmind_*</code> view（含 2 個 canonical <code>*_norm</code>）</li>
+<li>建 <code>qc_stock_price_diff</code> view：TEJ vs FinMind 2010+ 對帳；100 檔 sample × 6 年 → 100% bit-exact</li>
+<li>進度文件：<code>docs/progress-finmind-rsrating-integration.md</code></li>
+</ul>
+<h2 id="2026-05-18-rs_rating-m1-m3">2026-05-18 — RS_Rating 整合規格（M1-M3）<a class="headerlink" href="#2026-05-18-rs_rating-m1-m3" title="Permanent link">&para;</a></h2>
+<ul>
+<li>從 <code>RAW_SOURCES/RS_Rating.7z</code>（287 MB Windows PyInstaller bundle）抽 15 個 Python source + docs 到 <code>_quarantine/rs_rating_unpacked/</code>（176 KB）</li>
+<li>寫 <code>docs/spec-gold-rs-rating-daily.md</code>：RS-rating IBD 公式 → DuckDB SQL skeleton + 5 個 open question</li>
+<li>不會在 silver / catalog 留 RS_Rating bundle 痕跡；演算法重新實作為 gold factor 時才落地</li>
+</ul>
+<h2 id="2026-05-18-daily-refresh-orchestrator">2026-05-18 — Daily refresh orchestrator<a class="headerlink" href="#2026-05-18-daily-refresh-orchestrator" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>scripts/daily_refresh.sh</code>：flock + idempotent fetch_tej → ingest → catalog rebuild → gap_report 流線</li>
+<li><code>scripts/install_cron.sh</code>：idempotent crontab 安裝/移除/replay；預設 Mon-Fri 17:30 CST</li>
+<li><code>scripts/gap_report.py</code>：跑遍 catalog view 計算 freshness lag，輸出 text / json / html</li>
+</ul>
+<h2 id="2026-05-18-duckdb-public-url">2026-05-18 — DuckDB public URL 嘗試<a class="headerlink" href="#2026-05-18-duckdb-public-url" title="Permanent link">&para;</a></h2>
+<ul>
+<li>嘗試 ngrok：authtoken 跑不通，棄用</li>
+<li>嘗試 Tailscale Funnel：三道門檻過了，但 DuckDB UI 1.5.x 內建 token-auth 擋 funnel-exposure → WIP-blocked</li>
+<li>留下 <code>scripts/duckdb_public_ui.sh</code>（snapshot + read-only UI on 4214）給 SSH tunnel 路線</li>
+<li>文件：<a href="../ui/funnel/"><code>ui/funnel.md</code></a>、<code>docs/progress-tailscale-funnel.md</code>、<code>docs/progress-duckdb-public-url.md</code></li>
+</ul>
+<h2 id="2026-05-18-tej-p0p1p2-dataset">2026-05-18 — TEJ P0+P1+P2 dataset 全部接通<a class="headerlink" href="#2026-05-18-tej-p0p1p2-dataset" title="Permanent link">&para;</a></h2>
+<ul>
+<li>AFUTR / AFUTRHU / APISALE / ADIV / AFUTRSTK / AFINST / APISTOCK / APISTKATTR / AINVFINB 全部寫入 silver</li>
+<li>對應 catalog view 全部建好（見 <a href="../db/views/">Catalog views</a>）</li>
+<li>規模：bars_1d 10.4M, tw_inst_stock_daily 6.5M, tw_margin_daily 3.7M, ...</li>
+</ul>
+<h2 id="2026-05-13-medallion-lakehouse-schema">2026-05-13 — Medallion lakehouse 初始 schema 鎖定<a class="headerlink" href="#2026-05-13-medallion-lakehouse-schema" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>DATA_ARCHITECTURE.md</code> v1.0 落地：bronze / silver / gold 三層職責、canonical schema 規範</li>
+<li>第一批 silver view：<code>tw_stock_bars</code>、<code>fundamentals_q</code>、<code>tw_inst_stock_daily</code>、<code>tw_margin_daily</code>、<code>macro_daily</code></li>
+<li>Catalog 引擎決定為 DuckDB（理由見 <a href="../db/overview/">DB 概覽</a>）</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到頂端
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.indexes", "content.code.copy", "content.code.annotate", "toc.follow", "search.suggest", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u8907\u88fd", "clipboard.copy": "\u8907\u88fd", "search.result.more.one": "\u6b64\u9801\u5c1a\u6709 1 \u500b\u7b26\u5408\u7684\u9805\u76ee", "search.result.more.other": "\u6b64\u9801\u5c1a\u6709 # \u500b\u7b26\u5408\u7684\u9805\u76ee", "search.result.none": "\u6c92\u6709\u7b26\u5408\u7684\u9805\u76ee", "search.result.one": "\u627e\u5230 1 \u500b\u7b26\u5408\u7684\u9805\u76ee", "search.result.other": "\u627e\u5230 # \u500b\u7b26\u5408\u7684\u9805\u76ee", "search.result.placeholder": "\u6253\u5b57\u9032\u884c\u641c\u5c0b", "search.result.term.missing": "\u7f3a\u5c11\u5b57\u8a5e", "select.version": "\u9078\u64c7\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
