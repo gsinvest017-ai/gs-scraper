@@ -45,8 +45,12 @@ try {
     Log INFO "==== daily_refresh start (repo=$Repo) ===="
 
     # ---- 2. Env -----------------------------------------------------------
+    # per-machine 密鑰 fallback：目標機沒有 User env var，靠 scripts\secrets.local.ps1
+    # （gitignored，隨 migrate 帶過去）。本機已設 User env var，此處不會覆蓋。
+    $secrets = Join-Path $Repo 'scripts\secrets.local.ps1'
+    if ((-not $env:TEJAPI_KEY) -and (Test-Path $secrets)) { . $secrets }
     if (-not $env:TEJAPI_KEY) {
-        Log ERROR "TEJAPI_KEY not set in environment — abort (set it via [Environment]::SetEnvironmentVariable)"
+        Log ERROR "TEJAPI_KEY not set in environment — abort (set it via [Environment]::SetEnvironmentVariable or scripts\secrets.local.ps1)"
         exit 11
     }
     if (-not $env:TEJAPI_BASE) { $env:TEJAPI_BASE = 'https://api.tej.com.tw' }

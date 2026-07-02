@@ -120,3 +120,6 @@ tmp/
 
 # === migrate 目標主機設定（per-machine；.example 才入庫）===
 scripts/migrate.conf
+
+# === per-machine 密鑰（TEJAPI_KEY 等；絕不入庫）===
+scripts/secrets.local.ps1
