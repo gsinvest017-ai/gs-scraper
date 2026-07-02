@@ -24,6 +24,14 @@ from pathlib import Path
 
 import pandas as pd
 
+# Windows cp950 console/log 無法編碼 ✓/✗/→ 等字元；強制 UTF-8 輸出避免
+# UnicodeEncodeError（資料已抓成功卻在印摘要時崩潰）。
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 REPO = Path(__file__).resolve().parents[1]
 SUPP = (REPO / ".." / "RAW_SOURCES" / "SUPPLEMENT").resolve()
 
